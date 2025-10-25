@@ -108,15 +108,26 @@ export function initializeEventListeners() {
 
     // --- DataBank ---
     dom.findDatabankPortfoliosBtn.addEventListener('click', findDatabankPortfolios);
-    dom.pauseSearchBtn.addEventListener('click', () => {
-        state.isSearchPaused = !state.isSearchPaused;
-        dom.pauseSearchBtn.textContent = state.isSearchPaused ? 'Reanudar' : 'Pausar';
+    dom.pauseSearchBtn.addEventListener('click', async () => {
+        try {
+            const response = await fetch('http://localhost:8001/databank/pause', { method: 'POST' });
+            if (!response.ok) throw new Error('Error al enviar señal de pausa al backend.');
+            // La UI se actualiza en base a los mensajes del stream, no aquí.
+        } catch (error) {
+            console.error("Error al pausar/reanudar búsqueda:", error);
+        }
     });
-    dom.stopSearchBtn.addEventListener('click', () => {
-        state.isSearchStopped = true;
-        dom.stopSearchBtn.disabled = true;
-        dom.pauseSearchBtn.disabled = true;
-        dom.pauseSearchBtn.textContent = 'Pausar';
+    dom.stopSearchBtn.addEventListener('click', async () => {
+        try {
+            const response = await fetch('http://localhost:8001/databank/stop', { method: 'POST' });
+            if (!response.ok) throw new Error('Error al enviar señal de detención al backend.');
+            // La UI se actualiza en base a los mensajes del stream, no aquí.
+            // Deshabilitamos inmediatamente para evitar clics múltiples.
+            dom.stopSearchBtn.disabled = true;
+            dom.pauseSearchBtn.disabled = true;
+        } catch (error) {
+            console.error("Error al detener búsqueda:", error);
+        }
     });
     dom.clearDatabankBtn.addEventListener('click', clearDatabank);
 

@@ -69,11 +69,30 @@ app.add_middleware(
 def read_root():
     return {"message": "¡Hola! El backend de Python está funcionando."}
 
+# --- NUEVOS ENDPOINTS para Pausar/Detener ---
+@app.post("/databank/pause")
+async def pause_search():
+    global _is_search_paused
+    _is_search_paused = not _is_search_paused
+    print(f"Backend search paused: {_is_search_paused}")
+    return {"status": "paused" if _is_search_paused else "resumed", "is_paused": _is_search_paused}
+
+@app.post("/databank/stop")
+async def stop_search():
+    global _is_search_stopped
+    _is_search_stopped = True
+    print("Backend search stopped.")
+    return {"status": "stopped", "is_stopped": _is_search_stopped}
+
 from fastapi.responses import StreamingResponse
 
 @app.post("/databank/find-portfolios-stream")
 async def find_portfolios_stream_endpoint(request: DatabankRequest):
-    
+    # Resetear las banderas al inicio de una nueva búsqueda
+    global _is_search_paused, _is_search_stopped
+    _is_search_paused = False
+    _is_search_stopped = False
+
     async def event_generator():
         print("✅ Petición de streaming recibida. Iniciando cálculos...")
         params = request.params
@@ -113,6 +132,14 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
             databank_portfolios = []
             
             for i, combo in enumerate(combinations_generator):
+                # --- LÓGICA DE CONTROL ---
+                if _is_search_stopped:
+                    yield f"data: {json.dumps({'status': 'stopped', 'message': 'Búsqueda detenida por el usuario.'})}\n\n"
+                    return
+                while _is_search_paused:
+                    yield f"data: {json.dumps({'status': 'paused', 'message': 'Búsqueda pausada...'})}\n\n"
+                    await asyncio.sleep(1) # Esperar 1 segundo y volver a comprobar
+
                 # Enviar progreso cada 100 iteraciones para una UI más fluida
                 if i > 0 and i % 100 == 0:
                     progress_message = f"Progreso: {i}/{total_combinations} ({((i/total_combinations)*100):.1f}%)"

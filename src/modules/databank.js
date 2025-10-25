@@ -1,9 +1,7 @@
 import { state } from '../state.js';
 import { dom } from '../dom.js';
-import { ALL_METRICS, SELECTION_COLORS } from '../config.js';
-import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '../utils.js';
-import { processStrategyData, calculateCorrelationMatrix } from '../analysis.js';
-import { reAnalyzeAllData } from '../analysis.js';
+import { ALL_METRICS, SELECTION_COLORS } from '../config.js'; // ALL_METRICS y SELECTION_COLORS se siguen usando
+import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '../utils.js'; // Estas utilidades se siguen usando
 
 /**
  * Inicia la búsqueda de portafolios en el DataBank.
@@ -15,12 +13,20 @@ export const findDatabankPortfolios = async () => {
     }
 
     hideError();
-    toggleLoading(true, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
+    
+    // Resetear el estado de la UI y los botones
     dom.databankSection.classList.remove('hidden');
-    dom.databankStatus.innerHTML = `📡 Conectando con el backend de Python...`;
+    dom.pauseSearchBtn.disabled = false;
+    dom.stopSearchBtn.disabled = false;
+    dom.pauseSearchBtn.textContent = 'Pausar';
+    toggleLoading(true, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
+    dom.clearDatabankBtn.disabled = true;
+    if (dom.databankSizeInput) dom.databankSizeInput.disabled = true;
 
     state.databankPortfolios = [];
     updateDatabankDisplay(); // Limpia la tabla
+    
+    dom.databankStatus.innerHTML = `📡 Conectando con el backend de Python...`;
 
     // 1. Empaquetar los datos para la petición inicial
     const requestBody = {
@@ -39,27 +45,20 @@ export const findDatabankPortfolios = async () => {
 
     // 2. Realizar la petición POST para iniciar el stream en el backend
     // Usamos fetch solo para enviar los datos y disparar el proceso
-    fetch('http://localhost:8001/databank/find-portfolios-stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-    }).then(response => {
+    try {
+        const response = await fetch('http://localhost:8001/databank/find-portfolios-stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
         if (!response.ok) {
             throw new Error("El backend no pudo iniciar el proceso de streaming.");
         }
-        // El cuerpo de esta respuesta es el stream, que manejaremos con EventSource.
-        // Por ahora, simplemente iniciamos el listener.
+
         console.log("Conexión de streaming establecida. Escuchando resultados...");
         dom.databankStatus.innerHTML = `⏳ Escuchando resultados del backend...`;
         
-        // 3. Crear una instancia de EventSource para recibir los datos
-        // NOTA: EventSource tradicionalmente usa GET. Como necesitamos enviar un cuerpo grande,
-        // usamos fetch para iniciar y luego procesamos el stream.
-        // Para una implementación más robusta, se usarían librerías que soportan POST con EventSource
-        // o se pasaría a WebSockets. Por ahora, vamos a simular la recepción.
-        // Esta es una simplificación para demostrar el concepto.
-        
-        // SIMULACIÓN DE RECEPCIÓN DE STREAM
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         
@@ -70,6 +69,10 @@ export const findDatabankPortfolios = async () => {
                 if (done) {
                     dom.databankStatus.innerHTML = `✅ Búsqueda completada por el backend.`;
                     toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
+                    dom.clearDatabankBtn.disabled = false;
+                    if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+                    dom.pauseSearchBtn.disabled = true;
+                    dom.stopSearchBtn.disabled = true;
                     break; // Salir del bucle
                 }
                 
@@ -85,6 +88,26 @@ export const findDatabankPortfolios = async () => {
 
                     if (data.status === 'info' || data.status === 'progress') {
                         dom.databankStatus.innerHTML = `🔍 ${data.message}`;
+                    } else if (data.status === 'paused') {
+                        dom.pauseSearchBtn.textContent = 'Reanudar';
+                        dom.databankStatus.innerHTML = `⏸️ ${data.message}`;
+                    } else if (data.status === 'resumed') {
+                        dom.pauseSearchBtn.textContent = 'Pausar';
+                        dom.databankStatus.innerHTML = `▶️ ${data.message}`;
+                    } else if (data.status === 'stopped') {
+                        dom.stopSearchBtn.disabled = true;
+                        dom.pauseSearchBtn.disabled = true;
+                        dom.pauseSearchBtn.textContent = 'Pausar';
+                        dom.databankStatus.innerHTML = `⏹️ ${data.message}`;
+                    } else if (data.status === 'error') {
+                        displayError(data.message);
+                        dom.databankStatus.innerHTML = `❌ Error en la búsqueda.`;
+                        toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
+                        dom.clearDatabankBtn.disabled = false;
+                        if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+                        dom.pauseSearchBtn.disabled = true;
+                        dom.stopSearchBtn.disabled = true;
+                        reader.cancel(); // Detener la lectura del stream
                     } else if (data.status === 'completed') {
                         // El stream ha terminado, pero ya hemos mostrado el mensaje final en 'done'
                     } else {
@@ -93,7 +116,6 @@ export const findDatabankPortfolios = async () => {
                         if (!newPortfolio.name && newPortfolio.indices) { // Construir nombre si no viene
                             newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i+1}`).join(', ');
                         }
-                        
                         addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput.value, 10));
                         updateDatabankDisplay();
                     }
@@ -101,12 +123,16 @@ export const findDatabankPortfolios = async () => {
             }
         }
         processStream(); // Inicia la lectura del stream
-    }).catch(error => {
+    } catch (error) {
         console.error("Error iniciando la búsqueda en DataBank:", error);
         displayError(error.message || "Ocurrió un error al conectar con el backend.");
         dom.databankStatus.innerHTML = `❌ Error de conexión.`;
         toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-    });
+        dom.clearDatabankBtn.disabled = false;
+        if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+        dom.pauseSearchBtn.disabled = true;
+        dom.stopSearchBtn.disabled = true;
+    }
 };
 
 /**
@@ -180,9 +206,6 @@ export const updateDatabankDisplay = () => {
     dom.databankTableHeader.innerHTML = headerHTML;
     
     const metricHeader = document.getElementById('databank-metric-header');
-    if (metricHeader) {
-        metricHeader.textContent = state.databankPortfolios[0]?.metricName || 'Métrica';
-    }
 
     let html = '';
     const rankColors = ['bg-amber-400', 'bg-slate-300', 'bg-yellow-600'];
@@ -205,7 +228,11 @@ export const updateDatabankDisplay = () => {
 
         activeViewColumns.forEach(key => {
             if (key === 'name') {
-                const names = p.name || p.indices.map(i => (state.loadedStrategyFiles[i] ? state.loadedStrategyFiles[i].name : `Estrat ${i+1}`)).map(name => `<div class="copyable-strategy p-0.5 rounded-sm" title="Copiar '${name.replace('.csv', '')}'">${name.replace('.csv', '')}</div>`).join('');
+                let constructedName = p.name;
+                if (!constructedName && p.indices) {
+                    constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i+1}`).join(', ');
+                }
+                const names = (constructedName || '').split(', ').map(name => `<div class="copyable-strategy p-0.5 rounded-sm" title="Copiar '${name.replace('.csv', '')}'">${name.replace('.csv', '')}</div>`).join('');
                 html += `<td class="p-2 text-gray-300 max-w-xs">${names}</td>`;
             } else {
                 const value = key === 'metricValue' ? p.metricValue : p.metrics[key];
@@ -216,6 +243,11 @@ export const updateDatabankDisplay = () => {
         html += `<td class="p-2 text-center sticky right-0 bg-gray-800 z-10"><button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button></td></tr>`;
     });
     dom.databankTableBody.innerHTML = html;
+
+    const firstPortfolio = state.databankPortfolios[0];
+    if (metricHeader && firstPortfolio && firstPortfolio.metricName) {
+        metricHeader.textContent = firstPortfolio.metricName;
+    }
 };
 
 /**
@@ -311,43 +343,17 @@ export const clearDatabank = () => {
     dom.databankSection.classList.add('hidden');
 };
 
-// --- Helper Functions ---
+// Las siguientes funciones helper ya no son necesarias en el frontend
+// porque la lógica de combinaciones y análisis se ha movido al backend.
+// Se mantienen aquí para evitar errores de referencia si alguna parte del código
+// aún las estuviera importando, pero deberían ser eliminadas si no se usan.
 
-function* getCombinations(arr, minSize = 2, maxSize = arr.length) {
-    function* combine(startIndex, currentCombination, k) {
-        if (currentCombination.length === k) { yield [...currentCombination]; return; }
-        if (startIndex === arr.length) return;
-        for (let i = startIndex; i < arr.length; i++) {
-            currentCombination.push(arr[i]);
-            yield* combine(i + 1, currentCombination, k);
-            currentCombination.pop();
-        }
-    }
-    for (let k = minSize; k <= maxSize; k++) {
-        yield* combine(0, [], k);
-    }
-}
+/*
+function* getCombinations(arr, minSize = 2, maxSize = arr.length) { ... }
+function* mapGenerator(generator, mapFn) { ... }
+const countCombinations = (n, minSize, maxSize) => { ... };
+*/
 
-function* mapGenerator(generator, mapFn) {
-    for (const value of generator) {
-        yield mapFn(value);
-    }
-}
-
-const countCombinations = (n, minSize, maxSize) => {
-    const combinations = (n_c, k_c) => {
-        if (k_c < 0 || k_c > n_c) return 0;
-        if (k_c === 0 || k_c === n_c) return 1;
-        if (k_c > n_c / 2) k_c = n_c - k_c;
-        let res = 1;
-        for (let i = 1; i <= k_c; i++) {
-            res = res * (n_c - i + 1) / i;
-        }
-        return Math.round(res);
-    };
-    let total = 0;
-    for (let k = minSize; k <= maxSize; k++) {
-        total += combinations(n, k);
-    }
-    return total;
-};
+// Eliminamos las importaciones de analysis.js que ya no se usan aquí
+// import { processStrategyData, calculateCorrelationMatrix } from '../analysis.js';
+// import { reAnalyzeAllData } from '../analysis.js';
