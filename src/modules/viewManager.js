@@ -1,6 +1,7 @@
 import { dom } from '../dom.js';
 import { state } from '../state.js';
 import { ALL_METRICS } from '../config.js';
+import { initializeEventListeners } from '../events.js';
 import { updateDatabankDisplay } from '../modules/databank.js';
 import { displaySavedPortfoliosList } from '../ui.js';
 
@@ -46,6 +47,7 @@ export const openViewManager = (viewSetKey) => {
     elements.visibleList.innerHTML = '';
     elements.hiddenList.innerHTML = '';
 
+    elements.viewNameInput.value = '';
     const currentView = state.tableViews[state.currentEditingViewSet][state.activeViews[state.currentEditingViewSet]];
     const visibleKeys = new Set(currentView.columns);
 
@@ -69,6 +71,8 @@ export const openViewManager = (viewSetKey) => {
         elements.backdrop.classList.remove('opacity-0');
         elements.content.classList.remove('scale-95', 'opacity-0');
     }, 10);
+
+    initializeDragAndDrop();
 };
 
 export const closeViewManager = () => {
@@ -127,3 +131,50 @@ export const deleteView = () => {
         applyView();
     }
 };
+
+const initializeDragAndDrop = () => {
+    const elements = getViewManagerElements();
+    const lists = [elements.visibleList, elements.hiddenList];
+
+    lists.forEach(list => {
+        list.addEventListener('dragstart', e => {
+            if (e.target.classList.contains('view-column-item')) {
+                draggedItem = e.target;
+                setTimeout(() => e.target.style.opacity = '0.5', 0);
+            }
+        });
+
+        list.addEventListener('dragend', e => {
+            if (draggedItem) {
+                setTimeout(() => {
+                    draggedItem.style.opacity = '1';
+                    draggedItem = null;
+                }, 0);
+            }
+        });
+
+        list.addEventListener('dragover', e => {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(list, e.clientY);
+            if (afterElement == null) {
+                list.appendChild(draggedItem);
+            } else {
+                list.insertBefore(draggedItem, afterElement);
+            }
+        });
+    });
+};
+
+function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('.view-column-item:not([style*="opacity: 0.5"])')];
+
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
