@@ -111,10 +111,17 @@ export const reAnalyzeAllData = () => {
         }
 
         let finalTradesForAnalysis = tradesForAnalysis;
-        // 2. Si está activo, aplicar el escalado de riesgo específico del portafolio.
-        // La normalización global (isRiskNormalized) tiene prioridad.
-        if (riskConfig.isScaled && riskConfig.targetMaxDD > 0 && !isRiskNormalized) { 
-            // Para el factor de escala, necesitamos el MaxDD del portafolio con pesos pero SIN el ajuste de riesgo global.
+
+        // 2. Aplicar escalado de riesgo (la normalización global tiene prioridad).
+        if (isRiskNormalized && targetMaxDD > 0) {
+            // Aplicar normalización de riesgo GLOBAL
+            const preAnalysis = processStrategyData(tradesForAnalysis, state.rawBenchmarkData, filterSourceTrades);
+            if (preAnalysis && preAnalysis.metrics.maxDrawdownInDollars > 0) {
+                const scaleFactor = targetMaxDD / preAnalysis.metrics.maxDrawdownInDollars;
+                finalTradesForAnalysis = tradesForAnalysis.map(trade => ({ ...trade, pnl: trade.pnl * scaleFactor }));
+            }
+        } else if (riskConfig.isScaled && riskConfig.targetMaxDD > 0) {
+            // Aplicar escalado de riesgo ESPECÍFICO del portafolio
             const baseTradesForPreAnalysis = [];
             strategyTradeData.forEach((trades, strategyIndex) => {
                 const weight = weights[strategyIndex];
