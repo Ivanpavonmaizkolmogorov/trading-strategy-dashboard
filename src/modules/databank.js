@@ -33,6 +33,7 @@ export const findDatabankPortfolios = async () => {
             correlation_threshold: parseFloat(dom.correlationFilterInput.value),
             max_size: parseInt(dom.databankSizeInput.value, 10),
             base_indices: Array.from(state.selectedPortfolioIndices),
+            metric_name: dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text,
         }
     };
 
@@ -78,16 +79,23 @@ export const findDatabankPortfolios = async () => {
                 
                 events.forEach(eventString => {
                     const jsonData = eventString.replace('data: ', '');
-                    if (jsonData) {
-                        const newPortfolio = JSON.parse(jsonData);
-                        // Si el backend ya no envía el nombre, lo construimos aquí
-                        if (!newPortfolio.name && newPortfolio.indices) {
-                            newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat. ${i+1}`).join(', ');
+                    if (!jsonData) return;
+
+                    const data = JSON.parse(jsonData);
+
+                    if (data.status === 'info' || data.status === 'progress') {
+                        dom.databankStatus.innerHTML = `🔍 ${data.message}`;
+                    } else if (data.status === 'completed') {
+                        // El stream ha terminado, pero ya hemos mostrado el mensaje final en 'done'
+                    } else {
+                        // Es un objeto de portafolio
+                        const newPortfolio = data;
+                        if (!newPortfolio.name && newPortfolio.indices) { // Construir nombre si no viene
+                            newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i+1}`).join(', ');
                         }
-                        console.log("Recibido:", newPortfolio);
+                        
                         addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput.value, 10));
                         updateDatabankDisplay();
-                        dom.databankStatus.innerHTML = `🔍 Recibidos ${state.databankPortfolios.length} portafolios...`;
                     }
                 });
             }

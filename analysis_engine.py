@@ -46,6 +46,19 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     # Métricas basadas en retornos diarios
     daily_returns = equity_curve['equity'].pct_change().fillna(0)
     
+    # Unir retornos del benchmark
+    benchmark_returns = benchmark_df['price'].pct_change().fillna(0)
+    combined_returns = pd.DataFrame({'portfolio': daily_returns, 'benchmark': benchmark_returns}).dropna()
+
+    # Capture Ratios
+    positive_bench_days = combined_returns[combined_returns['benchmark'] > 0]
+    negative_bench_days = combined_returns[combined_returns['benchmark'] < 0]
+    
+    avg_portfolio_up = positive_bench_days['portfolio'].mean()
+    avg_benchmark_up = positive_bench_days['benchmark'].mean()
+    avg_portfolio_down = negative_bench_days['portfolio'].mean()
+    avg_benchmark_down = negative_bench_days['benchmark'].mean()
+
     # Sharpe Ratio
     sharpe_ratio = 0
     if daily_returns.std() > 0:
@@ -53,7 +66,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
 
     # Sortino Ratio
     negative_returns = daily_returns[daily_returns < 0]
-    downside_deviation = np.sqrt((negative_returns**2).sum() / len(daily_returns))
+    downside_deviation = np.sqrt((negative_returns**2).mean())
     sortino_ratio = None
     if downside_deviation > 0:
         sortino_ratio = (daily_returns.mean() / downside_deviation) * np.sqrt(252)
@@ -86,6 +99,11 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     
     ulcer_index = np.sqrt((drawdown**2).mean()) * 100
     upi = cagr / ulcer_index if ulcer_index > 0 else None
+    
+    # Cálculo final de Capture Ratio
+    upside_capture = (avg_portfolio_up / avg_benchmark_up) * 100 if avg_benchmark_up != 0 else 0
+    downside_capture = (avg_portfolio_down / avg_benchmark_down) * 100 if avg_benchmark_down != 0 else 0
+    capture_ratio = upside_capture / downside_capture if downside_capture > 0 else None
 
     # Devolver un diccionario con todas las métricas que espera el frontend
     return {
@@ -96,7 +114,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "maxConsecutiveLosingMonths": max_consecutive_losing_months,
         "upi": upi,
         "sharpeRatio": sharpe_ratio,
-        "captureRatio": 0, # Placeholder
+        "captureRatio": capture_ratio,
         "maxDrawdownInDollars": max_drawdown_dollars,
         "profitMaxDD_Ratio": profit_max_dd_ratio,
         "monthlyProfitToDollarDD": monthly_profit_to_dollar_dd,
@@ -113,6 +131,20 @@ def get_combinations(arr, min_size, max_size):
     for k in range(min_size, max_size + 1):
         for combo in combinations(arr, k):
             yield combo
+
+def count_combinations(n, min_size, max_size):
+    """Calcula el número total de combinaciones sin generarlas."""
+    from math import comb
+    total = 0
+    # Asegurarse de que max_size no sea mayor que n
+    actual_max_size = min(n, max_size)
+    for k in range(min_size, actual_max_size + 1):
+        try:
+            total += comb(n, k)
+        except ValueError:
+            # Esto puede ocurrir si k > n, aunque ya lo prevenimos
+            continue
+    return total
 
 
 def add_to_databank_if_better(databank_portfolios, portfolio_data, max_size):

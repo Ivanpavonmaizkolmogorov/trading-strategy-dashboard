@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 
 # Importar nuestro nuevo motor de análisis
-from analysis_engine import process_strategy_data, get_combinations, add_to_databank_if_better
+from analysis_engine import process_strategy_data, get_combinations, add_to_databank_if_better, count_combinations
 
 # --- Modelos de Datos (Pydantic) ---
 class Trade(BaseModel):
@@ -25,6 +25,7 @@ class DatabankParams(BaseModel):
     correlation_threshold: float
     max_size: int
     base_indices: List[int]
+    metric_name: str # <-- Añadimos el nombre legible de la métrica
 
 class DatabankRequest(BaseModel):
     strategy_names: List[str] # <-- Añadimos los nombres de las estrategias
@@ -93,18 +94,29 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                 print("⚠️ No se pudieron analizar estrategias individuales. Deteniendo.")
                 yield f"data: {json.dumps({'status': 'error', 'message': 'No individual strategies could be analyzed.'})}\n\n"
                 return
+            
+            yield f"data: {json.dumps({'status': 'info', 'message': 'Calculando matriz de correlación...'})}\n\n"
 
             correlation_matrix = pd.concat(individual_analyses, axis=1).corr()
 
             num_strategies = len(strategies_data)
             indices = list(range(num_strategies))
             max_combo_size = min(num_strategies, 12)
-            combinations_generator = get_combinations(indices, 2, max_combo_size)
+            min_combo_size = 2
+
+            # Calcular total y enviar al frontend
+            total_combinations = count_combinations(num_strategies, min_combo_size, max_combo_size)
+            yield f"data: {json.dumps({'status': 'info', 'message': f'Analizando {total_combinations} combinaciones...'})}\n\n"
+
+            combinations_generator = get_combinations(indices, min_combo_size, max_combo_size)
 
             databank_portfolios = []
             
             for i, combo in enumerate(combinations_generator):
-                if i % 1000 == 0:
+                # Enviar progreso cada 100 iteraciones para una UI más fluida
+                if i > 0 and i % 100 == 0:
+                    progress_message = f"Progreso: {i}/{total_combinations} ({((i/total_combinations)*100):.1f}%)"
+                    yield f"data: {json.dumps({'status': 'progress', 'message': progress_message})}\n\n"
                     await asyncio.sleep(0.01)
 
                 is_valid = True
@@ -135,6 +147,7 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                     if metrics and params.metric_to_optimize_key in metrics:
                         portfolio_data = {
                             "metricValue": metrics[params.metric_to_optimize_key],
+                            "metricName": params.metric_name, # <-- Enviamos el nombre de la métrica
                             "indices": list(combo),
                             "metrics": metrics,
                             "optimizationGoal": params.optimization_goal
