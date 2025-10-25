@@ -15,6 +15,7 @@ export const dom = {
     optimizationGoalSelect: document.getElementById('optimization-goal-select'),
     correlationFilterInput: document.getElementById('correlation-filter'),
     minWeightFilter: document.getElementById('min-weight-filter'),
+    searchThresholdInput: document.getElementById('search-threshold'),
     analysisModeSelect: document.getElementById('analysis-mode-select'),
     normalizeRiskCheckbox: document.getElementById('normalize-risk-checkbox'),
     riskNormalizationControls: document.getElementById('risk-normalization-controls'),

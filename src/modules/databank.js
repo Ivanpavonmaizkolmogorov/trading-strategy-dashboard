@@ -40,6 +40,7 @@ export const findDatabankPortfolios = async () => {
             max_size: parseInt(dom.databankSizeInput.value, 10),
             base_indices: Array.from(state.selectedPortfolioIndices),
             metric_name: dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text,
+            search_threshold: parseInt(dom.searchThresholdInput.value, 10),
         }
     };
 
@@ -59,6 +60,8 @@ export const findDatabankPortfolios = async () => {
         console.log("Conexión de streaming establecida. Escuchando resultados...");
         dom.databankStatus.innerHTML = `⏳ Escuchando resultados del backend...`;
         
+        let searchMode = ''; // Variable para almacenar el modo de búsqueda
+
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         
@@ -87,18 +90,26 @@ export const findDatabankPortfolios = async () => {
                     const data = JSON.parse(jsonData);
 
                     if (data.status === 'info' || data.status === 'progress') {
-                        dom.databankStatus.innerHTML = `🔍 ${data.message}`;
+                        // Determinar y almacenar el modo de búsqueda la primera vez que se recibe
+                        if (!searchMode) {
+                            if (data.message.toLowerCase().includes('monte carlo')) {
+                                searchMode = '[Monte Carlo]';
+                            } else if (data.message.toLowerCase().includes('exhaustiva')) {
+                                searchMode = '[Exhaustiva]';
+                            }
+                        }
+                        dom.databankStatus.innerHTML = `${searchMode} 🔍 ${data.message}`;
                     } else if (data.status === 'paused') {
                         dom.pauseSearchBtn.textContent = 'Reanudar';
-                        dom.databankStatus.innerHTML = `⏸️ ${data.message}`;
+                        dom.databankStatus.innerHTML = `${searchMode} ⏸️ ${data.message}`;
                     } else if (data.status === 'resumed') {
                         dom.pauseSearchBtn.textContent = 'Pausar';
-                        dom.databankStatus.innerHTML = `▶️ ${data.message}`;
+                        dom.databankStatus.innerHTML = `${searchMode} ▶️ ${data.message}`;
                     } else if (data.status === 'stopped') {
                         dom.stopSearchBtn.disabled = true;
                         dom.pauseSearchBtn.disabled = true;
                         dom.pauseSearchBtn.textContent = 'Pausar';
-                        dom.databankStatus.innerHTML = `⏹️ ${data.message}`;
+                        dom.databankStatus.innerHTML = `${searchMode} ⏹️ ${data.message}`;
                     } else if (data.status === 'error') {
                         displayError(data.message);
                         dom.databankStatus.innerHTML = `❌ Error en la búsqueda.`;

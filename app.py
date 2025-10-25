@@ -6,6 +6,7 @@ import json
 import asyncio
 import pandas as pd
 import numpy as np
+import random
 
 # Importar nuestro nuevo motor de análisis
 from analysis_engine import process_strategy_data, get_combinations, add_to_databank_if_better, count_combinations
@@ -26,6 +27,7 @@ class DatabankParams(BaseModel):
     max_size: int
     base_indices: List[int]
     metric_name: str # <-- Añadimos el nombre legible de la métrica
+    search_threshold: int
 
 class DatabankRequest(BaseModel):
     strategy_names: List[str] # <-- Añadimos los nombres de las estrategias
@@ -96,13 +98,16 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
     async def event_generator():
         print("✅ Petición de streaming recibida. Iniciando cálculos...")
         params = request.params
+        yield f"data: {json.dumps({'status': 'info', 'message': 'Analizando estrategias individuales...'})}\n\n"
+
         try:
             strategies_data = [[trade.model_dump() for trade in strat if trade.pnl is not None] for strat in request.strategies_data]
             benchmark_data_df = pd.DataFrame(request.benchmark_data)
 
             individual_analyses = []
-            for strat_trades in strategies_data:
+            for i, strat_trades in enumerate(strategies_data):
                 if not strat_trades: continue
+                
                 trades_df = pd.DataFrame(strat_trades)
                 analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy())
                 if analysis_result:
@@ -123,15 +128,24 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
             max_combo_size = min(num_strategies, 12)
             min_combo_size = 2
 
-            # Calcular total y enviar al frontend
-            total_combinations = count_combinations(num_strategies, min_combo_size, max_combo_size)
-            yield f"data: {json.dumps({'status': 'info', 'message': f'Analizando {total_combinations} combinaciones...'})}\n\n"
+            # --- LÓGICA HÍBRIDA: Exhaustiva vs. Monte Carlo ---
+            total_exhaustive_combinations = count_combinations(num_strategies, min_combo_size, max_combo_size)
+            use_monte_carlo = total_exhaustive_combinations > params.search_threshold
 
-            combinations_generator = get_combinations(indices, min_combo_size, max_combo_size)
+            total_iterations = 0
+            iteration_counter = 0
 
             databank_portfolios = []
-            
-            for i, combo in enumerate(combinations_generator):
+
+            if use_monte_carlo:
+                yield f"data: {json.dumps({'status': 'info', 'message': f'Búsqueda Monte Carlo iniciada (Total > {params.search_threshold})'})}\n\n"
+            else:
+                total_iterations = total_exhaustive_combinations
+                yield f"data: {json.dumps({'status': 'info', 'message': f'Búsqueda Exhaustiva iniciada ({total_iterations} combinaciones)'})}\n\n"
+
+            while True: # Bucle infinito que se controla con Pausar/Detener
+                iteration_counter += 1
+
                 # --- LÓGICA DE CONTROL ---
                 if _is_search_stopped:
                     yield f"data: {json.dumps({'status': 'stopped', 'message': 'Búsqueda detenida por el usuario.'})}\n\n"
@@ -140,11 +154,28 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                     yield f"data: {json.dumps({'status': 'paused', 'message': 'Búsqueda pausada...'})}\n\n"
                     await asyncio.sleep(1) # Esperar 1 segundo y volver a comprobar
 
-                # Enviar progreso cada 100 iteraciones para una UI más fluida
-                if i > 0 and i % 100 == 0:
-                    progress_message = f"Progreso: {i}/{total_combinations} ({((i/total_combinations)*100):.1f}%)"
+                # Enviar progreso
+                if iteration_counter > 0 and iteration_counter % 20 == 0:
+                    progress_message = f"Progreso: {iteration_counter}"
+                    if not use_monte_carlo:
+                        progress_message += f"/{total_iterations} ({((iteration_counter/total_iterations)*100):.1f}%)"
                     yield f"data: {json.dumps({'status': 'progress', 'message': progress_message})}\n\n"
                     await asyncio.sleep(0.01)
+
+                # Generar una combinación
+                if use_monte_carlo:
+                    k = random.randint(min_combo_size, max_combo_size)
+                    if k > len(indices): continue
+                    combo = tuple(random.sample(indices, k))
+                else:
+                    # Para la búsqueda exhaustiva, necesitamos un generador
+                    if 'combinations_generator' not in locals():
+                        combinations_generator = get_combinations(indices, min_combo_size, max_combo_size)
+                    try:
+                        combo = next(combinations_generator)
+                    except StopIteration:
+                        # Búsqueda exhaustiva completada
+                        break # Salir del bucle while
 
                 is_valid = True
                 for i1_idx, i1 in enumerate(combo):

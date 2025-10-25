@@ -186,6 +186,11 @@
                 <label for="min-weight-filter" class="block text-sm font-semibold text-teal-400 mb-2">Min. Peso (%)</label>
                 <input type="number" id="min-weight-filter" value="10" step="1" min="0" max="100" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5">
            </div>
+            <!-- Monte Carlo Simulations -->
+            <div>
+                <label for="search-threshold" class="block text-sm font-semibold text-teal-400 mb-2">Umbral Exhaustiva/MC</label>
+                <input type="number" id="search-threshold" value="500000" step="10000" min="10000" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5" title="Si las combinaciones totales superan este número, se usará Monte Carlo.">
+            </div>
              <!-- Find Portfolios Button -->
              <button id="findDatabankPortfoliosBtn" class="w-full bg-teal-500 hover:bg-teal-600 disabled:bg-teal-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transform transition-transform duration-200 hover:scale-105">
                  <div id="findBestBtnText">
