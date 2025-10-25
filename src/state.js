@@ -1,7 +1,7 @@
 // Este archivo gestiona el estado global de la aplicación.
-// Usar 'let' permite que los módulos que lo importan puedan reasignar los valores.
+// Usar un único objeto 'state' exportado asegura que todos los módulos compartan y modifiquen la misma fuente de verdad.
 
-export let state = {
+export const state = {
     chartInstances: {},
     loadedStrategyFiles: [],
     rawBenchmarkData: null,

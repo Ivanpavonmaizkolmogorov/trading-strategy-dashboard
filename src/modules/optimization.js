@@ -1,6 +1,6 @@
 import { dom } from '../dom.js';
 import { state } from '../state.js';
-import { ALL_METRICS, tableViews, activeViews } from '../config.js';
+import { ALL_METRICS } from '../config.js';
 import { toggleLoading, formatMetricForDisplay } from '../utils.js';
 import { processStrategyData, reAnalyzeAllData } from '../analysis.js';
 

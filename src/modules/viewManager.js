@@ -1,7 +1,7 @@
 import { dom } from '../dom.js';
 import { state } from '../state.js';
 import { ALL_METRICS } from '../config.js';
-import { updateDatabankDisplay } from './databank.js';
+import { updateDatabankDisplay } from '../modules/databank.js';
 import { displaySavedPortfoliosList } from '../ui.js';
 
 let viewManagerElements;

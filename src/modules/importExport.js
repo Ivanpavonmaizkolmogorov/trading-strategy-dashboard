@@ -3,8 +3,8 @@ import { state } from '../state.js';
 import { displayError } from '../utils.js';
 import { reAnalyzeAllData } from '../analysis.js';
 import { updateTradesFilesList, resetUI } from '../ui.js';
-import { populateViewSelector } from './viewManager.js';
-import { updateDatabankDisplay } from './databank.js';
+import { populateViewSelector } from '../modules/viewManager.js';
+import { updateDatabankDisplay } from '../modules/databank.js';
 
 /**
  * Exporta el estado actual de la aplicación a un archivo JSON.
