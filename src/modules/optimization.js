@@ -20,6 +20,8 @@ function getOptimizationModalElements() {
             resultsContainer: document.getElementById('optimization-results-container'),
             simulationsCountInput: document.getElementById('simulations-count'),
             setupContainer: document.getElementById('optimization-setup-container'),
+            scaleRiskCheckbox: document.getElementById('optimization-scale-risk-checkbox'),
+            targetMaxDDInput: document.getElementById('optimization-target-max-dd'),
             title: document.getElementById('optimization-modal-title'),
         };
     }
@@ -70,15 +72,30 @@ export const openOptimizationModal = (portfolioIndex) => {
         currentAnalysis = trueOriginalAnalysis;
     }
 
-    displayOptimizationResults({
+    // --- MEJORA: Configurar controles de escalado de riesgo con el valor actual ---
+    const riskConfig = portfolio.riskConfig || {};
+    elements.scaleRiskCheckbox.checked = riskConfig.isScaled || false;
+    elements.targetMaxDDInput.value = riskConfig.targetMaxDD || (currentAnalysis ? currentAnalysis.metrics.maxDrawdownInDollars.toFixed(0) : 10000);
+    elements.targetMaxDDInput.parentElement.classList.toggle('hidden', !elements.scaleRiskCheckbox.checked);
+
+    const initialResults = {
         baseAnalysis: trueOriginalAnalysis,
         metricBestAnalysis: currentAnalysis,
         balancedBestAnalysis: currentAnalysis,
         portfolio: portfolio,
         metricBestWeights: currentWeights,
         balancedBestWeights: currentWeights,
-        optimizationMetricName: portfolio.riskConfig?.optimizationMetric || null
-    });
+    };
+
+    // Guardamos los resultados para poder recalcularlos dinámicamente
+    state.currentOptimizationData.lastResults = initialResults;
+
+    // Llamar a displayOptimizationResults para mostrar el estado actual
+    displayOptimizationResults(initialResults);
+
+    // Ocultar el contenedor de resultados y mostrar el de setup
+    elements.resultsContainer.classList.add('hidden');
+    elements.setupContainer.classList.remove('hidden');
 
     elements.modal.classList.remove('hidden');
     elements.modal.classList.add('flex');
@@ -179,7 +196,7 @@ export const startOptimizationSearch = async () => {
         }
 
         const metricName = elements.targetMetricSelect.options[elements.targetMetricSelect.selectedIndex].text;
-        displayOptimizationResults({
+        const finalResults = {
             baseAnalysis: trueOriginalAnalysis,
             metricBestAnalysis: bestResult.analysis,
             balancedBestAnalysis: balancedBestResult.analysis,
@@ -187,7 +204,9 @@ export const startOptimizationSearch = async () => {
             metricBestWeights: bestResult.weights,
             balancedBestWeights: balancedBestResult.weights,
             optimizationMetricName: metricName
-        });
+        };
+        state.currentOptimizationData.lastResults = finalResults; // Guardar para recálculo
+        displayOptimizationResults(finalResults);
 
     } catch (error) {
         console.error("Error during optimization:", error);
@@ -198,15 +217,40 @@ export const startOptimizationSearch = async () => {
 };
 
 const displayOptimizationResults = (results) => {
-    const { baseAnalysis, metricBestAnalysis, balancedBestAnalysis, portfolio, metricBestWeights, balancedBestWeights, optimizationMetricName } = results;
+    let { baseAnalysis, metricBestAnalysis, balancedBestAnalysis, portfolio, metricBestWeights, balancedBestWeights, optimizationMetricName } = results;
     const elements = getOptimizationModalElements();
+
+    // --- MEJORA: Escalar análisis si la opción está activa ---
+    if (elements.scaleRiskCheckbox.checked) {
+        const targetMaxDD = parseFloat(elements.targetMaxDDInput.value);
+
+        const scaleAnalysis = (analysis, weights) => {
+            if (!analysis || !weights || !targetMaxDD) return analysis;
+
+            const originalTrades = portfolio.indices.flatMap((strategyIndex, i) =>
+                state.rawStrategiesData[strategyIndex].map(trade => ({ ...trade, pnl: trade.pnl * weights[i] }))
+            );
+
+            const currentMaxDD = analysis.metrics.maxDrawdownInDollars;
+            if (currentMaxDD <= 0) return analysis;
+
+            const scaleFactor = targetMaxDD / currentMaxDD;
+            const scaledTrades = originalTrades.map(trade => ({ ...trade, pnl: trade.pnl * scaleFactor }));
+            return processStrategyData(scaledTrades, state.rawBenchmarkData);
+        };
+
+        metricBestAnalysis = scaleAnalysis(metricBestAnalysis, metricBestWeights);
+        balancedBestAnalysis = scaleAnalysis(balancedBestAnalysis, balancedBestWeights);
+        // El baseAnalysis (equal weight) no se escala para mantener la referencia original.
+    }
 
     let tableRows = '';
     const metricsToDisplay = (state.tableViews.databank[state.activeViews.databank] || state.tableViews.databank['default']).columns.filter(key => key !== 'name' && key !== 'metricValue');
     
     metricsToDisplay.forEach(metricKey => {
         const metricInfo = ALL_METRICS[metricKey];
-        if (!metricInfo || !baseAnalysis.metrics.hasOwnProperty(metricKey) || !metricBestAnalysis.metrics.hasOwnProperty(metricKey) || !balancedBestAnalysis.metrics.hasOwnProperty(metricKey)) return;
+        // Usamos optional chaining por si algún análisis falla
+        if (!metricInfo || !baseAnalysis?.metrics || !metricBestAnalysis?.metrics || !balancedBestAnalysis?.metrics) return;
 
         const originalValue = baseAnalysis.metrics[metricKey];
         const metricOptimizedValue = metricBestAnalysis.metrics[metricKey];
@@ -260,12 +304,19 @@ const displayOptimizationResults = (results) => {
         const baseName = portfolio.name.replace(/ \(Opt.*?\)/, '').replace(' (Original)', '');
         const newName = `${baseName} ${nameSuffix}`;
 
+        // --- NUEVO: Guardar la configuración de riesgo junto al portafolio ---
+        const riskConfig = {
+            isScaled: elements.scaleRiskCheckbox.checked,
+            targetMaxDD: parseFloat(elements.targetMaxDDInput.value)
+        };
+
         const newPortfolioData = {
             name: newName,
             indices: portfolio.indices,
             id: isNew ? state.nextPortfolioId++ : portfolio.id,
             weights: weightsToSave,
-            comments: isNew ? `Copia optimizada de '${portfolio.name}'.` : portfolio.comments || ''
+            comments: isNew ? `Copia optimizada de '${portfolio.name}'.` : portfolio.comments || '',
+            riskConfig: riskConfig // Guardamos la configuración
         };
 
         if (isNew) {
@@ -292,4 +343,15 @@ const displayOptimizationResults = (results) => {
     document.getElementById('apply-balanced-btn').addEventListener('click', () => savePortfolio(false, balancedBestWeights, balancedBestAnalysis, `(Opt. Balanceado)`));
     document.getElementById('save-new-metric-btn').addEventListener('click', () => savePortfolio(true, metricBestWeights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
     document.getElementById('save-new-balanced-btn').addEventListener('click', () => savePortfolio(true, balancedBestWeights, balancedBestAnalysis, `(Opt. Balanceado)`));
+};
+
+/**
+ * Recalcula los resultados en el modal cuando cambia el Target Max DD.
+ */
+export const reevaluateOptimizationResults = () => {
+    if (state.currentOptimizationData && state.currentOptimizationData.lastResults) {
+        // Vuelve a mostrar los resultados, la función se encargará de aplicar el escalado
+        // si el checkbox está activo.
+        displayOptimizationResults(state.currentOptimizationData.lastResults);
+    }
 };

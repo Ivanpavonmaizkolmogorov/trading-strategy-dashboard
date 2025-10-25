@@ -59,6 +59,9 @@ export const destroyAllCharts = () => {
 
 export const formatMetricForDisplay = (value, metricName) => {
     const isPercent = ['maxDrawdown', 'winningPercentage', 'upsideCapture', 'downsideCapture'].includes(metricName) || (metricName && metricName.toLowerCase().includes('%'));
+    // MEJORA: Comprobación más robusta para valores nulos, indefinidos o no finitos.
+    if (value === null || typeof value === 'undefined' || !isFinite(value)) return '∞';
+    
     if (!isFinite(value)) return '∞';
     if (isPercent) return `${value.toFixed(2)}%`;
     if (value > 1000) return value.toFixed(0);

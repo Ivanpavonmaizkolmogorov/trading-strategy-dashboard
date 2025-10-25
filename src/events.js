@@ -3,7 +3,7 @@ import { state } from './state.js';
 import { runAnalysis, reAnalyzeAllData } from './analysis.js';
 import { updateTradesFilesList, resetUI, renderAllCharts } from './ui.js';
 import { findDatabankPortfolios, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay } from './modules/databank.js';
-import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch } from './modules/optimization.js';
+import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
 import { openViewManager, closeViewManager, applyView, saveView, deleteView } from './modules/viewManager.js';
 import { exportAnalysis, importAnalysis } from './modules/importExport.js';
 
@@ -175,6 +175,17 @@ export function initializeEventListeners() {
     optModalElements.querySelector('#close-optimization-modal-btn').addEventListener('click', closeOptimizationModal);
     document.getElementById('optimization-modal-backdrop').addEventListener('click', closeOptimizationModal);
     optModalElements.querySelector('#start-single-optimization-btn').addEventListener('click', startOptimizationSearch);
+
+    // --- NUEVO: Eventos para el escalado de riesgo en el modal de optimización ---
+    const scaleRiskCheckbox = optModalElements.querySelector('#optimization-scale-risk-checkbox');
+    const targetMaxDDInput = optModalElements.querySelector('#optimization-target-max-dd');
+
+    scaleRiskCheckbox.addEventListener('change', (e) => {
+        targetMaxDDInput.parentElement.classList.toggle('hidden', !e.target.checked);
+        reevaluateOptimizationResults(); // Recalcular en tiempo real
+    });
+    
+    targetMaxDDInput.addEventListener('change', reevaluateOptimizationResults);
 
     // --- View Manager Modal ---
     dom.manageViewsBtn.addEventListener('click', () => openViewManager('databank'));

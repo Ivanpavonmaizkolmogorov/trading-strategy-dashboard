@@ -435,6 +435,18 @@
 
             <div id="optimization-results-container" class="hidden mb-6"></div>
 
+            <!-- NUEVO: Controles de Escalado de Riesgo -->
+            <div class="mb-6 p-4 bg-gray-900/50 rounded-lg border border-gray-600">
+                <label for="optimization-scale-risk-checkbox" class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" id="optimization-scale-risk-checkbox" class="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 rounded text-sky-500 focus:ring-sky-600">
+                    <span class="text-sm font-semibold text-sky-400">Escalar Riesgo a Max DD Objetivo</span>
+                </label>
+                <div class="hidden mt-3">
+                    <label for="optimization-target-max-dd" class="block text-xs font-semibold text-gray-300">MaxDD Obj. ($):</label>
+                    <input type="number" id="optimization-target-max-dd" value="10000" class="mt-1 bg-gray-700 border border-gray-600 text-white text-sm rounded-lg w-full p-2 text-center">
+                </div>
+            </div>
+
             <div id="optimization-setup-container" class="hidden pt-6 border-t border-gray-600">
                 <h3 class="text-xl font-bold text-white mb-4">Buscar Pesos Óptimos</h3>
                 <div class="space-y-4">
