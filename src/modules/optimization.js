@@ -22,6 +22,7 @@ function getOptimizationModalElements() {
             setupContainer: document.getElementById('optimization-setup-container'),
             scaleRiskCheckbox: document.getElementById('optimization-scale-risk-checkbox'),
             targetMaxDDInput: document.getElementById('optimization-target-max-dd'),
+            targetMaxDDSlider: document.getElementById('optimization-target-max-dd-slider'),
             title: document.getElementById('optimization-modal-title'),
         };
     }
@@ -76,6 +77,12 @@ export const openOptimizationModal = (portfolioIndex) => {
     const riskConfig = portfolio.riskConfig || {};
     elements.scaleRiskCheckbox.checked = riskConfig.isScaled || false;
     elements.targetMaxDDInput.value = riskConfig.targetMaxDD || (currentAnalysis ? currentAnalysis.metrics.maxDrawdownInDollars.toFixed(0) : 10000);
+    if (currentAnalysis) {
+        // Establecer el máximo del slider en 1.5x el DD actual, o el valor guardado si es mayor.
+        const sliderMax = Math.max(currentAnalysis.metrics.maxDrawdownInDollars * 1.5, parseFloat(elements.targetMaxDDInput.value));
+        elements.targetMaxDDSlider.max = sliderMax.toFixed(0);
+    }
+    elements.targetMaxDDSlider.value = elements.targetMaxDDInput.value;
     elements.targetMaxDDInput.parentElement.classList.toggle('hidden', !elements.scaleRiskCheckbox.checked);
 
     const initialResults = {

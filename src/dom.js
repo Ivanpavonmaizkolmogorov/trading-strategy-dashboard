@@ -19,6 +19,8 @@ export const dom = {
     analysisModeSelect: document.getElementById('analysis-mode-select'),
     normalizeRiskCheckbox: document.getElementById('normalize-risk-checkbox'),
     riskPerTradeInput: document.getElementById('risk-per-trade'), // <-- NUEVO
+    targetMaxDDSlider: document.getElementById('target-max-dd-slider'),
+    targetMaxDDInput: document.getElementById('target-max-dd'),
     riskNormalizationControls: document.getElementById('risk-normalization-controls'),
 
     // Secciones y mensajes

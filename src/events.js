@@ -48,7 +48,29 @@ export function initializeEventListeners() {
         }
     });
     
-    document.getElementById('target-max-dd').addEventListener('change', () => {
+    /**
+     * Sincroniza un input de tipo 'range' (slider) con un input de tipo 'number'.
+     * @param {HTMLInputElement} sliderEl - El elemento del slider.
+     * @param {HTMLInputElement} numberEl - El elemento del input numérico.
+     * @param {Function} onCommit - La función a llamar cuando el valor se confirma (evento 'change').
+     */
+    const setupSyncedSlider = (sliderEl, numberEl, onCommit) => {
+        const syncValues = (source) => {
+        const value = parseFloat(source.value);
+            if (source.type === 'number' && value > parseFloat(sliderEl.max)) {
+                sliderEl.max = value;
+            }
+            sliderEl.value = value;
+            numberEl.value = value;
+        }
+        sliderEl.addEventListener('input', () => syncValues(sliderEl));
+        numberEl.addEventListener('input', () => syncValues(numberEl));
+        sliderEl.addEventListener('change', onCommit);
+        numberEl.addEventListener('change', onCommit);
+    };
+
+    // Sincronizar controles de Normalización de Riesgo Global
+    setupSyncedSlider(dom.targetMaxDDSlider, dom.targetMaxDDInput, () => {
         if (!dom.resultsDiv.classList.contains('hidden') && dom.normalizeRiskCheckbox.checked) {
             reAnalyzeAllData();
         }
@@ -179,13 +201,11 @@ export function initializeEventListeners() {
     // --- NUEVO: Eventos para el escalado de riesgo en el modal de optimización ---
     const scaleRiskCheckbox = optModalElements.querySelector('#optimization-scale-risk-checkbox');
     const targetMaxDDInput = optModalElements.querySelector('#optimization-target-max-dd');
+    const targetMaxDDSlider = optModalElements.querySelector('#optimization-target-max-dd-slider');
 
-    scaleRiskCheckbox.addEventListener('change', (e) => {
-        targetMaxDDInput.parentElement.classList.toggle('hidden', !e.target.checked);
-        reevaluateOptimizationResults(); // Recalcular en tiempo real
-    });
-    
-    targetMaxDDInput.addEventListener('change', reevaluateOptimizationResults);
+    scaleRiskCheckbox.addEventListener('change', (e) => { targetMaxDDInput.parentElement.classList.toggle('hidden', !e.target.checked); reevaluateOptimizationResults(); });
+    setupSyncedSlider(targetMaxDDSlider, targetMaxDDInput, reevaluateOptimizationResults);
+
 
     // --- View Manager Modal ---
     dom.manageViewsBtn.addEventListener('click', () => openViewManager('databank'));
