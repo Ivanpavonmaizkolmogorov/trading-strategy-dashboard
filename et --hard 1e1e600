@@ -1,0 +1,10 @@
+* [33m3bf9891[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;32mrespaldo-antes-de-revertir[m[33m)[m Fix: Prevent rendering loop in saved portfolios table
+* [33m1e1e600[m Refactor: Centralize all analysis logic in Python backend
+* [33m9673e86[m feat(backend): Implement hybrid Exhaustive/Monte Carlo search
+* [33mb05f583[m feat(backend): Implement real-time DataBank search with user controls
+* [33m5a092eb[m feat(ux): Enhance DataBank search with real-time progress
+* [33md0c3610[m feat(backend): Implement Python backend for real-time DataBank search
+* [33m3a218f2[m fix(app): Resolve runtime errors and encoding issues
+* [33m6c4c5aa[m refactor(app): Modularización completa de la aplicación frontend
+* [33me789e6d[m refactor(app): Modularización completa del código frontend
+* [33m77376a1[m feat: Reset repository with clean project structure

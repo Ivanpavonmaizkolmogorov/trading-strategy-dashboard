@@ -36,6 +36,15 @@ export const runAnalysis = async () => {
 };
 
 /**
+ * Calcula el factor de escala de riesgo basado en el input del usuario.
+ * @returns {number} El factor de escala (ej: 1.5 para 150$).
+ */
+const getRiskScaleFactor = () => {
+    if (!dom.riskPerTradeInput) return 1.0;
+    const riskPerTrade = parseFloat(dom.riskPerTradeInput.value);
+    return (riskPerTrade > 0) ? riskPerTrade / 100.0 : 1.0;
+};
+/**
  * Vuelve a calcular y mostrar todos los resultados basándose en el estado actual (filtros, selecciones, etc.).
  */
 export const reAnalyzeAllData = () => {
@@ -63,15 +72,19 @@ export const reAnalyzeAllData = () => {
     const isRiskNormalized = dom.normalizeRiskCheckbox.checked;
     const targetMaxDD = isRiskNormalized ? parseFloat(document.getElementById('target-max-dd').value) : 0;
 
+    const riskScaleFactor = getRiskScaleFactor();
+
     let allAnalysisResults = state.rawStrategiesData.map((strategyData, i) => ({
         name: state.loadedStrategyFiles[i].name.replace('.csv', ''),
         analysis: (() => {
             let tradesForAnalysis = strategyData;
+            tradesForAnalysis = strategyData.map(trade => ({ ...trade, pnl: trade.pnl * riskScaleFactor }));
+
             if (isRiskNormalized && targetMaxDD > 0) {
-                const preAnalysis = processStrategyData(strategyData, state.rawBenchmarkData, filterSourceTrades);
+                const preAnalysis = processStrategyData(tradesForAnalysis, state.rawBenchmarkData, filterSourceTrades);
                 if (preAnalysis && preAnalysis.metrics.maxDrawdownInDollars > 0) {
                     const scaleFactor = targetMaxDD / preAnalysis.metrics.maxDrawdownInDollars;
-                    tradesForAnalysis = strategyData.map(trade => ({ ...trade, pnl: trade.pnl * scaleFactor }));
+                    tradesForAnalysis = tradesForAnalysis.map(trade => ({ ...trade, pnl: trade.pnl * scaleFactor }));
                 }
             }
             return processStrategyData(tradesForAnalysis, state.rawBenchmarkData, filterSourceTrades);
@@ -88,12 +101,9 @@ export const reAnalyzeAllData = () => {
         if (weights) {
             const strategyTradeData = p.indices.map(index => state.rawStrategiesData[index]);
             const scaleFactor = p.riskConfig ? p.riskConfig.scaleFactor : 1;
-
             strategyTradeData.forEach((trades, strategyIndex) => {
                 const weight = weights[strategyIndex];
-                trades.forEach(trade => {
-                    tradesForAnalysis.push({ ...trade, pnl: (trade.pnl * weight) * scaleFactor });
-                });
+                trades.forEach(trade => tradesForAnalysis.push({ ...trade, pnl: (trade.pnl * riskScaleFactor * weight) * scaleFactor }));
             });
         }
 
@@ -127,7 +137,7 @@ export const reAnalyzeAllData = () => {
         const equalWeight = 1 / state.selectedPortfolioIndices.size;
         state.selectedPortfolioIndices.forEach(index => {
             state.rawStrategiesData[index].forEach(trade => {
-                portfolioTrades.push({ ...trade, pnl: trade.pnl * equalWeight });
+                portfolioTrades.push({ ...trade, pnl: (trade.pnl * riskScaleFactor) * equalWeight });
             });
         });
 
@@ -147,7 +157,10 @@ export const reAnalyzeAllData = () => {
 
     if (state.comparisonPortfolioIndex !== null && state.savedPortfolios[state.comparisonPortfolioIndex]) {
         const portfolioToCompare = state.savedPortfolios[state.comparisonPortfolioIndex];
-        const originalTrades = portfolioToCompare.indices.flatMap(index => state.rawStrategiesData[index]);
+        // Para la comparación "Original", aplicamos el factor de riesgo pero no los pesos de optimización.
+        let originalTrades = portfolioToCompare.indices.flatMap(index => 
+            state.rawStrategiesData[index].map(trade => ({ ...trade, pnl: trade.pnl * riskScaleFactor }))
+        );
 
         let finalTradesForAnalysis = originalTrades;
         if (isRiskNormalized && targetMaxDD > 0) {
@@ -180,11 +193,12 @@ export const reAnalyzeAllData = () => {
  * @param {Array} benchmark - Array de datos del benchmark.
  * @param {Array|null} filterSourceTrades - Trades para filtrar el tiempo de análisis.
  * @returns {Object|null} Objeto con los resultados del análisis o null si no es posible.
+ * @note Esta función ya no se preocupa por el `size`. Recibe los trades con el PnL ya ajustado.
  */
 export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrades = null) => {
     if (!tradesToAnalyze || tradesToAnalyze.length === 0) return null;
 
-    const monthlyPerformance = {};
+    
 
     let benchmarkToUse = benchmark;
     if (filterSourceTrades) {
@@ -215,6 +229,7 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
     tradesToAnalyze.forEach(trade => {
         const pnl = parseFloat(trade.pnl);
         const exitDate = new Date(trade.exit_date);
+
         if (!isNaN(pnl) && !isNaN(exitDate.getTime())) {
             const dateStr = exitDate.toISOString().split('T')[0];
             dailyPnl.set(dateStr, (dailyPnl.get(dateStr) || 0) + pnl);
@@ -222,14 +237,14 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
     });
 
     let currentEquity = 10000;
-    const equityCurve = [];
+    const equityCurveData = [];
     sortedDates.forEach(date => {
         if (dailyPnl.has(date)) currentEquity += dailyPnl.get(date);
-        equityCurve.push({ x: date, y: currentEquity });
+        equityCurveData.push({ x: date, y: currentEquity });
     });
 
-    const labels = equityCurve.map(p => p.x);
-    const portfolioValues = equityCurve.map(p => p.y);
+    const labels = equityCurveData.map(p => p.x);
+    const portfolioValues = equityCurveData.map(p => p.y);
     const benchmarkData = labels.map(date => ({ x: date, y: benchmarkPrices.get(date) }));
 
     let upi = 0, maxDrawdown = 0, monthlyAvgProfit = 0, profitMaxDD_Ratio = 0, maxDrawdownInDollars = 0, monthlyProfitToDollarDD = 0;
@@ -242,8 +257,8 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
         const durationInYears = durationInDays / 365.25;
         const durationInMonths = diffInMillis > 0 ? diffInMillis / (1000 * 60 * 60 * 24 * 30.44) : 0;
 
-        const initialEquity = portfolioValues[0];
-        const finalEquity = portfolioValues[portfolioValues.length - 1];
+        const initialEquity = portfolioValues[0] || 1;
+        const finalEquity = portfolioValues[portfolioValues.length - 1] || 1;
         const totalProfit = finalEquity - initialEquity;
         monthlyAvgProfit = durationInMonths > 0 ? totalProfit / durationInMonths : 0;
 
@@ -265,6 +280,7 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
 
         const ulcerIndex = portfolioValues.length > 0 ? Math.sqrt(squaredDrawdownSum / portfolioValues.length) : 0;
         upi = ulcerIndex > 0 ? cagrPct / ulcerIndex : (cagrPct > 0 ? Infinity : 0);
+        const realTotalProfit = Array.from(dailyPnl.values()).reduce((sum, pnl) => sum + pnl, 0);
 
         if (maxDrawdownInDollars > 0) {
             monthlyProfitToDollarDD = (monthlyAvgProfit / maxDrawdownInDollars) * 100;
@@ -275,7 +291,7 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
         }
     }
 
-    const portfolioReturns = [], benchmarkReturns = [], dailyReturnsMap = new Map();
+    const portfolioReturns = [], benchmarkReturns = [];
     let lastPortfolioValue = portfolioValues.length > 0 ? portfolioValues[0] : 0;
     let lastBenchmarkValue = benchmarkData.length > 0 ? benchmarkData[0].y : 0;
     for (let i = 1; i < labels.length; i++) {
@@ -283,7 +299,6 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
         const bReturn = (lastBenchmarkValue > 0 && benchmarkData[i]?.y != null) ? (benchmarkData[i].y / lastBenchmarkValue) - 1 : 0;
         portfolioReturns.push(pReturn);
         benchmarkReturns.push(bReturn);
-        dailyReturnsMap.set(labels[i], pReturn);
         lastPortfolioValue = portfolioValues[i];
         if (benchmarkData[i]?.y != null) lastBenchmarkValue = benchmarkData[i].y;
     }
@@ -307,10 +322,9 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
 
     const arithmeticMean = arr => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
     const geoMean = arr => arr.length === 0 ? 0 : Math.pow(arr.reduce((acc, val) => acc * (1 + val), 1), 1 / arr.length) - 1;
-
+    const sortinoRatio = calculateSortino(portfolioReturns);
     const upsideCapture = (geoMean(positiveBenchDays.benchmark) !== 0) ? (geoMean(positiveBenchDays.portfolio) / geoMean(positiveBenchDays.benchmark)) * 100 : 0;
     const downsideCapture = (geoMean(negativeBenchDays.benchmark) !== 0) ? (geoMean(negativeBenchDays.portfolio) / geoMean(negativeBenchDays.benchmark)) * 100 : 0;
-    const sortinoRatio = calculateSortino(portfolioReturns);
     const avgPortfolioReturnOnDownDays = arithmeticMean(negativeBenchDays.portfolio);
     const avgPortfolioReturnOnUpDays = arithmeticMean(positiveBenchDays.portfolio);
     const captureRatio = downsideCapture > 0 ? upsideCapture / downsideCapture : Infinity;
@@ -351,6 +365,7 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
     const avgWin = winningTrades.length > 0 ? grossProfit / winningTrades.length : 0;
     const avgLoss = losingTrades.length > 0 ? Math.abs(grossLoss / losingTrades.length) : 0;
 
+    const monthlyPerformance = {};
     tradesToAnalyze.forEach(trade => {
         const pnl = parseFloat(trade.pnl);
         const exitDate = new Date(trade.exit_date);
@@ -411,7 +426,7 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
         labels, portfolioValues, benchmarkData,
         returnsData: portfolioReturns.map((p, i) => ({ x: benchmarkReturns[i] * 100, y: p * 100 })),
         metrics: { upsideCapture, downsideCapture, sortinoRatio, avgPortfolioReturnOnDownDays, avgPortfolioReturnOnUpDays, upi, captureRatio, maxStagnationTrades, maxConsecutiveLosses, maxConsecutiveWins, maxDrawdown, maxDrawdownInDollars, monthlyAvgProfit, profitMaxDD_Ratio, sharpeRatio, profitFactor, winningPercentage, avgWin, avgLoss, monthlyProfitToDollarDD, maxConsecutiveLosingMonths, totalTrades: tradesToAnalyze.length, maxStagnationDays, sqn },
-        lorenzData, dailyReturnsMap, rollingSortinoData, monthlyPerformance
+        lorenzData, dailyReturnsMap: new Map(Array.from(dailyPnl.entries()).map(([date, pnl]) => [date, pnl])), rollingSortinoData, monthlyPerformance
     };
 };
 

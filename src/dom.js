@@ -18,6 +18,7 @@ export const dom = {
     searchThresholdInput: document.getElementById('search-threshold'),
     analysisModeSelect: document.getElementById('analysis-mode-select'),
     normalizeRiskCheckbox: document.getElementById('normalize-risk-checkbox'),
+    riskPerTradeInput: document.getElementById('risk-per-trade'), // <-- NUEVO
     riskNormalizationControls: document.getElementById('risk-normalization-controls'),
 
     // Secciones y mensajes
