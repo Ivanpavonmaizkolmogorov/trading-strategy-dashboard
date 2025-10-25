@@ -9,206 +9,96 @@ import { reAnalyzeAllData } from '../analysis.js';
  * Inicia la búsqueda de portafolios en el DataBank.
  */
 export const findDatabankPortfolios = async () => {
-    hideError();
     if (state.rawStrategiesData.length < 2) {
         displayError("Necesitas al menos 2 estrategias cargadas para buscar portafolios.");
         return;
     }
 
-    const findModeIndicator = document.getElementById('find-mode-indicator');
-    findModeIndicator.textContent = state.selectedPortfolioIndices.size > 0 ? '(Búsqueda de Complementos)' : '(Búsqueda Global)';
+    hideError();
+    toggleLoading(true, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
+    dom.databankSection.classList.remove('hidden');
+    dom.databankStatus.innerHTML = `📡 Conectando con el backend de Python...`;
 
     state.databankPortfolios = [];
-    state.isSearchPaused = false;
-    state.isSearchStopped = false;
+    updateDatabankDisplay(); // Limpia la tabla
 
-    dom.databankSection.classList.remove('hidden');
-    dom.databankStatus.innerHTML = `🏁 Preparando búsqueda...`;
-    dom.pauseSearchBtn.disabled = false;
-    dom.stopSearchBtn.disabled = false;
-    dom.pauseSearchBtn.textContent = 'Pausar';
-    toggleLoading(true, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-    dom.clearDatabankBtn.disabled = true;
-    if (dom.databankSizeInput) dom.databankSizeInput.disabled = true;
-
-    try {
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        const metricToOptimizeKey = dom.optimizationMetricSelect.value;
-        const optimizationGoal = dom.optimizationGoalSelect.value;
-
-        state.databankSortConfig.key = 'metricValue';
-        state.databankSortConfig.order = (optimizationGoal === 'maximize') ? 'desc' : 'asc';
-
-        document.querySelectorAll('#databank-table-header th.sortable').forEach(th => th.removeAttribute('data-order'));
-        const primaryMetricHeader = document.getElementById('databank-metric-header');
-        if(primaryMetricHeader) primaryMetricHeader.dataset.order = state.databankSortConfig.order;
-
-        updateDatabankDisplay();
-        const correlationThreshold = parseFloat(dom.correlationFilterInput.value);
-        const maxSize = parseInt(dom.databankSizeInput.value, 10);
-        const metricName = dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text;
-
-        const databankMetricHeader = document.getElementById('databank-metric-header');
-        if (databankMetricHeader) databankMetricHeader.textContent = metricName;
-
-        dom.databankStatus.innerHTML = `🔍 Calculando correlaciones...`;
-        await new Promise(resolve => setTimeout(resolve, 10));
-
-        const individualAnalyses = state.rawStrategiesData.map(data => processStrategyData(data, state.rawBenchmarkData)).filter(Boolean);
-        if(individualAnalyses.length !== state.rawStrategiesData.length){
-            displayError("Algunas estrategias no pudieron ser analizadas individualmente. Verifica los datos.");
+    // 1. Empaquetar los datos para la petición inicial
+    const requestBody = {
+        strategy_names: state.loadedStrategyFiles.map(f => f.name), // <-- Añadimos los nombres
+        strategies_data: state.rawStrategiesData,
+        benchmark_data: state.rawBenchmarkData,
+        params: {
+            metric_to_optimize_key: dom.optimizationMetricSelect.value,
+            optimization_goal: dom.optimizationGoalSelect.value,
+            correlation_threshold: parseFloat(dom.correlationFilterInput.value),
+            max_size: parseInt(dom.databankSizeInput.value, 10),
+            base_indices: Array.from(state.selectedPortfolioIndices),
         }
-        const fullCorrelationMatrix = calculateCorrelationMatrix(individualAnalyses.map((analysis, i) => ({ analysis, originalIndex: i })));
+    };
 
-        dom.databankStatus.innerHTML = `🔍 Generando combinaciones...`;
-        await new Promise(resolve => setTimeout(resolve, 10));
-
-        let allCombinations, totalCombinations;
-        const baseIndices = Array.from(state.selectedPortfolioIndices);
-
-        if (baseIndices.length > 0) {
-            findModeIndicator.textContent = '(Búsqueda de Complementos)';
-            if (baseIndices.length > 1) {
-                for (let i = 0; i < baseIndices.length; i++) {
-                    for (let j = i + 1; j < baseIndices.length; j++) {
-                        if (fullCorrelationMatrix[baseIndices[i]][baseIndices[j]] > correlationThreshold) {
-                            const name1 = state.loadedStrategyFiles[baseIndices[i]].name.replace('.csv', '');
-                            const name2 = state.loadedStrategyFiles[baseIndices[j]].name.replace('.csv', '');
-                            const corrValue = fullCorrelationMatrix[baseIndices[i]][baseIndices[j]].toFixed(3);
-                            const errorMsg = `Búsqueda detenida. Las estrategias base seleccionadas '${name1}' y '${name2}' tienen una correlación de ${corrValue}, que supera el máximo permitido de ${correlationThreshold}.`;
-                            displayError(errorMsg);
-                            dom.databankStatus.innerHTML = `❌ Error de correlación base.`;
-                            toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-                            dom.clearDatabankBtn.disabled = false;
-                            if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-                            return;
-                        }
-                    }
-                }
-            }
-            const candidateIndices = state.rawStrategiesData.map((_, i) => i).filter(i => !baseIndices.includes(i));
-            const maxComplementSize = Math.min(candidateIndices.length, 12 - baseIndices.length);
-            const complementCombinations = getCombinations(candidateIndices, 1, maxComplementSize);
-            allCombinations = mapGenerator(complementCombinations, complement => [...baseIndices, ...complement].sort((a, b) => a - b));
-            totalCombinations = countCombinations(candidateIndices.length, 1, maxComplementSize);
-        } else {
-            findModeIndicator.textContent = '(Búsqueda Global)';
-            const indices = state.rawStrategiesData.map((_, i) => i);
-            const maxComboSize = Math.min(indices.length, 12);
-            allCombinations = getCombinations(indices, 2, maxComboSize);
-            totalCombinations = countCombinations(indices.length, 2, maxComboSize);
+    // 2. Realizar la petición POST para iniciar el stream en el backend
+    // Usamos fetch solo para enviar los datos y disparar el proceso
+    fetch('http://localhost:8001/databank/find-portfolios-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+    }).then(response => {
+        if (!response.ok) {
+            throw new Error("El backend no pudo iniciar el proceso de streaming.");
         }
+        // El cuerpo de esta respuesta es el stream, que manejaremos con EventSource.
+        // Por ahora, simplemente iniciamos el listener.
+        console.log("Conexión de streaming establecida. Escuchando resultados...");
+        dom.databankStatus.innerHTML = `⏳ Escuchando resultados del backend...`;
         
-        if (totalCombinations === 0) {
-             dom.databankStatus.innerHTML = `ℹ️ No hay combinaciones posibles para analizar.`;
-             toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-             dom.clearDatabankBtn.disabled = false;
-             if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-             return;
-        }
-
-        dom.databankStatus.innerHTML = `🔍 Iniciando análisis de ${totalCombinations} combinaciones...`;
-
-        let idx = 0;
-        for (const combo of allCombinations) {
-            while (state.isSearchPaused && !state.isSearchStopped) {
-                dom.databankStatus.innerHTML = `⏸️ PAUSADO (${((idx / totalCombinations) * 100).toFixed(1)}%) - ${state.databankPortfolios.length} en DataBank`;
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-
-            if (state.isSearchStopped) {
-                dom.databankStatus.innerHTML = `⏹️ Detenido en ${idx}/${totalCombinations} (${((idx / totalCombinations) * 100).toFixed(1)}%) - ${state.databankPortfolios.length} en DataBank`;
-                break;
-            }
-
-            let isCombinationValid = true;
-            for (let i = 0; i < combo.length; i++) {
-                for (let j = i + 1; j < combo.length; j++) {
-                    if (combo[i] >= fullCorrelationMatrix.length || combo[j] >= fullCorrelationMatrix.length || !fullCorrelationMatrix[combo[i]] || combo[j] >= fullCorrelationMatrix[combo[i]].length) {
-                         console.warn(`Índice fuera de rango en matriz de correlación: ${combo[i]}, ${combo[j]} para combo ${combo}. Saltando combo.`);
-                         isCombinationValid = false;
-                         break;
-                     }
-                    if (fullCorrelationMatrix[combo[i]][combo[j]] > correlationThreshold) {
-                        isCombinationValid = false;
-                        break;
+        // 3. Crear una instancia de EventSource para recibir los datos
+        // NOTA: EventSource tradicionalmente usa GET. Como necesitamos enviar un cuerpo grande,
+        // usamos fetch para iniciar y luego procesamos el stream.
+        // Para una implementación más robusta, se usarían librerías que soportan POST con EventSource
+        // o se pasaría a WebSockets. Por ahora, vamos a simular la recepción.
+        // Esta es una simplificación para demostrar el concepto.
+        
+        // SIMULACIÓN DE RECEPCIÓN DE STREAM
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        // Usamos un bucle 'while' en lugar de recursión para evitar el desbordamiento de la pila (stack overflow)
+        async function processStream() {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    dom.databankStatus.innerHTML = `✅ Búsqueda completada por el backend.`;
+                    toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
+                    break; // Salir del bucle
+                }
+                
+                const chunk = decoder.decode(value);
+                // Un stream puede contener varios eventos "data:"
+                const events = chunk.split('\n\n').filter(e => e.startsWith('data:'));
+                
+                events.forEach(eventString => {
+                    const jsonData = eventString.replace('data: ', '');
+                    if (jsonData) {
+                        const newPortfolio = JSON.parse(jsonData);
+                        // Si el backend ya no envía el nombre, lo construimos aquí
+                        if (!newPortfolio.name && newPortfolio.indices) {
+                            newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat. ${i+1}`).join(', ');
+                        }
+                        console.log("Recibido:", newPortfolio);
+                        addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput.value, 10));
+                        updateDatabankDisplay();
+                        dom.databankStatus.innerHTML = `🔍 Recibidos ${state.databankPortfolios.length} portafolios...`;
                     }
-                }
-                if (!isCombinationValid) break;
-            }
-
-            if (!isCombinationValid) {
-                 if (idx % 100 === 0 || idx === totalCombinations - 1) {
-                     const progress = (((idx + 1) / totalCombinations) * 100).toFixed(1);
-                     dom.databankStatus.innerHTML = `🔍 Progreso: ${progress}% (${idx + 1}/${totalCombinations}) - ${state.databankPortfolios.length} en DataBank`;
-                     await new Promise(resolve => setTimeout(resolve, 1));
-                 }
-                continue;
-            }
-
-            const equalWeight = 1 / combo.length;
-            const portfolioTrades = combo.flatMap(index =>
-                state.rawStrategiesData[index] ? state.rawStrategiesData[index].map(trade => ({ ...trade, pnl: trade.pnl * equalWeight })) : []
-            );
-
-            if (portfolioTrades.length === 0) {
-                 console.warn(`No trades found for combo ${combo}, possibly missing raw data. Skipping.`);
-                 if (idx % 100 === 0 || idx === totalCombinations - 1) {
-                     const progress = (((idx + 1) / totalCombinations) * 100).toFixed(1);
-                     dom.databankStatus.innerHTML = `🔍 Progreso: ${progress}% (${idx + 1}/${totalCombinations}) - ${state.databankPortfolios.length} en DataBank`;
-                     await new Promise(resolve => setTimeout(resolve, 1));
-                 }
-                 continue;
-             }
-
-            const analysisResult = processStrategyData(portfolioTrades, state.rawBenchmarkData);
-
-            if (analysisResult && analysisResult.metrics.hasOwnProperty(metricToOptimizeKey)) {
-                const metricValue = analysisResult.metrics[metricToOptimizeKey];
-                if (metricValue !== undefined && metricValue !== null && !isNaN(metricValue)) {
-                    const portfolioName = combo.map(i => (state.loadedStrategyFiles[i] ? state.loadedStrategyFiles[i].name : `Estrat ${i+1}`)).map(name => name.replace('.csv', '')).join(', ');
-                    const portfolioData = {
-                        indices: combo,
-                        name: portfolioName,
-                        metricValue: metricValue,
-                        metrics: analysisResult.metrics,
-                        metricName: metricName,
-                        metricNameKey: metricToOptimizeKey,
-                        optimizationGoal: optimizationGoal
-                    };
-                    addToDatabankIfBetter(portfolioData, maxSize);
-                }
-            }
-
-            idx++;
-
-            if (idx % 20 === 0 || idx === totalCombinations - 1) {
-                const progress = (((idx + 1) / totalCombinations) * 100).toFixed(1);
-                dom.databankStatus.innerHTML = `🔍 Progreso: ${progress}% (${idx + 1}/${totalCombinations}) - ${state.databankPortfolios.length} en DataBank`;
-                updateDatabankDisplay();
-                await new Promise(resolve => setTimeout(resolve, 10));
+                });
             }
         }
-
-        updateDatabankDisplay();
-        if (!state.isSearchStopped) {
-             dom.databankStatus.innerHTML = `✅ Búsqueda completada (${totalCombinations}/${totalCombinations}) - ${state.databankPortfolios.length} en DataBank`;
-        }
-
-    } catch (error) {
-        console.error("Error buscando portafolios en DataBank:", error);
-        displayError("Ocurrió un error durante la búsqueda en DataBank.");
-        dom.databankStatus.innerHTML = `❌ Error en la búsqueda.`;
-    } finally {
+        processStream(); // Inicia la lectura del stream
+    }).catch(error => {
+        console.error("Error iniciando la búsqueda en DataBank:", error);
+        displayError(error.message || "Ocurrió un error al conectar con el backend.");
+        dom.databankStatus.innerHTML = `❌ Error de conexión.`;
         toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-        dom.pauseSearchBtn.disabled = true;
-        dom.stopSearchBtn.disabled = true;
-        dom.clearDatabankBtn.disabled = false;
-        if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-        state.isSearchPaused = false;
-        state.isSearchStopped = false;
-    }
+    });
 };
 
 /**
