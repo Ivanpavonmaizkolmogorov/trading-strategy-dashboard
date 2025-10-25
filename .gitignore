@@ -1,0 +1,6 @@
+# Archivos de sistema operativo
+.DS_Store
+
+# Archivos de configuración de editores
+.vscode/
+*.sublime-workspace
