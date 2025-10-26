@@ -51,14 +51,15 @@ const getRiskScaleFactor = () => {
  * @param {Array} benchmark - Datos del benchmark.
  * @returns {Promise<Array>} - Promesa que resuelve a un array de resultados de análisis del backend.
  */
-const getFullAnalysisFromBackend = async (strategies, benchmark) => {
+const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios) => {
     try {
         const response = await fetch('http://localhost:8001/analysis/full', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 strategies_data: strategies,
-                benchmark_data: benchmark
+                benchmark_data: benchmark,
+                portfolios_to_analyze: portfolios // <-- NUEVO: Enviamos los portafolios a analizar
             })
         });
         if (!response.ok) {
@@ -83,23 +84,46 @@ export const reAnalyzeAllData = async () => {
 
     updateAnalysisModeSelector();
 
+    // --- NUEVO: Construir la lista de portafolios a analizar ---
+    const portfoliosToAnalyze = [];
+    state.savedPortfolios.forEach((p, i) => {
+        portfoliosToAnalyze.push({
+            indices: p.indices,
+            weights: p.weights,
+            is_saved_portfolio: true,
+            saved_index: i,
+            name: p.name // El nombre se usará en el frontend
+        });
+    });
+
+    if (state.selectedPortfolioIndices.size > 0) {
+        portfoliosToAnalyze.push({
+            indices: Array.from(state.selectedPortfolioIndices),
+            weights: null, // El backend calculará equal weight
+            is_current_portfolio: true,
+            name: 'Portafolio Actual'
+        });
+    }
+
     // 1. Obtener todos los análisis base desde el backend.
-    const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData);
+    const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze);
     if (!backendAnalyses || backendAnalyses.length === 0) return;
 
     // 2. Mapear los resultados del backend al formato que espera el frontend.
-    let allAnalysisResults = backendAnalyses.map((metrics, i) => ({
-        name: state.loadedStrategyFiles[i].name.replace('.csv', ''),
-        analysis: processStrategyData(state.rawStrategiesData[i], state.rawBenchmarkData, null, metrics),
-        originalIndex: i,
-        isSavedPortfolio: false,
-        isCurrentPortfolio: false,
-    }));
-
-    state.savedPortfolios.forEach((p, i) => {
-        const weights = p.weights || Array(p.indices.length).fill(1 / p.indices.length);
-        // NOTA: La lógica de portafolios guardados y actual se simplificará en un paso posterior.
-        // Por ahora, nos centramos en que el análisis individual sea correcto.
+    let allAnalysisResults = [];
+    backendAnalyses.forEach((result, i) => {
+        if (result && result.is_saved_portfolio) {
+            // Es un portafolio guardado
+            const trades = result.indices.flatMap(idx => state.rawStrategiesData[idx]);
+            allAnalysisResults.push({ name: result.name, analysis: processStrategyData(trades, state.rawBenchmarkData, null, result.metrics), isSavedPortfolio: true, savedIndex: result.saved_index, indices: result.indices, weights: result.weights });
+        } else if (result && result.is_current_portfolio) {
+            // Es el portafolio actual
+            const trades = result.indices.flatMap(idx => state.rawStrategiesData[idx]);
+            allAnalysisResults.push({ name: result.name, analysis: processStrategyData(trades, state.rawBenchmarkData, null, result.metrics), isPortfolio: true, isCurrentPortfolio: true });
+        } else if (result) {
+            // Es una estrategia individual
+            allAnalysisResults.push({ name: state.loadedStrategyFiles[i].name.replace('.csv', ''), analysis: processStrategyData(state.rawStrategiesData[i], state.rawBenchmarkData, null, result), originalIndex: i });
+        }
     });
 
     displayResults(allAnalysisResults);

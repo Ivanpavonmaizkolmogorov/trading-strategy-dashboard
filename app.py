@@ -35,9 +35,18 @@ class DatabankRequest(BaseModel):
     benchmark_data: List[Dict[str, Any]]
     params: DatabankParams
 
+class PortfolioDefinition(BaseModel):
+    indices: List[int]
+    weights: Optional[List[float]] = None
+    # Añadimos campos para identificar el portafolio en el frontend
+    is_saved_portfolio: bool = False
+    saved_index: Optional[int] = None
+    is_current_portfolio: bool = False
+
 class FullAnalysisRequest(BaseModel):
     strategies_data: List[List[Trade]]
     benchmark_data: List[Dict[str, Any]]
+    portfolios_to_analyze: Optional[List[PortfolioDefinition]] = None
 
 
 # --- Codificador JSON Personalizado y Robusto ---
@@ -98,7 +107,34 @@ async def get_full_analysis(request: FullAnalysisRequest):
             trades_df = pd.DataFrame(strat_trades)
             analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy())
             all_metrics.append(analysis_result[0] if analysis_result else None)
-            print(f"  -> Strategy {i+1} processed.")
+            print(f"  -> Strategy {i+1} analysis complete.")
+        
+        # --- NUEVO: Analizar los portafolios solicitados ---
+        if request.portfolios_to_analyze:
+            print(f"--- Analyzing {len(request.portfolios_to_analyze)} requested portfolios ---")
+            for p_def in request.portfolios_to_analyze:
+                portfolio_trades = []
+                weights = p_def.weights if p_def.weights else [1/len(p_def.indices)] * len(p_def.indices)
+                
+                for i, strat_idx in enumerate(p_def.indices):
+                    if strat_idx < len(strategies_data):
+                        weight = weights[i]
+                        for trade in strategies_data[strat_idx]:
+                            new_trade = trade.copy()
+                            new_trade['pnl'] *= weight
+                            portfolio_trades.append(new_trade)
+                
+                if not portfolio_trades:
+                    all_metrics.append(None)
+                    continue
+
+                portfolio_df = pd.DataFrame(portfolio_trades)
+                analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy())
+                
+                # Añadimos el resultado junto con sus identificadores
+                result_obj = {"metrics": analysis_result[0] if analysis_result else None, **p_def.model_dump()}
+                all_metrics.append(result_obj)
+                print(f"  -> Portfolio analysis complete.")
         
         print("--- Analysis complete. Sending response. ---")
         return json.loads(json.dumps(all_metrics, cls=CustomJSONEncoder))
