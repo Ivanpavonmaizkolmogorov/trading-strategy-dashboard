@@ -17,14 +17,17 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     benchmark_df['date'] = pd.to_datetime(benchmark_df['date'], errors='coerce')
     benchmark_df = benchmark_df.dropna(subset=['date', 'price']).set_index('date')
 
-    # Calcular PnL diario
+    # --- CORRECCIÓN DEFINITIVA: La curva de equity se construye desde los trades, no desde el benchmark. ---
+    # 1. Agrupar PnL por día para obtener el rendimiento diario del portafolio.
     daily_pnl = trades_df.groupby(trades_df['exit_date'].dt.date)['pnl'].sum()
     daily_pnl.index = pd.to_datetime(daily_pnl.index)
 
-    # Crear curva de equity
-    equity_curve = pd.DataFrame(index=benchmark_df.index)
-    equity_curve['pnl'] = daily_pnl
-    equity_curve['pnl'] = equity_curve['pnl'].fillna(0)
+    # 2. Crear un rango de fechas completo desde el primer hasta el último día de trading del portafolio.
+    full_date_range = pd.date_range(start=daily_pnl.index.min(), end=daily_pnl.index.max(), freq='D')
+    
+    # 3. Construir la curva de equity sobre este rango de fechas, rellenando los días sin trades con 0 PnL.
+    equity_curve = pd.DataFrame(index=full_date_range)
+    equity_curve['pnl'] = daily_pnl.reindex(full_date_range, fill_value=0)
     equity_curve['equity'] = 10000 + equity_curve['pnl'].cumsum()
 
     # Métricas de Drawdown
@@ -64,12 +67,25 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     if daily_returns.std() > 0:
         sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252)
 
-    # Sortino Ratio
+    # Sortino Ratio (corregido para coincidir con la lógica del frontend)
+    mean_daily_return = daily_returns.mean()
     negative_returns = daily_returns[daily_returns < 0]
-    downside_deviation = np.sqrt((negative_returns**2).mean())
-    sortino_ratio = None
-    if downside_deviation > 0:
-        sortino_ratio = (daily_returns.mean() / downside_deviation) * np.sqrt(252)
+    
+    if len(negative_returns) == 0:
+        # Si no hay retornos negativos, el riesgo es cero, por lo que el ratio es infinito.
+        # Se cambia np.inf por un número grande para evitar errores de JSON y ser coherente.
+        sortino_ratio = 999.0 if mean_daily_return > 0 else 0.0
+    else:
+        # La desviación a la baja se calcula sobre el total de retornos, no solo los negativos.
+        # Esto evita que el denominador sea cero fácilmente.
+        downside_deviation = np.sqrt((negative_returns**2).sum() / len(daily_returns))
+
+        # Si la desviación es 0, el ratio es teóricamente infinito.
+        # Lo manejamos para que sea un número grande si hay ganancias, o 0 si no.
+        if downside_deviation == 0:
+            sortino_ratio = 999.0 if mean_daily_return > 0 else 0.0
+        else:
+            sortino_ratio = (mean_daily_return / downside_deviation) * np.sqrt(252)
 
     # Métricas de Trades
     total_trades = len(trades_df)

@@ -42,7 +42,7 @@ class CustomJSONEncoder(json.JSONEncoder):
             return int(obj)
         if isinstance(obj, (np.floating, np.float64)):
             # Si es NaN o Inf, lo convertimos a None (null en JSON)
-            if np.isnan(obj) or np.isinf(obj):
+            if not np.isfinite(obj):
                 return None
             return float(obj)
         if isinstance(obj, np.ndarray):
@@ -190,12 +190,9 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                     continue
 
                 portfolio_trades = []
-                equal_weight = 1 / len(combo)
                 for strat_index in combo:
-                    for trade in strategies_data[strat_index]:
-                        new_trade = trade.copy()
-                        new_trade['pnl'] *= equal_weight
-                        portfolio_trades.append(new_trade)
+                    # Simplemente añadimos todos los trades de las estrategias seleccionadas
+                    portfolio_trades.extend(strategies_data[strat_index])
                 
                 portfolio_df = pd.DataFrame(portfolio_trades)
                 analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy())
