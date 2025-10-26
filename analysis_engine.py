@@ -91,14 +91,42 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
             consecutive_losing_months = 0
     max_consecutive_losing_months = max(max_consecutive_losing_months, consecutive_losing_months)
 
-    # UPI (Ulcer Performance Index)
+    # --- CÁLCULO DE UPI (ULCER PERFORMANCE INDEX) MEJORADO ---
+    # Basado en la referencia de StrategyQuant, usamos una curva de equity por operación.
+    
+    # 1. Construir curva de equity por operación
+    trades_df_sorted = trades_df.sort_values(by='exit_date')
+    initial_capital = 10000
+    equity_curve_by_trade = [initial_capital]
+    current_equity_by_trade = initial_capital
+    for pnl in trades_df_sorted['pnl']:
+        current_equity_by_trade += pnl
+        equity_curve_by_trade.append(current_equity_by_trade)
+
+    # 2. Calcular CAGR (con manejo especial para < 1 año)
     duration_years = duration_days / 365.25
     cagr = 0
-    if equity_curve['equity'].iloc[0] > 0 and equity_curve['equity'].iloc[-1] > 0 and duration_years > 0:
-        cagr = ((equity_curve['equity'].iloc[-1] / equity_curve['equity'].iloc[0])**(1/duration_years) - 1) * 100
+    final_equity = equity_curve_by_trade[-1] if equity_curve_by_trade else initial_capital
+    if initial_capital > 0 and final_equity > 0 and duration_years > 0:
+        if duration_years < 1.0:
+            total_return = (final_equity / initial_capital) - 1
+            cagr = (total_return / duration_years) * 100.0
+        else:
+            cagr = ((final_equity / initial_capital)**(1/duration_years) - 1) * 100
     
-    ulcer_index = np.sqrt((drawdown**2).mean()) * 100
-    upi = cagr / ulcer_index if ulcer_index > 0 else None
+    # 3. Calcular Ulcer Index desde la curva por operación
+    peak_equity = initial_capital
+    squared_drawdown_sum = 0
+    n = len(equity_curve_by_trade)
+    for current_point in equity_curve_by_trade:
+        peak_equity = max(peak_equity, current_point)
+        drawdown_pct = ((current_point / peak_equity) - 1) * 100.0 if peak_equity > 0 else 0
+        squared_drawdown_sum += drawdown_pct**2
+    
+    ulcer_index = np.sqrt(squared_drawdown_sum / n) if n > 0 else 0
+    
+    # 4. Calcular UPI final
+    upi = cagr / ulcer_index if ulcer_index > 0 else (999 if cagr > 0 else 0)
     
     # Cálculo final de Capture Ratio
     upside_capture = (avg_portfolio_up / avg_benchmark_up) * 100 if avg_benchmark_up != 0 else 0
