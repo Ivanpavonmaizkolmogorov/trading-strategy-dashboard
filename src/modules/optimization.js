@@ -108,7 +108,7 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
     
     try {
         const portfolio = state.savedPortfolios[state.currentOptimizationData.portfolioIndex];
-        const activeDatabankView = state.tableViews.databank[state.activeViews.databank] || state.tableViews.databank['default'];
+        const metricsForBalance = state.defaultMetricColumns; // Usar la vista por defecto centralizada
 
         const requestBody = {
             portfolio_indices: portfolio.indices,
@@ -123,7 +123,7 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
                 target_metric: elements.targetMetricSelect.value,
                 target_goal: elements.targetGoalSelect.value,
                 min_weight: parseFloat(dom.minWeightFilter.value) / 100,
-                metrics_for_balance: activeDatabankView.columns.filter(key => key !== 'name' && key !== 'metricValue'),
+                metrics_for_balance: metricsForBalance,
             }
         };
 
@@ -164,7 +164,7 @@ const displayOptimizationResults = (results) => {
     const elements = getOptimizationModalElements();
 
     let tableRows = '';
-    const metricsToDisplay = (state.tableViews.databank[state.activeViews.databank] || state.tableViews.databank['default']).columns.filter(key => key !== 'name' && key !== 'metricValue');
+    const metricsToDisplay = state.defaultMetricColumns; // Usar la vista por defecto centralizada
     
     metricsToDisplay.forEach(metricKey => {
         const metricInfo = ALL_METRICS[metricKey];

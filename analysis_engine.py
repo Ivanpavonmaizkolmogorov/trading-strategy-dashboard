@@ -112,6 +112,23 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
             consecutive_losing_months = 0
     max_consecutive_losing_months = max(max_consecutive_losing_months, consecutive_losing_months)
 
+    # --- CÁLCULO DE STAGNATION (ESTANCAMIENTO) ---
+    stagnation_days = 0
+    max_stagnation_days = 0
+    last_peak_date = equity_curve.index[0]
+    for i in range(1, len(equity_curve)):
+        if equity_curve['equity'].iloc[i] >= equity_curve['equity'].loc[last_peak_date]:
+            stagnation_days = (equity_curve.index[i] - last_peak_date).days
+            max_stagnation_days = max(max_stagnation_days, stagnation_days)
+            last_peak_date = equity_curve.index[i]
+
+    # --- CÁLCULO DE SQN (SYSTEM QUALITY NUMBER) ---
+    avg_pnl = trades_df['pnl'].mean()
+    std_pnl = trades_df['pnl'].std()
+    sqn = 0
+    if std_pnl > 0 and total_trades > 0:
+        sqn = (avg_pnl / std_pnl) * np.sqrt(total_trades)
+
     # --- CÁLCULO DE UPI (ULCER PERFORMANCE INDEX) MEJORADO ---
     # Basado en la referencia de StrategyQuant, usamos una curva de equity por operación.
     
@@ -182,10 +199,10 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "profitMaxDD_Ratio": profit_max_dd_ratio,
         "monthlyProfitToDollarDD": monthly_profit_to_dollar_dd,
         "winningPercentage": win_pct,
-        "maxStagnationTrades": 0, # Placeholder
+        "maxStagnationTrades": 0, # Placeholder, ya que requiere una lógica más compleja por operación
         "totalTrades": total_trades,
-        "maxStagnationDays": 0, # Placeholder
-        "sqn": 0, # Placeholder
+        "maxStagnationDays": max_stagnation_days,
+        "sqn": sqn,
         # Datos para gráficos
         "lorenzData": lorenz_data,
     }, daily_returns # Se sigue devolviendo para la matriz de correlación

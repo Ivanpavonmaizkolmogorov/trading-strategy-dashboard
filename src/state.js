@@ -22,15 +22,31 @@ export const state = {
     databankSortConfig: { key: 'metricValue', order: 'desc' },
     savedPortfoliosSortConfig: { key: 'savedIndex', order: 'asc' },
 
+    // --- NUEVO: Vista por defecto centralizada ---
+    // Esta es la lista de KPIs que has definido como la vista estándar.
+    defaultMetricColumns: [
+        'profitMaxDD_Ratio',            // Ret/DD
+        'upi',                          // UPI
+        'sortinoRatio',                 // Sortino
+        'sharpeRatio',                  // Sharpe
+        'maxDrawdownInDollars',         // Max DD ($)
+        'maxConsecutiveLosingMonths',   // Meses Pérdida Cons.
+        'maxStagnationTrades',          // Stagnation (Trades)
+        'maxStagnationDays',            // Stagnation (Días)
+        'winningPercentage',            // Win %
+        'sqn',                          // SQN
+        'profitFactor',                 // Profit Factor
+    ],
+
     // Vistas de tablas
     tableViews: {
         databank: {
-            'default': { name: 'Vista por Defecto', columns: ['name', 'metricValue', 'profitFactor', 'sortinoRatio', 'maxDrawdown', 'monthlyAvgProfit', 'maxConsecutiveLosingMonths'] },
+            'default': { name: 'Vista por Defecto', columns: ['name', 'metricValue', ...[ 'profitMaxDD_Ratio', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'sqn', 'profitFactor' ]] },
             'risk': { name: 'Vista de Riesgo', columns: ['name', 'maxDrawdown', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'sortinoRatio', 'upi'] },
             'profit': { name: 'Vista de Beneficio', columns: ['name', 'profitFactor', 'monthlyAvgProfit', 'profitMaxDD_Ratio', 'monthlyProfitToDollarDD'] }
         },
         saved: {
-            'default': { name: 'Vista por Defecto', columns: ['name', 'profitFactor', 'sortinoRatio', 'upi', 'maxDrawdown', 'monthlyAvgProfit', 'maxConsecutiveLosingMonths'] },
+            'default': { name: 'Vista por Defecto', columns: ['name', ...[ 'profitMaxDD_Ratio', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'sqn', 'profitFactor' ]] },
             'risk': { name: 'Vista de Riesgo', columns: ['name', 'maxDrawdown', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'sortinoRatio', 'upi'] },
             'profit': { name: 'Vista de Beneficio', columns: ['name', 'profitFactor', 'monthlyAvgProfit', 'profitMaxDD_Ratio', 'monthlyProfitToDollarDD'] }
         }
