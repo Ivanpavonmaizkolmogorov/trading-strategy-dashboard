@@ -214,10 +214,14 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
         if (!isNaN(date.getTime()) && !isNaN(price)) benchmarkPrices.set(date.toISOString().split('T')[0], price);
     });
     const benchmarkData = labels.map(date => ({ x: date, y: benchmarkPrices.get(date) }));
-
     const portfolioReturns = [], benchmarkReturns = [];
     let lastPortfolioValue = portfolioValues.length > 0 ? portfolioValues[0] : 0;
-    let lastBenchmarkValue = benchmarkData.length > 0 ? benchmarkData[0].y : 0;
+
+    // --- CORRECCIÓN: Asegurar que el benchmark tenga un punto de partida válido para la normalización ---
+    // Encontrar el primer punto del benchmark que tiene un valor válido.
+    const firstValidBenchmarkPoint = benchmarkData.find(d => d.y != null);
+    let lastBenchmarkValue = firstValidBenchmarkPoint ? firstValidBenchmarkPoint.y : 0;
+
     for (let i = 1; i < labels.length; i++) {
         const pReturn = (lastPortfolioValue > 0) ? (portfolioValues[i] / lastPortfolioValue) - 1 : 0;
         const bReturn = (lastBenchmarkValue > 0 && benchmarkData[i]?.y != null) ? (benchmarkData[i].y / lastBenchmarkValue) - 1 : 0;

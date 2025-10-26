@@ -261,9 +261,20 @@ const renderEquityChart = (canvasId, analysis, name, color) => {
     if (!ctx) return;
     destroyChart(canvasId);
 
-    const normalizedPortfolio = analysis.portfolioValues.map(v => (v / (analysis.portfolioValues[0] || 1)) * 100);
-    const portfolioData = analysis.labels.map((l, i) => ({x: l, y: normalizedPortfolio[i]}));
-    const benchmarkData = analysis.benchmarkData.map(d => ({x: d.x, y: (d.y / (analysis.benchmarkData[0].y || 1)) * 100}));
+    // --- NORMALIZACIÓN A BASE 100 ---
+    // Se normaliza la curva de equity para que empiece en 100.
+    const firstPortfolioValue = analysis.portfolioValues.length > 0 ? analysis.portfolioValues[0] : 1;
+    const portfolioData = analysis.labels.map((l, i) => ({
+        x: l, 
+        y: (analysis.portfolioValues[i] / firstPortfolioValue) * 100
+    }));
+
+    // CORRECCIÓN: Encontrar el primer valor válido del benchmark para la normalización.
+    const validBenchmarkData = analysis.benchmarkData.filter(d => d.y != null);
+    const firstBenchmarkValue = validBenchmarkData.length > 0 ? validBenchmarkData[0].y : 1;
+    const benchmarkData = validBenchmarkData.map(d => ({ 
+        x: d.x, y: (d.y / firstBenchmarkValue) * 100 
+    }));
     
     state.chartInstances[canvasId] = new Chart(ctx, { 
         type: 'line', 
@@ -431,11 +442,14 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
     const datasets = allAnalyses.map((result) => {
         const isFeatured = result.savedIndex === state.featuredPortfolioIndex;
-        const portfolio = result.analysis.portfolioValues;
-        const normalized = portfolio.map(v => (v / (portfolio[0] || 1)) * 100);
+        const portfolioValues = result.analysis.portfolioValues;
+        const firstValue = portfolioValues.length > 0 ? portfolioValues[0] : 1;
+        const normalizedData = result.analysis.labels.map((label, i) => ({
+            x: label, y: (portfolioValues[i] / firstValue) * 100
+        }));
         return {
             label: result.name,
-            data: result.analysis.labels.map((label, i) => ({ x: label, y: normalized[i] })),
+            data: normalizedData,
             borderColor: isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]),
             borderWidth: isFeatured ? 3 : 2,
             pointRadius: 0,
@@ -446,7 +460,13 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     });
     
     const firstAnalysis = allAnalyses[0].analysis;
-    datasets.push({ label: 'Benchmark', data: firstAnalysis.benchmarkData.map(d => ({x: d.x, y: (d.y / (firstAnalysis.benchmarkData[0].y || 1)) * 100})), borderColor: '#f87171', borderWidth: 2, pointRadius: 0, tension: 0.1, borderDash: [5, 5] });
+    // CORRECCIÓN: Encontrar el primer valor válido del benchmark para la normalización.
+    const validBenchmarkData = firstAnalysis.benchmarkData.filter(d => d.y != null);
+    const firstBenchmarkValue = validBenchmarkData.length > 0 ? validBenchmarkData[0].y : 1;
+    const normalizedBenchmarkData = validBenchmarkData.map(d => ({ 
+        x: d.x, y: (d.y / firstBenchmarkValue) * 100 
+    }));
+    datasets.push({ label: 'Benchmark', data: normalizedBenchmarkData, borderColor: '#f87171', borderWidth: 2, pointRadius: 0, tension: 0.1, borderDash: [5, 5] });
     
     state.chartInstances[canvasId] = new Chart(ctx, { type: 'line', data: { datasets }, options: CHART_OPTIONS });
 };
