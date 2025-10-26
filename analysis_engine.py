@@ -113,14 +113,16 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     max_consecutive_losing_months = max(max_consecutive_losing_months, consecutive_losing_months)
 
     # --- CÁLCULO DE STAGNATION (ESTANCAMIENTO) ---
-    stagnation_days = 0
+    # CORRECCIÓN: El cálculo anterior no contaba el estancamiento final si la estrategia terminaba en drawdown.
     max_stagnation_days = 0
-    last_peak_date = equity_curve.index[0]
-    for i in range(1, len(equity_curve)):
-        if equity_curve['equity'].iloc[i] >= equity_curve['equity'].loc[last_peak_date]:
-            stagnation_days = (equity_curve.index[i] - last_peak_date).days
+    if not equity_curve.empty:
+        last_peak_date = equity_curve.index[0]
+        for current_date, current_equity in equity_curve['equity'].items():
+            if current_equity >= equity_curve['equity'].loc[last_peak_date]:
+                last_peak_date = current_date
+            # Se calcula el estancamiento en cada punto y se actualiza el máximo
+            stagnation_days = (current_date - last_peak_date).days
             max_stagnation_days = max(max_stagnation_days, stagnation_days)
-            last_peak_date = equity_curve.index[i]
 
     # --- CÁLCULO DE SQN (SYSTEM QUALITY NUMBER) ---
     avg_pnl = trades_df['pnl'].mean()
@@ -165,6 +167,18 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     
     # 4. Calcular UPI final
     upi = cagr / ulcer_index if ulcer_index > 0 else (999 if cagr > 0 else 0)
+
+    # --- CÁLCULO DE STAGNATION EN TRADES ---
+    max_stagnation_trades = 0
+    trades_since_peak = 0
+    peak_equity_by_trade = initial_capital
+    # Iteramos desde el primer trade (índice 1 de la curva de equity por operación)
+    for equity_point in equity_curve_by_trade[1:]:
+        trades_since_peak += 1
+        if equity_point > peak_equity_by_trade:
+            max_stagnation_trades = max(max_stagnation_trades, trades_since_peak)
+            peak_equity_by_trade = equity_point
+            trades_since_peak = 0
     
     # Cálculo final de Capture Ratio
     upside_capture = (avg_portfolio_up / avg_benchmark_up) * 100 if avg_benchmark_up != 0 else 0
@@ -218,7 +232,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "profitMaxDD_Ratio": profit_max_dd_ratio,
         "monthlyProfitToDollarDD": monthly_profit_to_dollar_dd,
         "winningPercentage": win_pct,
-        "maxStagnationTrades": 0, # Placeholder, ya que requiere una lógica más compleja por operación
+        "maxStagnationTrades": max_stagnation_trades,
         "totalTrades": total_trades,
         "maxStagnationDays": max_stagnation_days,
         "sqn": sqn,
