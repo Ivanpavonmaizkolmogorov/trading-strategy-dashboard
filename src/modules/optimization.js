@@ -59,7 +59,9 @@ export const openOptimizationModal = (portfolioIndex) => {
     const equalWeightedTrades = portfolio.indices.flatMap((strategyIndex, i) =>
         state.rawStrategiesData[strategyIndex].map(trade => ({ ...trade, pnl: trade.pnl * equalWeights[i] }))
     );
-    const trueOriginalAnalysis = processStrategyData(equalWeightedTrades, state.rawBenchmarkData);
+    // Buscamos el análisis ya hecho para obtener las métricas del backend
+    const originalPortfolioAnalysis = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === portfolioIndex);
+    const trueOriginalAnalysis = processStrategyData(equalWeightedTrades, state.rawBenchmarkData, null, originalPortfolioAnalysis?.analysis?.metrics || {});
 
     let currentAnalysis, currentWeights;
     if (portfolio.weights) {
@@ -67,7 +69,7 @@ export const openOptimizationModal = (portfolioIndex) => {
         const weightedTrades = portfolio.indices.flatMap((strategyIndex, i) =>
             state.rawStrategiesData[strategyIndex].map(trade => ({ ...trade, pnl: trade.pnl * currentWeights[i] }))
         );
-        currentAnalysis = processStrategyData(weightedTrades, state.rawBenchmarkData);
+        currentAnalysis = processStrategyData(weightedTrades, state.rawBenchmarkData, null, portfolio.weights ? originalPortfolioAnalysis?.analysis?.metrics : (trueOriginalAnalysis?.metrics || {}));
     } else {
         currentWeights = equalWeights;
         currentAnalysis = trueOriginalAnalysis;

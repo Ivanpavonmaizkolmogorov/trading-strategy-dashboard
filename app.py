@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -35,6 +35,11 @@ class DatabankRequest(BaseModel):
     benchmark_data: List[Dict[str, Any]]
     params: DatabankParams
 
+class FullAnalysisRequest(BaseModel):
+    strategies_data: List[List[Trade]]
+    benchmark_data: List[Dict[str, Any]]
+
+
 # --- Codificador JSON Personalizado y Robusto ---
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -70,6 +75,38 @@ app.add_middleware(
 @app.get("/")
 def read_root():
     return {"message": "¡Hola! El backend de Python está funcionando."}
+
+@app.post("/analysis/full")
+async def get_full_analysis(request: FullAnalysisRequest):
+    """
+    Recibe una lista de estrategias y devuelve una lista de sus análisis de métricas.
+    """
+    print("\n--- Endpoint /analysis/full HIT ---")
+    try:
+        strategies_data = [[trade.model_dump() for trade in strat if trade.pnl is not None] for strat in request.strategies_data]
+        benchmark_data_df = pd.DataFrame(request.benchmark_data)
+        print(f"Received {len(strategies_data)} strategies and benchmark with {len(benchmark_data_df)} rows.")
+
+        all_metrics = []
+        for i, strat_trades in enumerate(strategies_data):
+            print(f"  Processing strategy {i+1}/{len(strategies_data)}...")
+            if not strat_trades:
+                print(f"  -> Strategy {i+1} has no trades. Skipping.")
+                all_metrics.append(None) # Añadir un placeholder si la estrategia no tiene trades
+                continue
+            
+            trades_df = pd.DataFrame(strat_trades)
+            analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy())
+            all_metrics.append(analysis_result[0] if analysis_result else None)
+            print(f"  -> Strategy {i+1} processed.")
+        
+        print("--- Analysis complete. Sending response. ---")
+        return json.loads(json.dumps(all_metrics, cls=CustomJSONEncoder))
+    except Exception as e:
+        print(f"!!!!!! ERROR in /analysis/full: {e} !!!!!!")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- NUEVOS ENDPOINTS para Pausar/Detener ---
 @app.post("/databank/pause")

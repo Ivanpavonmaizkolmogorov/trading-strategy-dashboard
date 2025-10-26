@@ -2,7 +2,6 @@ import { dom } from './dom.js';
 import { state } from './state.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
-import { calculateCorrelationMatrix, pearsonCorrelation } from './analysis.js';
 
 /**
  * Actualiza la lista de archivos de estrategia cargados en la UI.
