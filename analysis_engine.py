@@ -154,6 +154,20 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     downside_capture = (avg_portfolio_down / avg_benchmark_down) * 100 if avg_benchmark_down != 0 else 0
     capture_ratio = upside_capture / downside_capture if downside_capture > 0 else None
 
+    # --- CÁLCULO DE CURVA DE LORENZ ---
+    positive_pnl_trades = trades_df[trades_df['pnl'] > 0].sort_values(by='pnl')
+    total_profit_from_winners = positive_pnl_trades['pnl'].sum()
+    lorenz_data = [{'x': 0, 'y': 0}]
+    if total_profit_from_winners > 0:
+        cumulative_profit = 0
+        num_winning_trades = len(positive_pnl_trades)
+        for i, row in enumerate(positive_pnl_trades.itertuples()):
+            cumulative_profit += row.pnl
+            lorenz_data.append({
+                'x': (i + 1) / num_winning_trades * 100,
+                'y': (cumulative_profit / total_profit_from_winners) * 100
+            })
+
     # Devolver un diccionario con todas las métricas que espera el frontend
     return {
         "profitFactor": profit_factor,
@@ -172,7 +186,9 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "totalTrades": total_trades,
         "maxStagnationDays": 0, # Placeholder
         "sqn": 0, # Placeholder
-    }, daily_returns
+        # Datos para gráficos
+        "lorenzData": lorenz_data,
+    }, daily_returns # Se sigue devolviendo para la matriz de correlación
 
 
 def get_combinations(arr, min_size, max_size):

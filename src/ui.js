@@ -1,5 +1,6 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
+import { updateDatabankDisplay } from './modules/databank.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
 
@@ -105,6 +106,7 @@ export const displayResults = (results) => {
     dom.resultsDiv.classList.remove('hidden');
     renderChartsForTab(tabToActivate?.dataset.target);
     displaySavedPortfoliosList();
+    updateDatabankDisplay(); // <-- NUEVO: Refrescar el DataBank con las métricas actualizadas.
     
     const savedPortfolioAnalyses = window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal);
     if (savedPortfolioAnalyses.length > 0 || state.comparisonPortfolioIndex !== null) {

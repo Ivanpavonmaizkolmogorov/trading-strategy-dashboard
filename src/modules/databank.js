@@ -64,6 +64,7 @@ export const findDatabankPortfolios = async () => {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = ''; // Buffer para acumular datos del stream
         
         // Usamos un bucle 'while' en lugar de recursión para evitar el desbordamiento de la pila (stack overflow)
         async function processStream() {
@@ -79,58 +80,60 @@ export const findDatabankPortfolios = async () => {
                     break; // Salir del bucle
                 }
                 
-                const chunk = decoder.decode(value);
-                // Un stream puede contener varios eventos "data:"
-                const events = chunk.split('\n\n').filter(e => e.startsWith('data:'));
-                
-                events.forEach(eventString => {
-                    const jsonData = eventString.replace('data: ', '');
-                    if (!jsonData) return;
+                // Añadir el nuevo trozo de datos al buffer
+                buffer += decoder.decode(value, { stream: true });
 
-                    const data = JSON.parse(jsonData);
+                // Buscar mensajes completos en el buffer (delimitados por '\n\n')
+                let boundary = buffer.indexOf('\n\n');
+                while (boundary !== -1) {
+                    const message = buffer.substring(0, boundary);
+                    buffer = buffer.substring(boundary + 2); // Eliminar el mensaje procesado del buffer
 
-                    if (data.status === 'info' || data.status === 'progress') {
-                        // Determinar y almacenar el modo de búsqueda la primera vez que se recibe
-                        if (!searchMode) {
-                            if (data.message.toLowerCase().includes('monte carlo')) {
-                                searchMode = '[Monte Carlo]';
-                            } else if (data.message.toLowerCase().includes('exhaustiva')) {
-                                searchMode = '[Exhaustiva]';
+                    if (message.startsWith('data:')) {
+                        const jsonData = message.substring(5).trim(); // Eliminar 'data: '
+                        if (!jsonData) continue;
+
+                        try {
+                            const data = JSON.parse(jsonData);
+
+                            if (data.status === 'info' || data.status === 'progress') {
+                                if (!searchMode) {
+                                    if (data.message.toLowerCase().includes('monte carlo')) searchMode = '[Monte Carlo]';
+                                    else if (data.message.toLowerCase().includes('exhaustiva')) searchMode = '[Exhaustiva]';
+                                }
+                                dom.databankStatus.innerHTML = `${searchMode} 🔍 ${data.message}`;
+                            } else if (data.status === 'paused') {
+                                dom.pauseSearchBtn.textContent = 'Reanudar';
+                                dom.databankStatus.innerHTML = `${searchMode} ⏸️ ${data.message}`;
+                            } else if (data.status === 'resumed') {
+                                dom.pauseSearchBtn.textContent = 'Pausar';
+                                dom.databankStatus.innerHTML = `${searchMode} ▶️ ${data.message}`;
+                            } else if (data.status === 'stopped') {
+                                dom.stopSearchBtn.disabled = true;
+                                dom.pauseSearchBtn.disabled = true;
+                                dom.pauseSearchBtn.textContent = 'Pausar';
+                                dom.databankStatus.innerHTML = `${searchMode} ⏹️ ${data.message}`;
+                            } else if (data.status === 'error') {
+                                displayError(data.message);
+                                dom.databankStatus.innerHTML = `❌ Error en la búsqueda.`;
+                                toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
+                                dom.clearDatabankBtn.disabled = false;
+                                if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+                                dom.pauseSearchBtn.disabled = true;
+                                dom.stopSearchBtn.disabled = true;
+                                reader.cancel(); // Detener la lectura del stream
+                            } else {
+                                const newPortfolio = data;
+                                if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i+1}`).join(', ');
+                                addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput.value, 10));
+                                updateDatabankDisplay();
                             }
+                        } catch (e) {
+                            console.error("Error al parsear JSON del stream:", e, "Datos recibidos:", jsonData);
                         }
-                        dom.databankStatus.innerHTML = `${searchMode} 🔍 ${data.message}`;
-                    } else if (data.status === 'paused') {
-                        dom.pauseSearchBtn.textContent = 'Reanudar';
-                        dom.databankStatus.innerHTML = `${searchMode} ⏸️ ${data.message}`;
-                    } else if (data.status === 'resumed') {
-                        dom.pauseSearchBtn.textContent = 'Pausar';
-                        dom.databankStatus.innerHTML = `${searchMode} ▶️ ${data.message}`;
-                    } else if (data.status === 'stopped') {
-                        dom.stopSearchBtn.disabled = true;
-                        dom.pauseSearchBtn.disabled = true;
-                        dom.pauseSearchBtn.textContent = 'Pausar';
-                        dom.databankStatus.innerHTML = `${searchMode} ⏹️ ${data.message}`;
-                    } else if (data.status === 'error') {
-                        displayError(data.message);
-                        dom.databankStatus.innerHTML = `❌ Error en la búsqueda.`;
-                        toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-                        dom.clearDatabankBtn.disabled = false;
-                        if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-                        dom.pauseSearchBtn.disabled = true;
-                        dom.stopSearchBtn.disabled = true;
-                        reader.cancel(); // Detener la lectura del stream
-                    } else if (data.status === 'completed') {
-                        // El stream ha terminado, pero ya hemos mostrado el mensaje final en 'done'
-                    } else {
-                        // Es un objeto de portafolio
-                        const newPortfolio = data;
-                        if (!newPortfolio.name && newPortfolio.indices) { // Construir nombre si no viene
-                            newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i+1}`).join(', ');
-                        }
-                        addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput.value, 10));
-                        updateDatabankDisplay();
                     }
-                });
+                    boundary = buffer.indexOf('\n\n'); // Buscar el siguiente mensaje
+                }
             }
         }
         processStream(); // Inicia la lectura del stream
@@ -150,6 +153,9 @@ export const findDatabankPortfolios = async () => {
  * Añade un portafolio al DataBank si es mejor que los existentes.
  */
 const addToDatabankIfBetter = (portfolioData, maxSize) => {
+    // Esta función se asegura de que el DataBank solo contenga la mejor versión de cada
+    // combinación de estrategias única, evitando duplicados.
+
     const { indices, metricValue, optimizationGoal } = portfolioData;
     const key = indices.sort((a, b) => a - b).join(',');
 
@@ -340,7 +346,6 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
         comments: `Guardado desde DataBank. Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
     });
     // Adjuntamos las métricas pre-calculadas para evitar re-análisis innecesario
-    state.savedPortfolios[state.savedPortfolios.length - 1].precomputedMetrics = metrics;
     return true;
 };
 
@@ -355,17 +360,6 @@ export const clearDatabank = () => {
     updateDatabankDisplay();
     dom.databankSection.classList.add('hidden');
 };
-
-// Las siguientes funciones helper ya no son necesarias en el frontend
-// porque la lógica de combinaciones y análisis se ha movido al backend.
-// Se mantienen aquí para evitar errores de referencia si alguna parte del código
-// aún las estuviera importando, pero deberían ser eliminadas si no se usan.
-
-/*
-function* getCombinations(arr, minSize = 2, maxSize = arr.length) { ... }
-function* mapGenerator(generator, mapFn) { ... }
-const countCombinations = (n, minSize, maxSize) => { ... };
-*/
 
 // Eliminamos las importaciones de analysis.js que ya no se usan aquí
 // import { processStrategyData, calculateCorrelationMatrix } from '../analysis.js';

@@ -1,7 +1,7 @@
 import { dom } from '../dom.js';
 import { state } from '../state.js';
 import { ALL_METRICS } from '../config.js';
-import { toggleLoading, formatMetricForDisplay } from '../utils.js';
+import { toggleLoading, formatMetricForDisplay, displayError } from '../utils.js';
 import { processStrategyData, reAnalyzeAllData } from '../analysis.js';
 
 let optimizationModalElements; // To be initialized on first open
@@ -53,27 +53,10 @@ export const openOptimizationModal = (portfolioIndex) => {
     elements.targetMetricSelect.innerHTML = dom.optimizationMetricSelect.innerHTML;
     elements.targetMetricSelect.value = 'sortinoRatio';
     elements.targetGoalSelect.value = 'maximize';
-
-    const equalWeight = 1 / portfolio.indices.length;
-    const equalWeights = Array(portfolio.indices.length).fill(equalWeight);
-    const equalWeightedTrades = portfolio.indices.flatMap((strategyIndex, i) =>
-        state.rawStrategiesData[strategyIndex].map(trade => ({ ...trade, pnl: trade.pnl * equalWeights[i] }))
-    );
-    // Buscamos el análisis ya hecho para obtener las métricas del backend
+    
+    // Buscamos el análisis ya hecho para obtener las métricas del backend y el MaxDD
     const originalPortfolioAnalysis = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === portfolioIndex);
-    const trueOriginalAnalysis = processStrategyData(equalWeightedTrades, state.rawBenchmarkData, null, originalPortfolioAnalysis?.analysis?.metrics || {});
-
-    let currentAnalysis, currentWeights;
-    if (portfolio.weights) {
-        currentWeights = portfolio.weights;
-        const weightedTrades = portfolio.indices.flatMap((strategyIndex, i) =>
-            state.rawStrategiesData[strategyIndex].map(trade => ({ ...trade, pnl: trade.pnl * currentWeights[i] }))
-        );
-        currentAnalysis = processStrategyData(weightedTrades, state.rawBenchmarkData, null, portfolio.weights ? originalPortfolioAnalysis?.analysis?.metrics : (trueOriginalAnalysis?.metrics || {}));
-    } else {
-        currentWeights = equalWeights;
-        currentAnalysis = trueOriginalAnalysis;
-    }
+    const currentAnalysis = originalPortfolioAnalysis?.analysis;
 
     // --- MEJORA: Configurar controles de escalado de riesgo con el valor actual ---
     const riskConfig = portfolio.riskConfig || {};
@@ -87,20 +70,10 @@ export const openOptimizationModal = (portfolioIndex) => {
     elements.targetMaxDDSlider.value = elements.targetMaxDDInput.value;
     elements.targetMaxDDInput.parentElement.classList.toggle('hidden', !elements.scaleRiskCheckbox.checked);
 
-    const initialResults = {
-        baseAnalysis: trueOriginalAnalysis,
-        metricBestAnalysis: currentAnalysis,
-        balancedBestAnalysis: currentAnalysis,
-        portfolio: portfolio,
-        metricBestWeights: currentWeights,
-        balancedBestWeights: currentWeights,
-    };
-
-    // Guardamos los resultados para poder recalcularlos dinámicamente
-    state.currentOptimizationData.lastResults = initialResults;
-
-    // Llamar a displayOptimizationResults para mostrar el estado actual
-    displayOptimizationResults(initialResults);
+    // Limpiamos los resultados anteriores y mostramos el panel de búsqueda
+    elements.resultsContainer.innerHTML = '<p class="text-center text-gray-400">Inicia una búsqueda para ver los resultados.</p>';
+    elements.resultsContainer.classList.remove('hidden');
+    elements.setupContainer.classList.remove('hidden');
 
     // Ocultar el contenedor de resultados y mostrar el de setup
     elements.resultsContainer.classList.add('hidden');
@@ -133,125 +106,56 @@ export const startOptimizationSearch = async () => {
     
     try {
         const portfolio = state.savedPortfolios[state.currentOptimizationData.portfolioIndex];
-        const numSimulations = parseInt(elements.simulationsCountInput.value, 10);
-        const targetMetric = elements.targetMetricSelect.value;
-        const targetGoal = elements.targetGoalSelect.value;
-        const minWeight = parseFloat(dom.minWeightFilter.value) / 100;
-
-        const portfolioTradesData = portfolio.indices.map(index => state.rawStrategiesData[index]);
-        
-        let bestResult = { metric: (targetGoal === 'maximize' ? -Infinity : Infinity), weights: null, analysis: null };
-        
-        const equalWeight = 1 / portfolioTradesData.length;
-        if (equalWeight >= minWeight) {
-            const equalWeights = Array(portfolioTradesData.length).fill(equalWeight);
-            const weightedTrades = portfolioTradesData.flatMap((trades, i) => trades.map(trade => ({...trade, pnl: trade.pnl * equalWeights[i]})));
-            const analysis = processStrategyData(weightedTrades, state.rawBenchmarkData);
-            if (analysis) {
-                bestResult = { metric: analysis.metrics[targetMetric], weights: equalWeights, analysis };
-            }
-        }
-
-        const equalWeightedTradesForBase = portfolio.indices.flatMap(index => 
-            state.rawStrategiesData[index].map(trade => ({ ...trade, pnl: trade.pnl * (1 / portfolio.indices.length) }))
-        );
-        const trueOriginalAnalysis = processStrategyData(equalWeightedTradesForBase, state.rawBenchmarkData);
-        const originalTargetMetricValue = trueOriginalAnalysis.metrics[targetMetric];
-
         const activeDatabankView = state.tableViews.databank[state.activeViews.databank] || state.tableViews.databank['default'];
-        const metricsForBalance = activeDatabankView.columns.filter(key => key !== 'name' && key !== 'metricValue');
 
-        let balancedBestResult = { metric: -Infinity, weights: bestResult.weights, analysis: bestResult.analysis };
-
-        for (let i = 0; i < numSimulations - 1; i++) {
-            let weights = Array.from({ length: portfolio.indices.length }, () => Math.random());
-            const sum = weights.reduce((a, b) => a + b, 0);
-            weights = weights.map(w => w / sum);
-            
-            if (minWeight > 0 && weights.some(w => w < minWeight)) continue;
-
-            const weightedTrades = portfolioTradesData.flatMap((trades, i) => trades.map(trade => ({ ...trade, pnl: trade.pnl * weights[i] })));
-            const analysis = processStrategyData(weightedTrades, state.rawBenchmarkData);
-            
-            if (analysis) {
-                const currentMetric = analysis.metrics[targetMetric];
-                
-                if ((targetGoal === 'maximize' && currentMetric > bestResult.metric) || (targetGoal === 'minimize' && currentMetric < bestResult.metric)) {
-                    bestResult = { metric: currentMetric, weights: weights, analysis: analysis };
-                }
-
-                const isBetterThanOriginalOnTarget = (targetGoal === 'maximize' && currentMetric >= originalTargetMetricValue) || (targetGoal === 'minimize' && currentMetric <= originalTargetMetricValue);
-
-                if (isBetterThanOriginalOnTarget) {
-                    let totalImprovement = 0;
-                    let improvementCount = 0;
-                    metricsForBalance.forEach(metricKey => {
-                        const originalValue = trueOriginalAnalysis.metrics[metricKey];
-                        const optimizedValue = analysis.metrics[metricKey];
-                        if (isFinite(originalValue) && isFinite(optimizedValue) && originalValue !== 0) {
-                            const isMinimizing = ['maxDrawdown', 'downsideCapture', 'maxStagnationTrades', 'maxConsecutiveLosses', 'avgLoss', 'maxDrawdownInDollars', 'maxStagnationDays'].includes(metricKey);
-                            const improvement = isMinimizing ? ((originalValue - optimizedValue) / Math.abs(originalValue)) * 100 : ((optimizedValue - originalValue) / Math.abs(originalValue)) * 100;
-                            totalImprovement += improvement;
-                            improvementCount++;
-                        }
-                    });
-
-                    const avgImprovement = improvementCount > 0 ? totalImprovement / improvementCount : 0;
-                    if (avgImprovement > balancedBestResult.metric) {
-                        balancedBestResult = { metric: avgImprovement, weights: weights, analysis: analysis };
-                    }
-                }
+        const requestBody = {
+            portfolio_indices: portfolio.indices,
+            strategies_data: state.rawStrategiesData,
+            benchmark_data: state.rawBenchmarkData,
+            is_risk_scaled: elements.scaleRiskCheckbox.checked,
+            target_max_dd: parseFloat(elements.targetMaxDDInput.value),
+            params: {
+                num_simulations: parseInt(elements.simulationsCountInput.value, 10),
+                target_metric: elements.targetMetricSelect.value,
+                target_goal: elements.targetGoalSelect.value,
+                min_weight: parseFloat(dom.minWeightFilter.value) / 100,
+                metrics_for_balance: activeDatabankView.columns.filter(key => key !== 'name' && key !== 'metricValue'),
             }
+        };
+
+        const response = await fetch('http://localhost:8001/analysis/optimize-portfolio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Error en la respuesta del backend de optimización');
         }
 
-        const metricName = elements.targetMetricSelect.options[elements.targetMetricSelect.selectedIndex].text;
+        const optimizationResults = await response.json();
+
         const finalResults = {
-            baseAnalysis: trueOriginalAnalysis,
-            metricBestAnalysis: bestResult.analysis,
-            balancedBestAnalysis: balancedBestResult.analysis,
+            ...optimizationResults,
             portfolio: portfolio,
-            metricBestWeights: bestResult.weights,
-            balancedBestWeights: balancedBestResult.weights,
-            optimizationMetricName: metricName
+            optimizationMetricName: elements.targetMetricSelect.options[elements.targetMetricSelect.selectedIndex].text
         };
+
         state.currentOptimizationData.lastResults = finalResults; // Guardar para recálculo
         displayOptimizationResults(finalResults);
 
     } catch (error) {
         console.error("Error during optimization:", error);
-        displayError("Ocurrió un error al optimizar los pesos.");
+        displayError(`Ocurrió un error al optimizar los pesos: ${error.message}`);
     } finally {
         toggleLoading(false, 'start-single-optimization-btn', 'start-optimization-btn-text', 'start-optimization-btn-spinner');
     }
 };
 
 const displayOptimizationResults = (results) => {
-    let { baseAnalysis, metricBestAnalysis, balancedBestAnalysis, portfolio, metricBestWeights, balancedBestWeights, optimizationMetricName } = results;
+    let { baseAnalysis, metricBestAnalysis, balancedBestAnalysis, portfolio, optimizationMetricName } = results;
     const elements = getOptimizationModalElements();
-
-    // --- MEJORA: Escalar análisis si la opción está activa ---
-    if (elements.scaleRiskCheckbox.checked) {
-        const targetMaxDD = parseFloat(elements.targetMaxDDInput.value);
-
-        const scaleAnalysis = (analysis, weights) => {
-            if (!analysis || !weights || !targetMaxDD) return analysis;
-
-            const originalTrades = portfolio.indices.flatMap((strategyIndex, i) =>
-                state.rawStrategiesData[strategyIndex].map(trade => ({ ...trade, pnl: trade.pnl * weights[i] }))
-            );
-
-            const currentMaxDD = analysis.metrics.maxDrawdownInDollars;
-            if (currentMaxDD <= 0) return analysis;
-
-            const scaleFactor = targetMaxDD / currentMaxDD;
-            const scaledTrades = originalTrades.map(trade => ({ ...trade, pnl: trade.pnl * scaleFactor }));
-            return processStrategyData(scaledTrades, state.rawBenchmarkData);
-        };
-
-        metricBestAnalysis = scaleAnalysis(metricBestAnalysis, metricBestWeights);
-        balancedBestAnalysis = scaleAnalysis(balancedBestAnalysis, balancedBestWeights);
-        // El baseAnalysis (equal weight) no se escala para mantener la referencia original.
-    }
 
     let tableRows = '';
     const metricsToDisplay = (state.tableViews.databank[state.activeViews.databank] || state.tableViews.databank['default']).columns.filter(key => key !== 'name' && key !== 'metricValue');
@@ -264,7 +168,7 @@ const displayOptimizationResults = (results) => {
         const originalValue = baseAnalysis.metrics[metricKey];
         const metricOptimizedValue = metricBestAnalysis.metrics[metricKey];
         const balancedOptimizedValue = balancedBestAnalysis.metrics[metricKey];
-        const isMinimizing = ['maxDrawdown', 'downsideCapture', 'maxStagnationTrades', 'maxConsecutiveLosses', 'avgLoss', 'maxDrawdownInDollars', 'maxStagnationDays'].includes(metricKey);
+        const isMinimizing = metricKey.toLowerCase().includes('drawdown') || metricKey.toLowerCase().includes('loss') || metricKey.toLowerCase().includes('stagnation');
         
         const getImprovement = (optValue) => {
             if (isFinite(originalValue) && isFinite(optValue) && originalValue !== 0) {
@@ -341,17 +245,17 @@ const displayOptimizationResults = (results) => {
     html += `<div class="mt-6 grid grid-cols-2 gap-x-4 gap-y-2">
         <button id="apply-metric-btn" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded">Aplicar Óptimo (Métrica)</button>
         <button id="apply-balanced-btn" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-3 rounded">Aplicar Óptimo (Balance)</button>
-        <button id="save-new-metric-btn" class="w-full bg-teal-800 hover:bg-teal-900 text-white font-semibold py-1.5 px-3 rounded text-xs">Guardar como Nuevo (Métrica)</button>
-        <button id="save-new-balanced-btn" class="w-full bg-sky-800 hover:bg-sky-900 text-white font-semibold py-1.5 px-3 rounded text-xs">Guardar como Nuevo (Balance)</button>
+        <button id="save-new-metric-btn" class="w-full bg-teal-800 hover:bg-teal-900 text-white font-semibold py-1.5 px-3 rounded text-xs">Guardar como Nuevo (Opt. Métrica)</button>
+        <button id="save-new-balanced-btn" class="w-full bg-sky-800 hover:bg-sky-900 text-white font-semibold py-1.5 px-3 rounded text-xs">Guardar como Nuevo (Opt. Balance)</button>
     </div>`;
 
     elements.resultsContainer.innerHTML = html;
     elements.resultsContainer.classList.remove('hidden');
 
-    document.getElementById('apply-metric-btn').addEventListener('click', () => savePortfolio(false, metricBestWeights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
-    document.getElementById('apply-balanced-btn').addEventListener('click', () => savePortfolio(false, balancedBestWeights, balancedBestAnalysis, `(Opt. Balanceado)`));
-    document.getElementById('save-new-metric-btn').addEventListener('click', () => savePortfolio(true, metricBestWeights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
-    document.getElementById('save-new-balanced-btn').addEventListener('click', () => savePortfolio(true, balancedBestWeights, balancedBestAnalysis, `(Opt. Balanceado)`));
+    document.getElementById('apply-metric-btn').addEventListener('click', () => savePortfolio(false, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
+    document.getElementById('apply-balanced-btn').addEventListener('click', () => savePortfolio(false, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`));
+    document.getElementById('save-new-metric-btn').addEventListener('click', () => savePortfolio(true, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
+    document.getElementById('save-new-balanced-btn').addEventListener('click', () => savePortfolio(true, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`));
 };
 
 /**
@@ -359,8 +263,7 @@ const displayOptimizationResults = (results) => {
  */
 export const reevaluateOptimizationResults = () => {
     if (state.currentOptimizationData && state.currentOptimizationData.lastResults) {
-        // Vuelve a mostrar los resultados, la función se encargará de aplicar el escalado
-        // si el checkbox está activo.
-        displayOptimizationResults(state.currentOptimizationData.lastResults);
+        // Vuelve a lanzar la búsqueda con los nuevos parámetros de riesgo
+        startOptimizationSearch();
     }
 };

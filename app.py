@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import json
-import asyncio
+import asyncio, traceback
 import pandas as pd
 import numpy as np
 import random
@@ -42,11 +42,31 @@ class PortfolioDefinition(BaseModel):
     is_saved_portfolio: bool = False
     saved_index: Optional[int] = None
     is_current_portfolio: bool = False
+    is_databank_portfolio: bool = False
+    databank_index: Optional[int] = None
 
 class FullAnalysisRequest(BaseModel):
     strategies_data: List[List[Trade]]
     benchmark_data: List[Dict[str, Any]]
+    is_risk_normalized: Optional[bool] = False
+    target_max_dd: Optional[float] = None
     portfolios_to_analyze: Optional[List[PortfolioDefinition]] = None
+
+class OptimizationParams(BaseModel):
+    num_simulations: int
+    target_metric: str
+    target_goal: str
+    min_weight: float
+    metrics_for_balance: List[str]
+
+class OptimizationRequest(BaseModel):
+    portfolio_indices: List[int]
+    strategies_data: List[List[Trade]]
+    benchmark_data: List[Dict[str, Any]]
+    params: OptimizationParams
+    # Risk scaling params
+    is_risk_scaled: bool = False
+    target_max_dd: Optional[float] = None
 
 
 # --- Codificador JSON Personalizado y Robusto ---
@@ -99,14 +119,32 @@ async def get_full_analysis(request: FullAnalysisRequest):
         all_metrics = []
         for i, strat_trades in enumerate(strategies_data):
             print(f"  Processing strategy {i+1}/{len(strategies_data)}...")
+            
+            # --- LÓGICA DE NORMALIZACIÓN DE RIESGO ---
+            trades_to_analyze = strat_trades
+            if request.is_risk_normalized and request.target_max_dd and request.target_max_dd > 0:
+                if strat_trades:
+                    # 1. Pre-análisis para obtener el MaxDD en dólares
+                    pre_analysis_df = pd.DataFrame([t.copy() for t in strat_trades])
+                    pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
+                    if pre_analysis_result and pre_analysis_result[0]['maxDrawdownInDollars'] > 0:
+                        # 2. Calcular y aplicar el factor de escala
+                        scale_factor = request.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
+                        scaled_trades = []
+                        for trade in strat_trades:
+                            new_trade = trade.copy()
+                            new_trade['pnl'] *= scale_factor
+                            scaled_trades.append(new_trade)
+                        trades_to_analyze = scaled_trades
+
             if not strat_trades:
                 print(f"  -> Strategy {i+1} has no trades. Skipping.")
                 all_metrics.append(None) # Añadir un placeholder si la estrategia no tiene trades
                 continue
             
-            trades_df = pd.DataFrame(strat_trades)
+            trades_df = pd.DataFrame(trades_to_analyze)
             analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy())
-            all_metrics.append(analysis_result[0] if analysis_result else None)
+            all_metrics.append(analysis_result[0] if analysis_result else None) # analysis_result[0] son las métricas
             print(f"  -> Strategy {i+1} analysis complete.")
         
         # --- NUEVO: Analizar los portafolios solicitados ---
@@ -124,15 +162,33 @@ async def get_full_analysis(request: FullAnalysisRequest):
                             new_trade['pnl'] *= weight
                             portfolio_trades.append(new_trade)
                 
+                # --- LÓGICA DE NORMALIZACIÓN DE RIESGO PARA PORTAFOLIOS ---
+                trades_to_analyze = portfolio_trades
+                if request.is_risk_normalized and request.target_max_dd and request.target_max_dd > 0:
+                    if portfolio_trades:
+                        pre_analysis_df = pd.DataFrame([t.copy() for t in portfolio_trades])
+                        pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
+                        if pre_analysis_result and pre_analysis_result[0]['maxDrawdownInDollars'] > 0:
+                            scale_factor = request.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
+                            scaled_trades = []
+                            for trade in portfolio_trades:
+                                new_trade = trade.copy()
+                                new_trade['pnl'] *= scale_factor
+                                scaled_trades.append(new_trade)
+                            trades_to_analyze = scaled_trades
+
                 if not portfolio_trades:
                     all_metrics.append(None)
                     continue
 
-                portfolio_df = pd.DataFrame(portfolio_trades)
+                # CORRECCIÓN CRÍTICA: Usar los trades que han sido potencialmente escalados ('trades_to_analyze')
+                # en lugar de los originales ('portfolio_trades') para el análisis final.
+                portfolio_df = pd.DataFrame(trades_to_analyze)
                 analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy())
                 
-                # Añadimos el resultado junto con sus identificadores
-                result_obj = {"metrics": analysis_result[0] if analysis_result else None, **p_def.model_dump()}
+                # CORRECCIÓN: Devolver los trades escalados para que el frontend pueda generar los gráficos correctamente.
+                result_obj = {"metrics": analysis_result[0] if analysis_result else None, "trades": trades_to_analyze, **p_def.model_dump()}
+
                 all_metrics.append(result_obj)
                 print(f"  -> Portfolio analysis complete.")
         
@@ -140,7 +196,6 @@ async def get_full_analysis(request: FullAnalysisRequest):
         return json.loads(json.dumps(all_metrics, cls=CustomJSONEncoder))
     except Exception as e:
         print(f"!!!!!! ERROR in /analysis/full: {e} !!!!!!")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -291,8 +346,122 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
 
         except Exception as e:
             print(f"❌ ERROR CATASTRÓFICO EN EL BACKEND: {e}")
-            import traceback
             traceback.print_exc()
             yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.post("/analysis/optimize-portfolio")
+async def optimize_portfolio_weights(request: OptimizationRequest):
+    """
+    Realiza una búsqueda Monte Carlo para encontrar los pesos óptimos para un único portafolio.
+    """
+    print("\n--- Endpoint /analysis/optimize-portfolio HIT ---")
+    try:
+        params = request.params
+        strategies_data = [[trade.model_dump() for trade in strat if trade.pnl is not None] for strat in request.strategies_data]
+        benchmark_data_df = pd.DataFrame(request.benchmark_data)
+        
+        portfolio_trades_data = [strategies_data[i] for i in request.portfolio_indices]
+        num_strategies = len(portfolio_trades_data)
+
+        def analyze_combination(weights: List[float]):
+            """Función helper para analizar una combinación de pesos."""
+            portfolio_trades = []
+            for i, trades in enumerate(portfolio_trades_data):
+                weight = weights[i]
+                for trade in trades:
+                    new_trade = trade.copy()
+                    new_trade['pnl'] *= weight
+                    portfolio_trades.append(new_trade)
+            
+            if not portfolio_trades:
+                return None, None
+
+            # Aplicar escalado de riesgo si es necesario
+            trades_to_analyze = portfolio_trades
+            if request.is_risk_scaled and request.target_max_dd and request.target_max_dd > 0:
+                pre_analysis_df = pd.DataFrame([t.copy() for t in portfolio_trades])
+                pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
+                if pre_analysis_result and pre_analysis_result[0]['maxDrawdownInDollars'] > 0:
+                    scale_factor = request.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
+                    scaled_trades = []
+                    for trade in portfolio_trades:
+                        new_trade = trade.copy()
+                        new_trade['pnl'] *= scale_factor
+                        scaled_trades.append(new_trade)
+                    trades_to_analyze = scaled_trades
+
+            final_df = pd.DataFrame(trades_to_analyze)
+            analysis_result = process_strategy_data(final_df, benchmark_data_df.copy())
+            
+            return (analysis_result[0] if analysis_result else None), trades_to_analyze
+
+        # 1. Analizar la versión con pesos iguales (base)
+        equal_weights = [1.0 / num_strategies] * num_strategies
+        base_metrics, base_trades = analyze_combination(equal_weights) # base_metrics ya incluye lorenzData, etc.
+        if not base_metrics:
+            raise HTTPException(status_code=400, detail="No se pudo analizar el portafolio base (pesos iguales).")
+
+        original_target_metric_value = base_metrics[params.target_metric]
+
+        # Inicializar los mejores resultados
+        metric_best_result = {'metric_val': -np.inf if params.target_goal == 'maximize' else np.inf, 'weights': equal_weights, 'metrics': base_metrics, 'trades': base_trades}
+        balanced_best_result = {'avg_improvement': -np.inf, 'weights': equal_weights, 'metrics': base_metrics, 'trades': base_trades}
+
+        # 2. Bucle de simulación Monte Carlo
+        for i in range(params.num_simulations):
+            # Generar pesos aleatorios
+            weights = np.random.random(num_strategies)
+            weights /= np.sum(weights)
+            
+            # Validar peso mínimo
+            if np.any(weights < params.min_weight):
+                continue
+
+            current_metrics, current_trades = analyze_combination(weights.tolist())
+            if not current_metrics:
+                continue
+
+            # 3. Comprobar si es el mejor para la métrica objetivo
+            current_metric_val = current_metrics[params.target_metric]
+            is_metric_better = (params.target_goal == 'maximize' and current_metric_val > metric_best_result['metric_val']) or \
+                               (params.target_goal == 'minimize' and current_metric_val < metric_best_result['metric_val'])
+            
+            if is_metric_better:
+                metric_best_result = {'metric_val': current_metric_val, 'weights': weights.tolist(), 'metrics': current_metrics, 'trades': current_trades}
+
+            # 4. Comprobar si es el mejor para el balance general
+            is_better_than_original_on_target = (params.target_goal == 'maximize' and current_metric_val >= original_target_metric_value) or \
+                                                (params.target_goal == 'minimize' and current_metric_val <= original_target_metric_value)
+
+            if is_better_than_original_on_target:
+                total_improvement = 0
+                improvement_count = 0
+                for metric_key in params.metrics_for_balance:
+                    original_value = base_metrics.get(metric_key)
+                    optimized_value = current_metrics.get(metric_key)
+                    if original_value is not None and optimized_value is not None and np.isfinite(original_value) and np.isfinite(optimized_value) and original_value != 0:
+                        is_minimizing = 'drawdown' in metric_key.lower() or 'loss' in metric_key.lower() or 'stagnation' in metric_key.lower()
+                        improvement = ((original_value - optimized_value) / abs(original_value)) * 100 if is_minimizing else ((optimized_value - original_value) / abs(original_value)) * 100
+                        total_improvement += improvement
+                        improvement_count += 1
+                
+                avg_improvement = total_improvement / improvement_count if improvement_count > 0 else 0
+                if avg_improvement > balanced_best_result['avg_improvement']:
+                    balanced_best_result = {'avg_improvement': avg_improvement, 'weights': weights.tolist(), 'metrics': current_metrics, 'trades': current_trades}
+
+        # 5. Preparar la respuesta final
+        final_response = {
+            "baseAnalysis": { "metrics": base_metrics, "trades": base_trades, "weights": equal_weights },
+            "metricBestAnalysis": { "metrics": metric_best_result['metrics'], "trades": metric_best_result['trades'], "weights": metric_best_result['weights'] },
+            "balancedBestAnalysis": { "metrics": balanced_best_result['metrics'], "trades": balanced_best_result['trades'], "weights": balanced_best_result['weights'] }
+        }
+        
+        print("--- Optimization complete. Sending response. ---")
+        return json.loads(json.dumps(final_response, cls=CustomJSONEncoder))
+
+    except Exception as e:
+        print(f"!!!!!! ERROR in /analysis/optimize-portfolio: {e} !!!!!!")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

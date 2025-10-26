@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { dom } from './dom.js';
 import { displayError, toggleLoading, parseCsv } from './utils.js';
-import { displayResults, updateAnalysisModeSelector, renderPortfolioComparisonCharts, renderFeaturedPortfolio } from './ui.js';
+import { displayResults, updateAnalysisModeSelector } from './ui.js';
 
 /**
  * Inicia el proceso de análisis principal. Carga los archivos y lanza el primer análisis.
@@ -36,22 +36,12 @@ export const runAnalysis = async () => {
 };
 
 /**
- * Calcula el factor de escala de riesgo basado en el input del usuario.
- * @returns {number} El factor de escala (ej: 1.5 para 150$).
- */
-const getRiskScaleFactor = () => {
-    if (!dom.riskPerTradeInput) return 1.0;
-    const riskPerTrade = parseFloat(dom.riskPerTradeInput.value);
-    return (riskPerTrade > 0) ? riskPerTrade / 100.0 : 1.0;
-};
-
-/**
  * Llama al backend para obtener un análisis completo de todas las estrategias y portafolios.
  * @param {Array} strategies - Array de datos de trades de las estrategias.
  * @param {Array} benchmark - Datos del benchmark.
  * @returns {Promise<Array>} - Promesa que resuelve a un array de resultados de análisis del backend.
  */
-const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios) => {
+const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios, isRiskNormalized, targetMaxDD) => {
     try {
         const response = await fetch('http://localhost:8001/analysis/full', {
             method: 'POST',
@@ -59,7 +49,9 @@ const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios) => 
             body: JSON.stringify({
                 strategies_data: strategies,
                 benchmark_data: benchmark,
-                portfolios_to_analyze: portfolios // <-- NUEVO: Enviamos los portafolios a analizar
+                portfolios_to_analyze: portfolios,
+                is_risk_normalized: isRiskNormalized, // <-- NUEVO
+                target_max_dd: targetMaxDD             // <-- NUEVO
             })
         });
         if (!response.ok) {
@@ -84,59 +76,89 @@ export const reAnalyzeAllData = async () => {
 
     updateAnalysisModeSelector();
 
-    // --- NUEVO: Construir la lista de portafolios a analizar ---
+    const isRiskNormalized = dom.normalizeRiskCheckbox.checked;
+    const targetMaxDD = isRiskNormalized ? parseFloat(document.getElementById('target-max-dd').value) : 0;
+
+    // --- CORREGIDO: Construir una lista de TODOS los portafolios que necesitan análisis del backend ---
     const portfoliosToAnalyze = [];
+
+    // 1. Añadir todos los portafolios guardados a la lista de análisis.
+    // El backend se encargará de calcular sus métricas siempre.
     state.savedPortfolios.forEach((p, i) => {
-        // Si el portafolio NO tiene métricas precalculadas, pedimos al backend que las calcule.
-        // Esto ocurre con portafolios viejos o importados.
-        if (!p.precomputedMetrics) {
-            portfoliosToAnalyze.push({
-                indices: p.indices,
-                weights: p.weights,
-                is_saved_portfolio: true,
-                saved_index: i,
-                name: p.name
-            });
-        }
+        portfoliosToAnalyze.push({
+            indices: p.indices,
+            weights: p.weights,
+            is_saved_portfolio: true,
+            saved_index: i
+        });
     });
 
+    // 1b. Añadir todos los portafolios del DataBank a la lista de análisis.
+    state.databankPortfolios.forEach((p, i) => {
+        portfoliosToAnalyze.push({
+            indices: p.indices,
+            weights: null, // DataBank portfolios son siempre equal-weight
+            is_databank_portfolio: true,
+            databank_index: i
+        });
+    });
+
+    // 2. Añadir el portafolio "en vivo" si hay estrategias seleccionadas en la tabla de resumen.
     if (state.selectedPortfolioIndices.size > 0) {
         portfoliosToAnalyze.push({
             indices: Array.from(state.selectedPortfolioIndices),
             weights: null, // El backend calculará equal weight
-            is_current_portfolio: true,
-            name: 'Portafolio Actual'
+            is_current_portfolio: true
         });
     }
 
-    // 1. Obtener todos los análisis base desde el backend.
-    const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze);
+    // 3. Obtener todos los análisis (estrategias + portafolios) en una sola llamada al backend.
+    const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze, isRiskNormalized, targetMaxDD);
     if (!backendAnalyses || backendAnalyses.length === 0) return;
 
-    // 2. Mapear los resultados del backend al formato que espera el frontend.
+    // 4. Mapear los resultados del backend al formato que espera el frontend.
     let allAnalysisResults = [];
-    
-    // Primero, procesamos los resultados que vinieron del backend
-    let backendIndex = 0;
-    backendAnalyses.forEach(result => {
-        if (result && (result.is_saved_portfolio || result.is_current_portfolio)) {
-            const trades = result.indices.flatMap(idx => state.rawStrategiesData[idx]);
-            allAnalysisResults.push({ name: result.name, analysis: processStrategyData(trades, state.rawBenchmarkData, null, result.metrics), isSavedPortfolio: result.is_saved_portfolio, savedIndex: result.saved_index, isPortfolio: result.is_current_portfolio, isCurrentPortfolio: result.is_current_portfolio, indices: result.indices, weights: result.weights });
-        } else if (result) { // Estrategia individual
-            allAnalysisResults.push({ name: state.loadedStrategyFiles[backendIndex].name.replace('.csv', ''), analysis: processStrategyData(state.rawStrategiesData[backendIndex], state.rawBenchmarkData, null, result), originalIndex: backendIndex });
-            backendIndex++;
-        }
-    });
+    let strategyIndex = 0;
+    for (const result of backendAnalyses) {
+        if (result && result.is_databank_portfolio) {
+            // Es un portafolio del DataBank que ha sido re-analizado.
+            // Actualizamos sus métricas directamente en el estado.
+            const databankPortfolio = state.databankPortfolios[result.databank_index];
+            if (databankPortfolio && result.metrics) {
+                // La métrica principal optimizada no cambia, pero las secundarias sí.
+                databankPortfolio.metrics = result.metrics;
+            }
+            // No añadimos estos resultados a `allAnalysisResults` porque el DataBank
+            // se redibuja por separado.
 
-    // Segundo, añadimos los portafolios guardados que ya tenían métricas
-    state.savedPortfolios.forEach((p, i) => {
-        if (p.precomputedMetrics) {
-            const trades = p.indices.flatMap(idx => state.rawStrategiesData[idx]);
-            allAnalysisResults.push({ name: p.name, analysis: processStrategyData(trades, state.rawBenchmarkData, null, p.precomputedMetrics), isSavedPortfolio: true, savedIndex: i, indices: p.indices, weights: p.weights });
-            // Limpiamos las métricas precalculadas para que la próxima vez se actualicen si es necesario
-            delete p.precomputedMetrics;
+        } else if (result && (result.is_saved_portfolio || result.is_current_portfolio)) {
+            // Para portafolios, el backend ya ha hecho todo. Solo preparamos los datos para los gráficos.
+            // CORRECCIÓN: Usar los trades que devuelve el backend, que ya están escalados si se normalizó el riesgo.
+            const portfolioDef = result.is_saved_portfolio ? state.savedPortfolios[result.saved_index] : { name: 'Portafolio Actual' };
+            // Si el backend no devuelve trades (versión antigua), los construimos como antes para mantener compatibilidad.
+            const trades = result.trades || result.indices.flatMap((stratIdx, i) => {
+                 const weight = result.weights ? result.weights[i] : (1 / result.indices.length);
+                 return state.rawStrategiesData[stratIdx].map(trade => ({ ...trade, pnl: trade.pnl * weight }));
+             });
+            allAnalysisResults.push({
+                name: portfolioDef.name,
+                analysis: processStrategyData(trades, state.rawBenchmarkData, null, result.metrics),
+                isSavedPortfolio: result.is_saved_portfolio,
+                savedIndex: result.saved_index,
+                isCurrentPortfolio: result.is_current_portfolio,
+                indices: result.indices,
+                weights: result.weights
+            });
+        } else if (result) {
+            // Para estrategias individuales, el backend solo devuelve las métricas.
+            allAnalysisResults.push({
+                name: state.loadedStrategyFiles[strategyIndex].name.replace('.csv', ''),
+                analysis: processStrategyData(state.rawStrategiesData[strategyIndex], state.rawBenchmarkData, null, result),
+                originalIndex: strategyIndex
+            });
+            strategyIndex++;
         }
-    });
+    }
 
     displayResults(allAnalysisResults);
 };
@@ -233,22 +255,15 @@ export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrad
 
      // --- CÁLCULOS DE MÉTRICAS ELIMINADOS ---
     // El frontend ya no calcula ninguna métrica, solo prepara datos para gráficos.
-    // Las métricas se reciben del backend.
-    const positivePnlTrades = tradesToAnalyze.filter(t => t.pnl > 0).sort((a, b) => a.pnl - b.pnl);
-    const totalProfit = positivePnlTrades.reduce((sum, t) => sum + t.pnl, 0);
-    let cumulativeProfit = 0;
-    const lorenzData = [{ x: 0, y: 0 }];
-    if (totalProfit > 0) {
-        positivePnlTrades.forEach((trade, index) => {
-            cumulativeProfit += trade.pnl;
-            lorenzData.push({ x: (index + 1) / positivePnlTrades.length * 100, y: (cumulativeProfit / totalProfit) * 100 });
-        });
-    }
+    // Las métricas y datos para gráficos como Lorenz se reciben del backend.
 
     return {
         labels, portfolioValues, benchmarkData,
         returnsData: portfolioReturns.map((p, i) => ({ x: benchmarkReturns[i] * 100, y: p * 100 })),
         metrics: metrics,
-        lorenzData, dailyReturnsMap: new Map(Array.from(dailyPnl.entries()).map(([date, pnl]) => [date, pnl])), rollingSortinoData: [], monthlyPerformance: {}
+        lorenzData: metrics.lorenzData || [], // Usar lorenzData de las métricas del backend
+        rollingSortinoData: [], // Placeholder, ya que no se ha implementado en backend
+        dailyReturnsMap: new Map(Array.from(dailyPnl.entries()).map(([date, pnl]) => [date, pnl])),
+        monthlyPerformance: {}
     };
 };
