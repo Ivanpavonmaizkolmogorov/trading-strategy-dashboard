@@ -174,7 +174,8 @@ export function initializeEventListeners() {
         let savedCount = 0;
         checkboxes.forEach(cb => {
             const index = parseInt(cb.dataset.index, 10);
-            if (savePortfolioFromDatabank(index)) {
+            const portfolioData = state.databankPortfolios[index];
+            if (portfolioData && savePortfolioFromDatabank(index, portfolioData.metrics)) {
                 savedCount++;
             }
         });
@@ -186,7 +187,8 @@ export function initializeEventListeners() {
     dom.databankTableBody.addEventListener('click', (e) => {
         if (e.target.classList.contains('databank-save-single-btn')) {
             const index = parseInt(e.target.dataset.index, 10);
-            if (savePortfolioFromDatabank(index)) {
+            const portfolioData = state.databankPortfolios[index];
+            if (portfolioData && savePortfolioFromDatabank(index, portfolioData.metrics)) {
                 reAnalyzeAllData();
             }
         }

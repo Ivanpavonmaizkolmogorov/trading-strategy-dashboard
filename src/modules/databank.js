@@ -315,7 +315,7 @@ export const sortDatabank = (headerEl) => {
 /**
  * Guarda un portafolio desde el DataBank a la lista de portafolios guardados.
  */
-export const savePortfolioFromDatabank = (portfolioIndex) => {
+export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
     const portfolio = state.databankPortfolios[portfolioIndex];
     if (!portfolio) return false;
 
@@ -339,6 +339,8 @@ export const savePortfolioFromDatabank = (portfolioIndex) => {
         weights: null,
         comments: `Guardado desde DataBank. Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
     });
+    // Adjuntamos las métricas pre-calculadas para evitar re-análisis innecesario
+    state.savedPortfolios[state.savedPortfolios.length - 1].precomputedMetrics = metrics;
     return true;
 };
 

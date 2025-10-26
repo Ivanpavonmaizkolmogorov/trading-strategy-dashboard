@@ -87,13 +87,17 @@ export const reAnalyzeAllData = async () => {
     // --- NUEVO: Construir la lista de portafolios a analizar ---
     const portfoliosToAnalyze = [];
     state.savedPortfolios.forEach((p, i) => {
-        portfoliosToAnalyze.push({
-            indices: p.indices,
-            weights: p.weights,
-            is_saved_portfolio: true,
-            saved_index: i,
-            name: p.name // El nombre se usará en el frontend
-        });
+        // Si el portafolio NO tiene métricas precalculadas, pedimos al backend que las calcule.
+        // Esto ocurre con portafolios viejos o importados.
+        if (!p.precomputedMetrics) {
+            portfoliosToAnalyze.push({
+                indices: p.indices,
+                weights: p.weights,
+                is_saved_portfolio: true,
+                saved_index: i,
+                name: p.name
+            });
+        }
     });
 
     if (state.selectedPortfolioIndices.size > 0) {
@@ -111,18 +115,26 @@ export const reAnalyzeAllData = async () => {
 
     // 2. Mapear los resultados del backend al formato que espera el frontend.
     let allAnalysisResults = [];
-    backendAnalyses.forEach((result, i) => {
-        if (result && result.is_saved_portfolio) {
-            // Es un portafolio guardado
+    
+    // Primero, procesamos los resultados que vinieron del backend
+    let backendIndex = 0;
+    backendAnalyses.forEach(result => {
+        if (result && (result.is_saved_portfolio || result.is_current_portfolio)) {
             const trades = result.indices.flatMap(idx => state.rawStrategiesData[idx]);
-            allAnalysisResults.push({ name: result.name, analysis: processStrategyData(trades, state.rawBenchmarkData, null, result.metrics), isSavedPortfolio: true, savedIndex: result.saved_index, indices: result.indices, weights: result.weights });
-        } else if (result && result.is_current_portfolio) {
-            // Es el portafolio actual
-            const trades = result.indices.flatMap(idx => state.rawStrategiesData[idx]);
-            allAnalysisResults.push({ name: result.name, analysis: processStrategyData(trades, state.rawBenchmarkData, null, result.metrics), isPortfolio: true, isCurrentPortfolio: true });
-        } else if (result) {
-            // Es una estrategia individual
-            allAnalysisResults.push({ name: state.loadedStrategyFiles[i].name.replace('.csv', ''), analysis: processStrategyData(state.rawStrategiesData[i], state.rawBenchmarkData, null, result), originalIndex: i });
+            allAnalysisResults.push({ name: result.name, analysis: processStrategyData(trades, state.rawBenchmarkData, null, result.metrics), isSavedPortfolio: result.is_saved_portfolio, savedIndex: result.saved_index, isPortfolio: result.is_current_portfolio, isCurrentPortfolio: result.is_current_portfolio, indices: result.indices, weights: result.weights });
+        } else if (result) { // Estrategia individual
+            allAnalysisResults.push({ name: state.loadedStrategyFiles[backendIndex].name.replace('.csv', ''), analysis: processStrategyData(state.rawStrategiesData[backendIndex], state.rawBenchmarkData, null, result), originalIndex: backendIndex });
+            backendIndex++;
+        }
+    });
+
+    // Segundo, añadimos los portafolios guardados que ya tenían métricas
+    state.savedPortfolios.forEach((p, i) => {
+        if (p.precomputedMetrics) {
+            const trades = p.indices.flatMap(idx => state.rawStrategiesData[idx]);
+            allAnalysisResults.push({ name: p.name, analysis: processStrategyData(trades, state.rawBenchmarkData, null, p.precomputedMetrics), isSavedPortfolio: true, savedIndex: i, indices: p.indices, weights: p.weights });
+            // Limpiamos las métricas precalculadas para que la próxima vez se actualicen si es necesario
+            delete p.precomputedMetrics;
         }
     });
 
