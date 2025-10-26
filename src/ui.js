@@ -132,7 +132,7 @@ const createSummaryTab = (results) => {
         tableBodyRows += `<tr class="border-b border-gray-700 hover:bg-gray-800">
             <td class="p-3 w-8"><input type="checkbox" data-index="${result.originalIndex}" class="portfolio-checkbox form-checkbox h-5 w-5 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600" ${isChecked}></td>
             <td class="p-3 font-semibold"><span class="inline-block w-3 h-3 rounded-full mr-2" style="background-color:${STRATEGY_COLORS[result.originalIndex % STRATEGY_COLORS.length]}"></span>${result.name}</td>
-            ${Object.keys(ALL_METRICS).filter(k => k !== 'name' && k !== 'metricValue').map(key => `<td class="p-3 text-right">${formatMetricForDisplay(metrics[key], key)}</td>`).join('')}
+            ${state.defaultMetricColumns.map(key => `<td class="p-3 text-right">${formatMetricForDisplay(metrics[key], key)}</td>`).join('')}
         </tr>`;
     });
 
@@ -143,11 +143,11 @@ const createSummaryTab = (results) => {
         tableFoot = `<tfoot><tr class="border-t-2 border-sky-500 bg-gray-800/50">
             <td class="p-3 w-8 text-center font-bold text-amber-400">P</td>
             <td class="p-3 font-semibold text-amber-400"><span class="inline-block w-3 h-3 rounded-full mr-2" style="background-color:#f59e0b"></span>${portfolioResult.name}</td>
-            ${Object.keys(ALL_METRICS).filter(k => k !== 'name' && k !== 'metricValue').map(key => `<td class="p-3 text-right font-semibold text-amber-400">${formatMetricForDisplay(metrics[key], key)}</td>`).join('')}
+            ${state.defaultMetricColumns.map(key => `<td class="p-3 text-right font-semibold text-amber-400">${formatMetricForDisplay(metrics[key], key)}</td>`).join('')}
         </tr></tfoot>`;
     }
 
-    const tableHeaders = Object.keys(ALL_METRICS).filter(k => k !== 'name' && k !== 'metricValue').map(key => {
+    const tableHeaders = state.defaultMetricColumns.map(key => {
         const colInfo = ALL_METRICS[key];
         return `<th class="p-3 text-right sortable" data-column="${key}" data-type="numeric">${colInfo.label}</th>`;
     }).join('');
