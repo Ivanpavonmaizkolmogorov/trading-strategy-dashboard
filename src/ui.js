@@ -126,7 +126,7 @@ const createSummaryTab = (results) => {
     
     let tableBodyRows = '';
     results.filter(r => !r.isPortfolio && !r.isSavedPortfolio).forEach((result) => {
-        const metrics = result.analysis.metrics;
+        const metrics = result.analysis;
         const isChecked = state.selectedPortfolioIndices.has(result.originalIndex) ? 'checked' : '';
         
         tableBodyRows += `<tr class="border-b border-gray-700 hover:bg-gray-800">
@@ -139,7 +139,7 @@ const createSummaryTab = (results) => {
     let tableFoot = '';
     const portfolioResult = results.find(r => r.isCurrentPortfolio);
     if (portfolioResult) {
-        const metrics = portfolioResult.analysis.metrics;
+        const metrics = portfolioResult.analysis;
         tableFoot = `<tfoot><tr class="border-t-2 border-sky-500 bg-gray-800/50">
             <td class="p-3 w-8 text-center font-bold text-amber-400">P</td>
             <td class="p-3 font-semibold text-amber-400"><span class="inline-block w-3 h-3 rounded-full mr-2" style="background-color:#f59e0b"></span>${portfolioResult.name}</td>
@@ -176,7 +176,7 @@ const createStrategyTab = (result) => {
     
     const tabId = `strategy-${result.originalIndex}`;
     const nav = `<button id="${tabId}-btn" class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data-target="${tabId}">${result.name}</button>`;
-    const metrics = result.analysis.metrics;
+    const metrics = result.analysis;
 
     const metricsHTML = `<div><h2 class="text-2xl font-bold text-white mb-4">Métricas Clave: ${result.name}</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
@@ -193,16 +193,10 @@ const createStrategyTab = (result) => {
         </div>
     </div>`;
     
-    let rollingSortinoHTML = '';
-    if (result.analysis.rollingSortinoData.length > 0) {
-        rollingSortinoHTML = `<div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-xl font-bold">Sortino Móvil (1 Año)</h2><div class="h-80"><canvas id="rollingSortinoChart-${tabId}"></canvas></div></div>`;
-    }
-
     const chartsHTML = `<div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 xl:col-span-2"><h2 class="text-xl font-bold">Equity vs. Benchmark</h2><div class="h-96"><canvas id="equityChart-${tabId}"></canvas></div></div>
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-xl font-bold">Dispersión de Rendimientos</h2><div class="h-80"><canvas id="scatterChart-${tabId}"></canvas></div></div>
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-xl font-bold">Curva de Lorenz</h2><div class="h-80"><canvas id="lorenzChart-${tabId}"></canvas></div></div>
-        ${rollingSortinoHTML}
     </div>`;
 
     const content = `<div id="${tabId}" class="tab-content space-y-8">${metricsHTML}${chartsHTML}</div>`;
@@ -229,9 +223,6 @@ export const renderChartsForTab = (tabId) => {
             renderEquityChart(`equityChart-${tabId}`, analysis, result.name, color);
             renderScatterChart(`scatterChart-${tabId}`, analysis, color);
             renderLorenzChart(`lorenzChart-${tabId}`, analysis, color);
-            if (analysis.rollingSortinoData.length > 0) {
-                renderRollingSortinoChart(`rollingSortinoChart-${tabId}`, analysis, color);
-            }
         }
     }
 };
@@ -263,27 +254,12 @@ const renderEquityChart = (canvasId, analysis, name, color) => {
     if (!ctx) return;
     destroyChart(canvasId);
 
-    // --- NORMALIZACIÓN A BASE 100 ---
-    // Se normaliza la curva de equity para que empiece en 100.
-    const firstPortfolioValue = analysis.portfolioValues.length > 0 ? analysis.portfolioValues[0] : 1;
-    const portfolioData = analysis.labels.map((l, i) => ({
-        x: l, 
-        y: (analysis.portfolioValues[i] / firstPortfolioValue) * 100
-    }));
-
-    // CORRECCIÓN: Encontrar el primer valor válido del benchmark para la normalización.
-    const validBenchmarkData = analysis.benchmarkData.filter(d => d.y != null);
-    const firstBenchmarkValue = validBenchmarkData.length > 0 ? validBenchmarkData[0].y : 1;
-    const benchmarkData = validBenchmarkData.map(d => ({ 
-        x: d.x, y: (d.y / firstBenchmarkValue) * 100 
-    }));
-    
     state.chartInstances[canvasId] = new Chart(ctx, { 
         type: 'line', 
         data: { 
             datasets: [ 
-                { label: name, data: portfolioData, borderColor: color, backgroundColor: `${color}1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true }, 
-                { label: 'Benchmark', data: benchmarkData, borderColor: '#f87171', backgroundColor: '#f871711a', borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true } 
+                { label: name, data: analysis.chartData.equityCurve, borderColor: color, backgroundColor: `${color}1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true }, 
+                { label: 'Benchmark', data: analysis.chartData.benchmarkCurve, borderColor: '#f87171', backgroundColor: '#f871711a', borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true } 
             ] 
         }, 
         options: CHART_OPTIONS 
@@ -303,7 +279,7 @@ const renderScatterChart = (canvasId, analysis, color) => {
         data: {
             datasets: [{
                 label: 'Rendimiento Diario',
-                data: analysis.returnsData,
+                data: analysis.chartData.scatterData,
                 backgroundColor: `${color}99`
             }]
         },
@@ -345,25 +321,6 @@ const renderLorenzChart = (canvasId, analysis, color) => {
 };
 
 /**
- * Renderiza un gráfico de Sortino móvil.
- */
-const renderRollingSortinoChart = (canvasId, analysis, color) => {
-    const ctx = document.getElementById(canvasId)?.getContext('2d');
-    if (!ctx) return;
-    destroyChart(canvasId);
-
-    state.chartInstances[canvasId] = new Chart(ctx, {
-        type: 'line',
-        data: {
-            datasets: [{
-                label: 'Sortino Móvil (1A)', data: analysis.rollingSortinoData, borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0.1
-            }]
-        },
-        options: CHART_OPTIONS
-    });
-};
-
-/**
  * Muestra la lista de portafolios guardados.
  */
 export const displaySavedPortfoliosList = () => {
@@ -401,7 +358,7 @@ export const displaySavedPortfoliosList = () => {
             if (key === 'name') {
                 rowHTML += `<td class="p-2"><p class="font-semibold text-sky-300">${p.name}</p><p class="text-gray-400">${weightsText}</p></td>`;
             } else {
-                const value = portfolioAnalysis.analysis.metrics[key];
+                const value = portfolioAnalysis.analysis[key];
                 rowHTML += `<td class="p-2 text-right">${formatMetricForDisplay(value, key)}</td>`;
             }
         });
@@ -444,11 +401,8 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
     const datasets = allAnalyses.map((result) => {
         const isFeatured = result.savedIndex === state.featuredPortfolioIndex;
-        const portfolioValues = result.analysis.portfolioValues;
-        const firstValue = portfolioValues.length > 0 ? portfolioValues[0] : 1;
-        const normalizedData = result.analysis.labels.map((label, i) => ({
-            x: label, y: (portfolioValues[i] / firstValue) * 100
-        }));
+        const normalizedData = result.analysis.chartData.equityCurve;
+
         return {
             label: result.name,
             data: normalizedData,
@@ -462,13 +416,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     });
     
     const firstAnalysis = allAnalyses[0].analysis;
-    // CORRECCIÓN: Encontrar el primer valor válido del benchmark para la normalización.
-    const validBenchmarkData = firstAnalysis.benchmarkData.filter(d => d.y != null);
-    const firstBenchmarkValue = validBenchmarkData.length > 0 ? validBenchmarkData[0].y : 1;
-    const normalizedBenchmarkData = validBenchmarkData.map(d => ({ 
-        x: d.x, y: (d.y / firstBenchmarkValue) * 100 
-    }));
-    datasets.push({ label: 'Benchmark', data: normalizedBenchmarkData, borderColor: '#f87171', borderWidth: 2, pointRadius: 0, tension: 0.1, borderDash: [5, 5] });
+    datasets.push({ label: 'Benchmark', data: firstAnalysis.chartData.benchmarkCurve, borderColor: '#f87171', borderWidth: 2, pointRadius: 0, tension: 0.1, borderDash: [5, 5] });
     
     state.chartInstances[canvasId] = new Chart(ctx, { type: 'line', data: { datasets }, options: CHART_OPTIONS });
 };
@@ -489,7 +437,7 @@ export const renderFeaturedPortfolio = () => {
     if (!portfolioAnalysis) return;
 
     const { analysis } = portfolioAnalysis;
-    const { metrics } = analysis;
+    const metrics = analysis;
 
     const metricsToShow = {
         'Sortino': metrics.sortinoRatio, 'Max DD (%)': `${metrics.maxDrawdown.toFixed(2)}%`, 'Max DD ($)': `$${metrics.maxDrawdownInDollars.toFixed(0)}`,

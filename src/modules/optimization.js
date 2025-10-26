@@ -2,7 +2,7 @@ import { dom } from '../dom.js';
 import { state } from '../state.js';
 import { ALL_METRICS } from '../config.js';
 import { toggleLoading, formatMetricForDisplay, displayError } from '../utils.js';
-import { processStrategyData, reAnalyzeAllData } from '../analysis.js';
+import { reAnalyzeAllData } from '../analysis.js';
 
 let optimizationModalElements; // To be initialized on first open
 
@@ -52,15 +52,15 @@ export const openOptimizationModal = async (portfolioIndex) => {
     
     // Buscamos el análisis ya hecho para obtener las métricas del backend y el MaxDD
     const originalPortfolioAnalysis = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === portfolioIndex);
-    const currentAnalysis = originalPortfolioAnalysis?.analysis;
+    const currentMetrics = originalPortfolioAnalysis?.analysis;
 
     // --- MEJORA: Configurar controles de escalado de riesgo con el valor actual ---
     const riskConfig = portfolio.riskConfig || {};
     elements.scaleRiskCheckbox.checked = riskConfig.isScaled || false;
-    elements.targetMaxDDInput.value = riskConfig.targetMaxDD || (currentAnalysis ? currentAnalysis.metrics.maxDrawdownInDollars.toFixed(0) : 10000);
-    if (currentAnalysis) {
+    elements.targetMaxDDInput.value = riskConfig.targetMaxDD || (currentMetrics ? currentMetrics.maxDrawdownInDollars.toFixed(0) : 10000);
+    if (currentMetrics) {
         // Establecer el máximo del slider en 1.5x el DD actual, o el valor guardado si es mayor.
-        const sliderMax = Math.max(currentAnalysis.metrics.maxDrawdownInDollars * 1.5, parseFloat(elements.targetMaxDDInput.value));
+        const sliderMax = Math.max(currentMetrics.maxDrawdownInDollars * 1.5, parseFloat(elements.targetMaxDDInput.value));
         elements.targetMaxDDSlider.max = sliderMax.toFixed(0);
     }
     elements.targetMaxDDSlider.value = elements.targetMaxDDInput.value;

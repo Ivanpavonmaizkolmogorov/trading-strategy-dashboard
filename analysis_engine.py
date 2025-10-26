@@ -185,6 +185,25 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
                 'y': (cumulative_profit / total_profit_from_winners) * 100
             })
 
+    # --- PREPARAR DATOS PARA GRÁFICOS DEL FRONTEND ---
+    # 1. Curva de Equity (normalizada a 100)
+    first_equity_value = equity_curve['equity'].iloc[0]
+    equity_chart_data = [{'x': idx.strftime('%Y-%m-%d'), 'y': (val / first_equity_value) * 100} for idx, val in equity_curve['equity'].items()]
+
+    # 2. Curva de Benchmark (normalizada a 100 y alineada con las fechas del portafolio)
+    benchmark_on_portfolio_dates = benchmark_df.reindex(equity_curve.index)
+    first_valid_benchmark_price = benchmark_on_portfolio_dates['price'].bfill().iloc[0]
+    benchmark_chart_data = []
+    if pd.notna(first_valid_benchmark_price) and first_valid_benchmark_price > 0:
+        benchmark_chart_data = [{'x': idx.strftime('%Y-%m-%d'), 'y': (val / first_valid_benchmark_price) * 100} for idx, val in benchmark_on_portfolio_dates['price'].items() if pd.notna(val)]
+
+    # 3. Datos de dispersión de rendimientos
+    scatter_data = [{'x': row.benchmark * 100, 'y': row.portfolio * 100} for row in combined_returns.itertuples()]
+
+    # 4. Etiquetas para los gráficos (eje X)
+    chart_labels = [idx.strftime('%Y-%m-%d') for idx in equity_curve.index]
+
+
     # Devolver un diccionario con todas las métricas que espera el frontend
     return {
         "profitFactor": profit_factor,
@@ -205,6 +224,12 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "sqn": sqn,
         # Datos para gráficos
         "lorenzData": lorenz_data,
+        "chartData": {
+            "labels": chart_labels,
+            "equityCurve": equity_chart_data,
+            "benchmarkCurve": benchmark_chart_data,
+            "scatterData": scatter_data
+        }
     }, daily_returns # Se sigue devolviendo para la matriz de correlación
 
 

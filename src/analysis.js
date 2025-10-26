@@ -142,7 +142,7 @@ export const reAnalyzeAllData = async () => {
              });
             allAnalysisResults.push({
                 name: portfolioDef.name,
-                analysis: processStrategyData(trades, state.rawBenchmarkData, null, result.metrics),
+                analysis: result.metrics, // El backend ahora devuelve todo, incluyendo chartData
                 isSavedPortfolio: result.is_saved_portfolio,
                 savedIndex: result.saved_index,
                 isCurrentPortfolio: result.is_current_portfolio,
@@ -153,7 +153,7 @@ export const reAnalyzeAllData = async () => {
             // Para estrategias individuales, el backend solo devuelve las métricas.
             allAnalysisResults.push({
                 name: state.loadedStrategyFiles[strategyIndex].name.replace('.csv', ''),
-                analysis: processStrategyData(state.rawStrategiesData[strategyIndex], state.rawBenchmarkData, null, result),
+                analysis: result, // El backend ahora devuelve todo, incluyendo chartData
                 originalIndex: strategyIndex
             });
             strategyIndex++;
@@ -161,109 +161,4 @@ export const reAnalyzeAllData = async () => {
     }
 
     displayResults(allAnalysisResults);
-};
-
-/**
- * Procesa un conjunto de trades y datos de benchmark para calcular todas las métricas y curvas.
- * @param {Array} tradesToAnalyze - Array de objetos de trade.
- * @param {Array} benchmark - Array de datos del benchmark.
- * @param {Array|null} filterSourceTrades - Trades para filtrar el tiempo de análisis.
- * @returns {Object|null} Objeto con los resultados del análisis o null si no es posible.
- * @note Esta función ya no se preocupa por el `size`. Recibe los trades con el PnL ya ajustado.
- */
-export const processStrategyData = (tradesToAnalyze, benchmark, filterSourceTrades = null, precomputedMetrics = null) => {
-    if (!tradesToAnalyze || tradesToAnalyze.length === 0) return null;
-
-    let benchmarkToUse = benchmark;
-    // Las métricas ahora SIEMPRE vienen precalculadas desde el backend o se pasan como un objeto.
-    // Esta función se enfoca en preparar los datos para los GRÁFICOS.
-    // Si no se pasan métricas, se crea un objeto vacío para evitar errores.
-    const metrics = precomputedMetrics || {};
-
-    if (filterSourceTrades) {
-        const inTradeDates = new Set();
-        filterSourceTrades.forEach(trade => {
-            let currentDate = new Date(trade.entry_date);
-            const endDate = new Date(trade.exit_date);
-            if (isNaN(currentDate.getTime()) || isNaN(endDate.getTime())) return;
-            while (currentDate <= endDate) {
-                inTradeDates.add(currentDate.toISOString().split('T')[0]);
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
-        });
-        benchmarkToUse = benchmark.filter(row => inTradeDates.has(new Date(row.date).toISOString().split('T')[0]));
-        if (benchmarkToUse.length < 2) return null;
-    };
-
-    const dailyPnl = new Map();
-    tradesToAnalyze.forEach(trade => {
-        const pnl = parseFloat(trade.pnl);
-        const exitDate = new Date(trade.exit_date);
-
-        if (!isNaN(pnl) && !isNaN(exitDate.getTime())) {
-            const dateStr = exitDate.toISOString().split('T')[0];
-            dailyPnl.set(dateStr, (dailyPnl.get(dateStr) || 0) + pnl);
-        }
-    });
-
-    if (dailyPnl.size === 0) return null;
-
-    const tradeDates = Array.from(dailyPnl.keys()).sort();
-    const startDate = new Date(tradeDates[0]);
-    const endDate = new Date(tradeDates[tradeDates.length - 1]);
-
-    const fullDateRange = [];
-    let currentDate = new Date(startDate);
-    while (currentDate <= endDate) {
-        fullDateRange.push(currentDate.toISOString().split('T')[0]);
-        currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    let currentEquity = 10000;
-    const equityCurveData = [];
-    fullDateRange.forEach(date => {
-        if (dailyPnl.has(date)) currentEquity += dailyPnl.get(date);
-        equityCurveData.push({ x: date, y: currentEquity });
-    });
-
-    const labels = equityCurveData.map(p => p.x);
-    const portfolioValues = equityCurveData.map(p => p.y);
-
-    const benchmarkPrices = new Map();
-    benchmarkToUse.forEach(row => {
-        const date = new Date(row.date);
-        const price = parseFloat(row.price);
-        if (!isNaN(date.getTime()) && !isNaN(price)) benchmarkPrices.set(date.toISOString().split('T')[0], price);
-    });
-    const benchmarkData = labels.map(date => ({ x: date, y: benchmarkPrices.get(date) }));
-    const portfolioReturns = [], benchmarkReturns = [];
-    let lastPortfolioValue = portfolioValues.length > 0 ? portfolioValues[0] : 0;
-
-    // --- CORRECCIÓN: Asegurar que el benchmark tenga un punto de partida válido para la normalización ---
-    // Encontrar el primer punto del benchmark que tiene un valor válido.
-    const firstValidBenchmarkPoint = benchmarkData.find(d => d.y != null);
-    let lastBenchmarkValue = firstValidBenchmarkPoint ? firstValidBenchmarkPoint.y : 0;
-
-    for (let i = 1; i < labels.length; i++) {
-        const pReturn = (lastPortfolioValue > 0) ? (portfolioValues[i] / lastPortfolioValue) - 1 : 0;
-        const bReturn = (lastBenchmarkValue > 0 && benchmarkData[i]?.y != null) ? (benchmarkData[i].y / lastBenchmarkValue) - 1 : 0;
-        portfolioReturns.push(pReturn);
-        benchmarkReturns.push(bReturn);
-        lastPortfolioValue = portfolioValues[i];
-        if (benchmarkData[i]?.y != null) lastBenchmarkValue = benchmarkData[i].y;
-    }
-
-     // --- CÁLCULOS DE MÉTRICAS ELIMINADOS ---
-    // El frontend ya no calcula ninguna métrica, solo prepara datos para gráficos.
-    // Las métricas y datos para gráficos como Lorenz se reciben del backend.
-
-    return {
-        labels, portfolioValues, benchmarkData,
-        returnsData: portfolioReturns.map((p, i) => ({ x: benchmarkReturns[i] * 100, y: p * 100 })),
-        metrics: metrics,
-        lorenzData: metrics.lorenzData || [], // Usar lorenzData de las métricas del backend
-        rollingSortinoData: [], // Placeholder, ya que no se ha implementado en backend
-        dailyReturnsMap: new Map(Array.from(dailyPnl.entries()).map(([date, pnl]) => [date, pnl])),
-        monthlyPerformance: {}
-    };
 };
