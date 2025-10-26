@@ -42,6 +42,54 @@ export const exportAnalysis = () => {
 };
 
 /**
+ * Fusiona los portafolios guardados de un estado importado con el estado actual.
+ * @param {Object} importedState - El objeto de estado importado.
+ */
+const mergeState = (importedState) => {
+    // 1. Comprobación de compatibilidad: Las estrategias base deben ser las mismas.
+    const currentStrategyNames = state.loadedStrategyFiles.map(f => f.name).sort().join(',');
+    const importedStrategyNames = importedState.loadedStrategyFiles.map(f => f.name).sort().join(',');
+
+    if (currentStrategyNames !== importedStrategyNames) {
+        alert("Fusión cancelada: Las estrategias base del archivo importado no coinciden con las de la sesión actual.");
+        return;
+    }
+
+    let newPortfoliosAdded = 0;
+    const portfoliosToMerge = importedState.savedPortfolios || [];
+
+    portfoliosToMerge.forEach(importedPortfolio => {
+        // 2. Comprobar si ya existe un portafolio idéntico.
+        const isDuplicate = state.savedPortfolios.some(currentPortfolio => {
+            // Compara índices (ordenados para ser consistentes)
+            const sameIndices = JSON.stringify([...currentPortfolio.indices].sort()) === JSON.stringify([...importedPortfolio.indices].sort());
+            // Compara pesos (si existen)
+            const sameWeights = JSON.stringify(currentPortfolio.weights) === JSON.stringify(importedPortfolio.weights);
+            return sameIndices && sameWeights;
+        });
+
+        if (!isDuplicate) {
+            // 3. Añadir el nuevo portafolio si no es un duplicado.
+            const newPortfolio = {
+                ...importedPortfolio,
+                id: state.nextPortfolioId++, // Asignar un nuevo ID único
+                comments: `(Fusionado) ${importedPortfolio.comments || ''}`.trim()
+            };
+            state.savedPortfolios.push(newPortfolio);
+            newPortfoliosAdded++;
+        }
+    });
+
+    if (newPortfoliosAdded > 0) {
+        alert(`${newPortfoliosAdded} portafolios nuevos han sido fusionados con tu sesión.`);
+        // Re-analizar todo para que los nuevos portafolios se muestren correctamente.
+        reAnalyzeAllData();
+    } else {
+        alert("No se encontraron portafolios nuevos para fusionar. Todos los portafolios del archivo ya existían en tu sesión.");
+    }
+};
+
+/**
  * Lee un archivo JSON e importa el estado de la aplicación.
  * @param {Event} e - El evento del input de archivo.
  */
@@ -53,7 +101,20 @@ export const importAnalysis = (e) => {
     reader.onload = (event) => {
         try {
             const importedState = JSON.parse(event.target.result);
-            restoreState(importedState);
+
+            // Si no hay un espacio de trabajo activo, simplemente reemplaza.
+            if (state.rawStrategiesData.length === 0) {
+                restoreState(importedState);
+                return;
+            }
+
+            // Preguntar al usuario qué acción realizar.
+            if (confirm("¿Deseas fusionar los portafolios guardados con tu sesión actual?\n\n- Pulsa 'Aceptar' para FUSIONAR.\n- Pulsa 'Cancelar' para REEMPLAZAR todo el espacio de trabajo.")) {
+                mergeState(importedState);
+            } else {
+                restoreState(importedState);
+            }
+
         } catch (error) {
             console.error("Error al importar el archivo:", error);
             displayError("El archivo de importación no es válido o está corrupto.");
