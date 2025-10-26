@@ -102,13 +102,13 @@ export function initializeEventListeners() {
     });
 
     // --- Portafolios Guardados ---
-    dom.savedPortfoliosBody.addEventListener('click', (e) => {
+    dom.savedPortfoliosBody.addEventListener('click', async (e) => {
         if (e.target.classList.contains('delete-portfolio-btn')) {
             const indexToRemove = parseInt(e.target.dataset.index, 10);
             if (indexToRemove === state.featuredPortfolioIndex) state.featuredPortfolioIndex = null;
             if (indexToRemove === state.comparisonPortfolioIndex) state.comparisonPortfolioIndex = null;
-            state.savedPortfolios.splice(indexToRemove, 1);
-            reAnalyzeAllData();
+            state.savedPortfolios.splice(indexToRemove, 1); // Esto debería funcionar
+            await reAnalyzeAllData();
         }
         if (e.target.classList.contains('view-edit-portfolio-btn')) {
             const index = parseInt(e.target.dataset.index, 10);
@@ -220,7 +220,7 @@ export function initializeEventListeners() {
     });
     dom.savedViewSelector.addEventListener('change', (e) => {
         state.activeViews.saved = e.target.value;
-        reAnalyzeAllData(); // This will trigger displaySavedPortfoliosList
+        reAnalyzeAllData();
     });
     const viewManagerModal = document.getElementById('view-manager-modal');
     viewManagerModal.querySelector('#apply-view-btn').addEventListener('click', applyView);
