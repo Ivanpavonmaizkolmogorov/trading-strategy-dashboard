@@ -179,6 +179,8 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
             max_stagnation_trades = max(max_stagnation_trades, trades_since_peak)
             peak_equity_by_trade = equity_point
             trades_since_peak = 0
+    # CORRECCIÓN: Asegurarse de contar el estancamiento final si la estrategia termina en drawdown.
+    max_stagnation_trades = max(max_stagnation_trades, trades_since_peak)
     
     # Cálculo final de Capture Ratio
     upside_capture = (avg_portfolio_up / avg_benchmark_up) * 100 if avg_benchmark_up != 0 else 0
