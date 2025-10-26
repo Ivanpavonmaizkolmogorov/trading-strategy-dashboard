@@ -47,7 +47,7 @@ export const findDatabankPortfolios = async () => {
     // 2. Realizar la petición POST para iniciar el stream en el backend
     // Usamos fetch solo para enviar los datos y disparar el proceso
     try {
-        const response = await fetch('http://localhost:8001/databank/find-portfolios-stream', {
+        const response = await fetch('/databank/find-portfolios-stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)

@@ -43,7 +43,7 @@ export const runAnalysis = async () => {
  */
 const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios, isRiskNormalized, targetMaxDD) => {
     try {
-        const response = await fetch('http://localhost:8001/analysis/full', {
+        const response = await fetch('/analysis/full', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

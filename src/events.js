@@ -132,7 +132,7 @@ export function initializeEventListeners() {
     dom.findDatabankPortfoliosBtn.addEventListener('click', findDatabankPortfolios);
     dom.pauseSearchBtn.addEventListener('click', async () => {
         try {
-            const response = await fetch('http://localhost:8001/databank/pause', { method: 'POST' });
+            const response = await fetch('/databank/pause', { method: 'POST' });
             if (!response.ok) throw new Error('Error al enviar señal de pausa al backend.');
             // La UI se actualiza en base a los mensajes del stream, no aquí.
         } catch (error) {
@@ -141,7 +141,7 @@ export function initializeEventListeners() {
     });
     dom.stopSearchBtn.addEventListener('click', async () => {
         try {
-            const response = await fetch('http://localhost:8001/databank/stop', { method: 'POST' });
+            const response = await fetch('/databank/stop', { method: 'POST' });
             if (!response.ok) throw new Error('Error al enviar señal de detención al backend.');
             // La UI se actualiza en base a los mensajes del stream, no aquí.
             // Deshabilitamos inmediatamente para evitar clics múltiples.

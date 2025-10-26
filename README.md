@@ -13,14 +13,31 @@ Esta es una herramienta web interactiva para el análisis y comparación de múl
 *   **Gestión de Vistas:** Personaliza las columnas visibles en las tablas de DataBank y Portafolios Guardados.
 *   **Importar/Exportar:** Guarda y carga todo tu espacio de trabajo, incluyendo archivos, portafolios y configuraciones.
 
-## 🚀 Cómo Usarlo
+## 🚀 Ejecución Simplificada (Recomendado)
 
-1.  **Visita la página:** [Accede a la herramienta aquí](https://ivanpavonmaizkolmogorov.github.io/trading-strategy-dashboard/)
-2.  **Sube tus Estrategias:** Haz clic en el área "Subir Estrategias" y selecciona uno o más archivos CSV con tus trades.
-3.  **Sube tu Activo:** Haz clic en "Subir Activo" y selecciona un CSV con el historial de precios del benchmark.
-4.  **Analiza:** Presiona el botón "Analizar" para ver las métricas individuales y las pestañas de análisis detallado.
-5.  **Crea Portafolios:** Selecciona varias estrategias en la tabla de resumen para ver su rendimiento combinado.
-6.  **Explora el DataBank:** Usa la función "Buscar en DataBank" para descubrir portafolios óptimos automáticamente.
+1.  **Instala las dependencias** (solo la primera vez):
+    ```bash
+    pip install -r requirements.txt
+    ```
+2.  **Ejecuta el lanzador:**
+    *   **Windows**: Haz doble clic en el archivo `start.bat`.
+    *   **Mac/Linux**:
+        *   **Desde la terminal (fiable):** Abre una terminal, asegúrate de que el script tiene permisos de ejecución (`chmod +x start.sh`) y lánzalo con `./start.sh`.
+        *   **Con doble clic (Kubuntu, Gnome, etc.):**
+            1.  Haz clic derecho sobre `start.sh` y ve a `Propiedades`.
+            2.  En la pestaña `Permisos`, marca la casilla **"Es ejecutable"**.
+            3.  Ahora, al hacer doble clic, el script se ejecutará. Si el sistema te pregunta, elige "Ejecutar".
+
+3.  La aplicación se abrirá automáticamente en tu navegador en `http://localhost:8001`.
+
+## 🛠️ Cómo Usar la Aplicación
+
+Una vez que la aplicación esté en marcha:
+
+1.  **Sube tus Estrategias:** Haz clic en "Subir Estrategias" y selecciona uno o más archivos CSV.
+2.  **Sube tu Activo:** Haz clic en "Subir Activo" y selecciona un CSV con el historial de precios del benchmark.
+3.  **Analiza:** Presiona "Analizar" para ver las métricas individuales.
+4.  **Explora el DataBank:** Usa "Buscar en DataBank" para descubrir portafolios óptimos.
 
 ## 🛠️ Tecnologías Utilizadas
 

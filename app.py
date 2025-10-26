@@ -1,9 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import json
-import asyncio, traceback
+import asyncio, traceback, os
 import pandas as pd
 import numpy as np
 import random
@@ -99,6 +101,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- SERVIR EL FRONTEND ---
+# Montamos los directorios 'src' y 'assets' para que FastAPI los sirva.
+app.mount("/src", StaticFiles(directory="src"), name="src")
+if os.path.isdir("assets"):
+    app.mount("/assets", StaticFiles(directory="assets"), name="assets")
+
+# Ruta principal que sirve el index.html
+@app.get("/")
+async def read_index():
+    # Asegurarse de que el archivo index.html exista en la raíz del proyecto.
+    return FileResponse('index.html')
 
 # --- Endpoints de la API ---
 @app.get("/")
