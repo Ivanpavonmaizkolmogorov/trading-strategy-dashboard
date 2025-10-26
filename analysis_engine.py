@@ -20,14 +20,17 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     # --- CORRECCIÓN DEFINITIVA: La curva de equity se construye desde los trades, no desde el benchmark. ---
     # 1. Agrupar PnL por día para obtener el rendimiento diario del portafolio.
     daily_pnl = trades_df.groupby(trades_df['exit_date'].dt.date)['pnl'].sum()
+    if daily_pnl.empty:
+        return None # No hay trades para analizar
     daily_pnl.index = pd.to_datetime(daily_pnl.index)
 
-    # 2. Crear un rango de fechas completo desde el primer hasta el último día de trading del portafolio.
+    # 2. Crear un rango de fechas completo desde el primer hasta el último día de trading del portafolio/estrategia.
+    #    Esto asegura que el análisis se basa únicamente en el historial de operaciones del objeto analizado.
     full_date_range = pd.date_range(start=daily_pnl.index.min(), end=daily_pnl.index.max(), freq='D')
     
-    # 3. Construir la curva de equity sobre este rango de fechas, rellenando los días sin trades con 0 PnL.
+    # 3. Construir la curva de equity sobre el rango de fechas propio del portafolio.
     equity_curve = pd.DataFrame(index=full_date_range)
-    equity_curve['pnl'] = daily_pnl.reindex(full_date_range, fill_value=0)
+    equity_curve['pnl'] = daily_pnl.reindex(full_date_range, fill_value=0.0)
     equity_curve['equity'] = 10000 + equity_curve['pnl'].cumsum()
 
     # Métricas de Drawdown
@@ -38,7 +41,9 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
 
     # Métricas de Retorno
     total_profit = equity_curve['equity'].iloc[-1] - equity_curve['equity'].iloc[0]
-    duration_days = (equity_curve.index[-1] - equity_curve.index[0]).days
+    # CORRECCIÓN FINAL: La duración se calcula desde la curva de equity del propio portafolio, no del benchmark.
+    # Esto asegura que el CAGR y otras métricas anualizadas sean siempre correctas.
+    duration_days = (equity_curve.index[-1] - equity_curve.index[0]).days if not equity_curve.empty else 0
     duration_months = duration_days / 30.44
     monthly_avg_profit = total_profit / duration_months if duration_months > 0 else 0
 
