@@ -29,7 +29,7 @@ function getOptimizationModalElements() {
     return optimizationModalElements;
 }
 
-export const openOptimizationModal = (portfolioIndex) => {
+export const openOptimizationModal = async (portfolioIndex) => {
     const elements = getOptimizationModalElements();
     state.currentOptimizationData = { portfolioIndex };
     const portfolio = state.savedPortfolios[portfolioIndex];
@@ -45,10 +45,6 @@ export const openOptimizationModal = (portfolioIndex) => {
     });
     compositionHTML += '</ul>';
     elements.portfolioNameEl.innerHTML = compositionHTML;
-
-    elements.resultsContainer.innerHTML = '';
-    elements.resultsContainer.classList.add('hidden');
-    elements.setupContainer.classList.remove('hidden');
 
     elements.targetMetricSelect.innerHTML = dom.optimizationMetricSelect.innerHTML;
     elements.targetMetricSelect.value = 'sortinoRatio';
@@ -70,21 +66,12 @@ export const openOptimizationModal = (portfolioIndex) => {
     elements.targetMaxDDSlider.value = elements.targetMaxDDInput.value;
     elements.targetMaxDDInput.parentElement.classList.toggle('hidden', !elements.scaleRiskCheckbox.checked);
 
-    // Limpiamos los resultados anteriores y mostramos el panel de búsqueda
-    elements.resultsContainer.innerHTML = '<p class="text-center text-gray-400">Inicia una búsqueda para ver los resultados.</p>';
-    elements.resultsContainer.classList.remove('hidden');
+    // Al abrir, mostramos el panel de configuración y lanzamos un análisis inicial
+    // para mostrar el estado actual del portafolio.
     elements.setupContainer.classList.remove('hidden');
-
-    // Ocultar el contenedor de resultados y mostrar el de setup
-    elements.resultsContainer.classList.add('hidden');
-    elements.setupContainer.classList.remove('hidden');
-
-    elements.modal.classList.remove('hidden');
-    elements.modal.classList.add('flex');
-    setTimeout(() => {
-        elements.backdrop.classList.remove('opacity-0');
-        elements.content.classList.remove('scale-95', 'opacity-0');
-    }, 10);
+    await startOptimizationSearch(true); // `isInitialLoad = true` para no mostrar el spinner
+    
+    showModalWithAnimation(elements);
 };
 
 export const closeOptimizationModal = () => {
@@ -97,11 +84,26 @@ export const closeOptimizationModal = () => {
     }, 300);
 };
 
-export const startOptimizationSearch = async () => {
+const showModalWithAnimation = (elements) => {
+    elements.modal.classList.remove('hidden');
+    elements.modal.classList.add('flex');
+    setTimeout(() => {
+        elements.backdrop.classList.remove('opacity-0');
+        elements.content.classList.remove('scale-95', 'opacity-0');
+    }, 10);
+};
+
+export const startOptimizationSearch = async (isInitialLoad = false) => {
     const elements = getOptimizationModalElements();
-    toggleLoading(true, 'start-single-optimization-btn', 'start-optimization-btn-text', 'start-optimization-btn-spinner');
-    elements.resultsContainer.classList.add('hidden');
     
+    if (!isInitialLoad) {
+        toggleLoading(true, 'start-single-optimization-btn', 'start-optimization-btn-text', 'start-optimization-btn-spinner');
+        elements.resultsContainer.innerHTML = `<div class="text-center p-8"><div class="spinner-blue"></div><p class="mt-2 text-gray-400">Optimizando...</p></div>`;
+        elements.resultsContainer.classList.remove('hidden');
+    } else {
+        elements.resultsContainer.innerHTML = `<div class="text-center p-8"><div class="spinner-blue"></div><p class="mt-2 text-gray-400">Cargando estado actual...</p></div>`;
+    }
+
     await new Promise(resolve => setTimeout(resolve, 10));
     
     try {
@@ -115,7 +117,9 @@ export const startOptimizationSearch = async () => {
             is_risk_scaled: elements.scaleRiskCheckbox.checked,
             target_max_dd: parseFloat(elements.targetMaxDDInput.value),
             params: {
-                num_simulations: parseInt(elements.simulationsCountInput.value, 10),
+                // Si es la carga inicial, no corremos simulaciones, solo analizamos el estado actual.
+                // Si el usuario pulsa el botón, sí corremos las simulaciones.
+                num_simulations: isInitialLoad ? 0 : parseInt(elements.simulationsCountInput.value, 10),
                 target_metric: elements.targetMetricSelect.value,
                 target_goal: elements.targetGoalSelect.value,
                 min_weight: parseFloat(dom.minWeightFilter.value) / 100,
@@ -149,7 +153,9 @@ export const startOptimizationSearch = async () => {
         console.error("Error during optimization:", error);
         displayError(`Ocurrió un error al optimizar los pesos: ${error.message}`);
     } finally {
-        toggleLoading(false, 'start-single-optimization-btn', 'start-optimization-btn-text', 'start-optimization-btn-spinner');
+        if (!isInitialLoad) {
+            toggleLoading(false, 'start-single-optimization-btn', 'start-optimization-btn-text', 'start-optimization-btn-spinner');
+        }
     }
 };
 
@@ -263,7 +269,8 @@ const displayOptimizationResults = (results) => {
  */
 export const reevaluateOptimizationResults = () => {
     if (state.currentOptimizationData && state.currentOptimizationData.lastResults) {
-        // Vuelve a lanzar la búsqueda con los nuevos parámetros de riesgo
-        startOptimizationSearch();
+        // En lugar de una búsqueda completa, solo re-analizamos los pesos existentes
+        // con la nueva configuración de riesgo. Esto es mucho más rápido.
+        startOptimizationSearch(true);
     }
 };

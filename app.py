@@ -409,8 +409,21 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
         metric_best_result = {'metric_val': -np.inf if params.target_goal == 'maximize' else np.inf, 'weights': equal_weights, 'metrics': base_metrics, 'trades': base_trades}
         balanced_best_result = {'avg_improvement': -np.inf, 'weights': equal_weights, 'metrics': base_metrics, 'trades': base_trades}
 
+        # --- MEJORA: Analizar también la composición de pesos actual del portafolio ---
+        # Si el portafolio ya tiene pesos, los usamos como punto de partida para "metric_best"
+        # y "balanced_best", en lugar de los pesos iguales.
+        if request.params.num_simulations == 0:
+            # CORRECCIÓN: La lógica para encontrar el portafolio y sus pesos era incorrecta.
+            # El frontend no envía los portafolios guardados en la petición de optimización,
+            # por lo que no podemos buscarlos aquí. La lógica correcta es que si el portafolio
+            # tiene pesos, el frontend los use para el análisis inicial.
+            # El backend ahora simplemente analiza los pesos que se le dan.
+            # La lógica anterior causaba un AttributeError porque `request.strategies_data` es una lista de listas de trades,
+            # y sus elementos no tienen un atributo `.indices`.
+            pass # Se elimina la lógica errónea. El frontend ya gestiona el estado inicial.
+
         # 2. Bucle de simulación Monte Carlo
-        for i in range(params.num_simulations):
+        for i in range(params.num_simulations): # Si num_simulations es 0, este bucle no se ejecuta.
             # Generar pesos aleatorios
             weights = np.random.random(num_strategies)
             weights /= np.sum(weights)
