@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { dom } from './dom.js';
 import { displayError, toggleLoading, parseCsv } from './utils.js';
-import { displayResults, updateAnalysisModeSelector } from './ui.js';
+import { displayResults, updateAnalysisModeSelector, displaySavedPortfoliosList } from './ui.js';
 
 /**
  * Inicia el proceso de análisis principal. Carga los archivos y lanza el primer análisis.
@@ -161,4 +161,56 @@ export const reAnalyzeAllData = async () => {
     }
 
     displayResults(allAnalysisResults);
+};
+
+/**
+ * Ordena la tabla de resumen.
+ * @param {HTMLElement} headerEl - El elemento de cabecera que fue clickeado.
+ */
+export const sortSummaryTable = (headerEl) => {
+    console.log('-> Dentro de sortSummaryTable. Ordenando por:', headerEl.dataset.column);
+
+    const sortKey = headerEl.dataset.column;
+    if (!sortKey) return;
+
+    let newOrder;
+    if (state.summarySortConfig.key === sortKey) {
+        newOrder = state.summarySortConfig.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        const metricsToMinimize = ['maxDrawdown', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxConsecutiveLosses', 'avgLoss', 'downsideCapture', 'maxConsecutiveLosingMonths', 'maxStagnationDays'];
+        newOrder = metricsToMinimize.includes(sortKey) ? 'asc' : 'desc';
+    }
+
+    state.summarySortConfig.key = sortKey;
+    state.summarySortConfig.order = newOrder;
+
+    // Re-render the entire results section to apply sorting
+    console.log('<- Llamando a displayResults para redibujar la tabla de resumen.');
+    displayResults(window.analysisResults);
+};
+
+/**
+ * Ordena la tabla de portafolios guardados.
+ * @param {HTMLElement} headerEl - El elemento de cabecera que fue clickeado.
+ */
+export const sortSavedPortfoliosTable = (headerEl) => {
+    console.log('-> Dentro de sortSavedPortfoliosTable. Ordenando por:', headerEl.dataset.sortKey);
+
+    const sortKey = headerEl.dataset.sortKey;
+    if (!sortKey) return;
+
+    let newOrder;
+    if (state.savedPortfoliosSortConfig.key === sortKey) {
+        newOrder = state.savedPortfoliosSortConfig.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        const metricsToMinimize = ['maxDrawdown', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxConsecutiveLosses', 'avgLoss', 'downsideCapture', 'maxConsecutiveLosingMonths', 'maxStagnationDays'];
+        newOrder = metricsToMinimize.includes(sortKey) ? 'asc' : 'desc';
+    }
+
+    state.savedPortfoliosSortConfig.key = sortKey;
+    state.savedPortfoliosSortConfig.order = newOrder;
+
+    // Simplemente volvemos a dibujar la lista, que ahora se ordenará con la nueva configuración.
+    console.log('<- Llamando a displaySavedPortfoliosList para redibujar la tabla de guardados.');
+    displaySavedPortfoliosList();
 };

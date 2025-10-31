@@ -21,6 +21,7 @@ export const state = {
     // Configuraciones de ordenamiento
     databankSortConfig: { key: 'metricValue', order: 'desc' },
     savedPortfoliosSortConfig: { key: 'savedIndex', order: 'asc' },
+    summarySortConfig: { key: 'name', order: 'asc' }, // <-- ESTA LÍNEA ESTABA AUSENTE
 
     // --- NUEVO: Vista por defecto centralizada ---
     // Esta es la lista de KPIs que has definido como la vista estándar.

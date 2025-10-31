@@ -1,6 +1,6 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
-import { updateDatabankDisplay } from './modules/databank.js';
+import { updateDatabankDisplay, sortDatabank } from './modules/databank.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
 
@@ -124,11 +124,14 @@ const createSummaryTab = (results) => {
     const tabId = 'summary';
     const nav = `<button class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data-target="${tabId}">Resumen Comparativo</button>`;
     
+    // Ordenar los resultados antes de mostrarlos
+    sortArrayByConfig(results, state.summarySortConfig, r => r.analysis);
+
     let tableBodyRows = '';
     results.filter(r => !r.isPortfolio && !r.isSavedPortfolio).forEach((result) => {
         const metrics = result.analysis;
         const isChecked = state.selectedPortfolioIndices.has(result.originalIndex) ? 'checked' : '';
-        
+
         tableBodyRows += `<tr class="border-b border-gray-700 hover:bg-gray-800">
             <td class="p-3 w-8"><input type="checkbox" data-index="${result.originalIndex}" class="portfolio-checkbox form-checkbox h-5 w-5 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600" ${isChecked}></td>
             <td class="p-3 font-semibold"><span class="inline-block w-3 h-3 rounded-full mr-2" style="background-color:${STRATEGY_COLORS[result.originalIndex % STRATEGY_COLORS.length]}"></span>${result.name}</td>
@@ -149,13 +152,16 @@ const createSummaryTab = (results) => {
 
     const tableHeaders = state.defaultMetricColumns.map(key => {
         const colInfo = ALL_METRICS[key];
-        return `<th class="p-3 text-right sortable" data-column="${key}" data-type="numeric">${colInfo.label}</th>`;
+        const orderIndicator = state.summarySortConfig.key === key ? `data-order="${state.summarySortConfig.order}"` : '';
+        return `<th class="p-3 text-right sortable" data-column="${key}" data-type="numeric" ${orderIndicator}>${colInfo.label}</th>`;
     }).join('');
 
     const comparativeTableHTML = `<div class="overflow-x-auto bg-gray-800 rounded-lg border border-gray-700">
         <table id="summary-table" class="w-full text-sm text-left">
             <thead class="bg-gray-700 text-xs text-gray-400 uppercase">
-                <tr><th class="p-3"></th><th class="p-3 sortable" data-column="name">Estrategia</th>${tableHeaders}</tr>
+                <tr><th class="p-3"></th><th class="p-3 sortable" data-column="name" ${state.summarySortConfig.key === 'name' ? `data-order="${state.summarySortConfig.order}"` : ''}>Estrategia</th>
+                ${tableHeaders}
+                </tr>
             </thead>
             <tbody>${tableBodyRows}</tbody>
             ${tableFoot}
@@ -165,6 +171,45 @@ const createSummaryTab = (results) => {
     const content = `<div id="${tabId}" class="tab-content space-y-8">${comparativeTableHTML}</div>`;
     return { nav, content };
 };
+
+/**
+ * Ordena la tabla de resumen.
+ * @param {HTMLElement} headerEl - El elemento de cabecera que fue clickeado.
+ */
+const sortSummaryTable = (headerEl) => {
+    const sortKey = headerEl.dataset.column;
+    if (!sortKey) return;
+
+    let newOrder;
+    if (state.summarySortConfig.key === sortKey) {
+        newOrder = state.summarySortConfig.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        const metricsToMinimize = ['maxDrawdown', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxConsecutiveLosses', 'avgLoss', 'downsideCapture', 'maxConsecutiveLosingMonths', 'maxStagnationDays'];
+        newOrder = metricsToMinimize.includes(sortKey) ? 'asc' : 'desc';
+    }
+
+    state.summarySortConfig.key = sortKey;
+    state.summarySortConfig.order = newOrder;
+
+    // Re-render the entire results section to apply sorting
+    console.log('<- Llamando a displayResults para redibujar la tabla de resumen.');
+    displayResults(window.analysisResults);
+};
+
+const sortArrayByConfig = (array, sortConfig, metricAccessor) => {
+    if (!array) return;
+    array.sort((a, b) => {
+        const metricsA = metricAccessor(a);
+        const metricsB = metricAccessor(b);
+        const valA = sortConfig.key === 'name' ? a.name : metricsA[sortConfig.key];
+        const valB = sortConfig.key === 'name' ? b.name : metricsB[sortConfig.key];
+
+        if (valA < valB) return sortConfig.order === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.order === 'asc' ? 1 : -1;
+        return 0;
+    });
+};
+
 
 /**
  * Crea el HTML para la pestaña de una estrategia individual.
@@ -334,11 +379,33 @@ export const displaySavedPortfoliosList = () => {
 
     const activeViewColumns = state.tableViews.saved[state.activeViews.saved]?.columns || state.tableViews.saved['default'].columns;
 
+    // Ordenar los portafolios antes de mostrarlos
+    state.savedPortfolios.sort((a, b) => {
+        const sortConfig = state.savedPortfoliosSortConfig;
+        const analysisA = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === state.savedPortfolios.indexOf(a))?.analysis;
+        const analysisB = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === state.savedPortfolios.indexOf(b))?.analysis;
+
+        if (!analysisA || !analysisB) return 0;
+
+        let valA = sortConfig.key === 'name' ? a.name : analysisA[sortConfig.key];
+        let valB = sortConfig.key === 'name' ? b.name : analysisB[sortConfig.key];
+
+        if (typeof valA === 'number') {
+            valA = isFinite(valA) ? valA : (sortConfig.order === 'asc' ? Infinity : -Infinity);
+            valB = isFinite(valB) ? valB : (sortConfig.order === 'asc' ? Infinity : -Infinity);
+        }
+
+        if (valA < valB) return sortConfig.order === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.order === 'asc' ? 1 : -1;
+        return 0;
+    });
+
     let headerHTML = '<tr>';
     activeViewColumns.forEach(key => {
         const colInfo = ALL_METRICS[key];
         if (colInfo) {
-            headerHTML += `<th class="${colInfo.class} sortable" data-sort-key="${key}">${colInfo.label}</th>`;
+            const orderIndicator = state.savedPortfoliosSortConfig.key === key ? `data-order="${state.savedPortfoliosSortConfig.order}"` : '';
+            headerHTML += `<th class="${colInfo.class} sortable" data-sort-key="${key}" ${orderIndicator}>${colInfo.label}</th>`;
         }
     });
     headerHTML += `<th class="p-2 text-center align-bottom">Acciones</th></tr>`;
@@ -372,6 +439,30 @@ export const displaySavedPortfoliosList = () => {
         bodyHTML += rowHTML;
     });
     dom.savedPortfoliosBody.innerHTML = bodyHTML;
+};
+
+/**
+ * Ordena la tabla de portafolios guardados.
+ * @param {HTMLElement} headerEl - El elemento de cabecera que fue clickeado.
+ */
+const sortSavedPortfoliosTable = (headerEl) => {
+    const sortKey = headerEl.dataset.sortKey;
+    if (!sortKey) return;
+
+    let newOrder;
+    if (state.savedPortfoliosSortConfig.key === sortKey) {
+        newOrder = state.savedPortfoliosSortConfig.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        const metricsToMinimize = ['maxDrawdown', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxConsecutiveLosses', 'avgLoss', 'downsideCapture', 'maxConsecutiveLosingMonths', 'maxStagnationDays'];
+        newOrder = metricsToMinimize.includes(sortKey) ? 'asc' : 'desc';
+    }
+
+    state.savedPortfoliosSortConfig.key = sortKey;
+    state.savedPortfoliosSortConfig.order = newOrder;
+
+    // Simplemente volvemos a dibujar la lista, que ahora se ordenará con la nueva configuración.
+    console.log('<- Llamando a displaySavedPortfoliosList para redibujar la tabla de guardados.');
+    displaySavedPortfoliosList(); // Correcto: solo redibuja esta lista
 };
 
 /**

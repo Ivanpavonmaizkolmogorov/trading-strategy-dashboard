@@ -1,6 +1,6 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
-import { runAnalysis, reAnalyzeAllData } from './analysis.js';
+import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable } from './analysis.js';
 import { updateTradesFilesList, resetUI, renderAllCharts } from './ui.js';
 import { findDatabankPortfolios, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay } from './modules/databank.js';
 import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
@@ -101,8 +101,28 @@ export function initializeEventListeners() {
         }
     });
 
+    // --- CORREGIDO: Listener para ordenar la tabla de Resumen usando delegación ---
+    dom.tabContentArea.addEventListener('click', (e) => {
+        const header = e.target.closest('#summary-table th.sortable');
+        if (header) {
+            console.log('-> Clic detectado en cabecera de Resumen:', header.dataset.column);
+            sortSummaryTable(header);
+            console.log('<- Función sortSummaryTable llamada.');
+        }
+    });
+
+
     // --- Portafolios Guardados ---
-    dom.savedPortfoliosBody.addEventListener('click', async (e) => {
+    // Usamos el contenedor principal de la sección para delegar todos los eventos
+    dom.savedPortfoliosSection.addEventListener('click', async (e) => {
+        // Listener para ordenar
+        const header = e.target.closest('#saved-portfolios-header th.sortable');
+        if (header) {
+            console.log('-> Clic detectado en cabecera de Portafolios Guardados:', header.dataset.sortKey);
+            sortSavedPortfoliosTable(header);
+            console.log('<- Función sortSavedPortfoliosTable llamada.');
+        }
+
         if (e.target.classList.contains('delete-portfolio-btn')) {
             const indexToRemove = parseInt(e.target.dataset.index, 10);
             if (indexToRemove === state.featuredPortfolioIndex) state.featuredPortfolioIndex = null;
@@ -114,7 +134,6 @@ export function initializeEventListeners() {
             const index = parseInt(e.target.dataset.index, 10);
             openOptimizationModal(index);
         }
-        // ... (aquí irían los listeners para editar, destacar, etc.)
     });
 
     // --- Portafolio Destacado ---
