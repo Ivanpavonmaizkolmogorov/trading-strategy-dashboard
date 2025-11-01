@@ -69,6 +69,13 @@ const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios, isR
  * Vuelve a calcular y mostrar todos los resultados basándose en el estado actual (filtros, selecciones, etc.).
  */
 export const reAnalyzeAllData = async () => {
+    // --- GUARDIA DE SEGURIDAD ---
+    // Si no hay datos de estrategias o de benchmark, no podemos analizar nada.
+    if (!state.rawStrategiesData || state.rawStrategiesData.length === 0 || !state.rawBenchmarkData) {
+        console.warn("reAnalyzeAllData abortado: Faltan datos de estrategias o de benchmark.");
+        return;
+    }
+
     state.selectedPortfolioIndices.clear();
     document.querySelectorAll('.portfolio-checkbox:checked').forEach(cb => {
         state.selectedPortfolioIndices.add(parseInt(cb.dataset.index));
@@ -89,7 +96,8 @@ export const reAnalyzeAllData = async () => {
             indices: p.indices,
             weights: p.weights,
             is_saved_portfolio: true,
-            saved_index: i
+            saved_index: i,
+            portfolio_id: p.id
         });
     });
 
@@ -114,52 +122,69 @@ export const reAnalyzeAllData = async () => {
 
     // 3. Obtener todos los análisis (estrategias + portafolios) en una sola llamada al backend.
     const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze, isRiskNormalized, targetMaxDD);
+    // El log que has proporcionado confirma que los datos llegan aquí.
+    console.log("DEBUG ANALYSIS.JS: Datos recibidos del backend:", JSON.parse(JSON.stringify(backendAnalyses)));
     if (!backendAnalyses || backendAnalyses.length === 0) return;
 
     // 4. Mapear los resultados del backend al formato que espera el frontend.
     let allAnalysisResults = [];
-    let strategyIndex = 0;
-    for (const result of backendAnalyses) {
-        if (result && result.is_databank_portfolio) {
-            // Es un portafolio del DataBank que ha sido re-analizado.
-            // Actualizamos sus métricas directamente en el estado.
-            const databankPortfolio = state.databankPortfolios[result.databank_index];
-            if (databankPortfolio && result.metrics) {
-                // La métrica principal optimizada no cambia, pero las secundarias sí.
-                databankPortfolio.metrics = result.metrics;
-            }
-            // No añadimos estos resultados a `allAnalysisResults` porque el DataBank
-            // se redibuja por separado.
+    // Limpiar métricas antiguas de los portafolios guardados antes de enriquecerlos
+    state.savedPortfolios.forEach(p => { delete p.metrics; delete p.analysis; });
+    // Limpiar métricas antiguas de los portafolios del databank
+    state.databankPortfolios.forEach(p => { delete p.metrics; });
 
-        } else if (result && (result.is_saved_portfolio || result.is_current_portfolio)) {
-            // Para portafolios, el backend ya ha hecho todo. Solo preparamos los datos para los gráficos.
-            // CORRECCIÓN: Usar los trades que devuelve el backend, que ya están escalados si se normalizó el riesgo.
-            const portfolioDef = result.is_saved_portfolio ? state.savedPortfolios[result.saved_index] : { name: 'Portafolio Actual' };
-            // Si el backend no devuelve trades (versión antigua), los construimos como antes para mantener compatibilidad.
-            const trades = result.trades || result.indices.flatMap((stratIdx, i) => {
-                 const weight = result.weights ? result.weights[i] : (1 / result.indices.length);
-                 return state.rawStrategiesData[stratIdx].map(trade => ({ ...trade, pnl: trade.pnl * weight }));
-             });
-            allAnalysisResults.push({
-                name: portfolioDef.name,
-                analysis: result.metrics, // El backend ahora devuelve todo, incluyendo chartData
-                isSavedPortfolio: result.is_saved_portfolio,
-                savedIndex: result.saved_index,
-                isCurrentPortfolio: result.is_current_portfolio,
-                indices: result.indices,
-                weights: result.weights
-            });
-        } else if (result) {
-            // Para estrategias individuales, el backend solo devuelve las métricas.
-            allAnalysisResults.push({
-                name: state.loadedStrategyFiles[strategyIndex].name.replace('.csv', ''),
-                analysis: result, // El backend ahora devuelve todo, incluyendo chartData
-                originalIndex: strategyIndex
-            });
-            strategyIndex++;
+    // Contadores para mapear estrategias individuales
+    const strategyAnalyses = [];
+
+    for (const result of backendAnalyses) {
+        if (!result) continue;
+
+        if (result.is_saved_portfolio) {
+            if (result.metrics && Object.keys(result.metrics).length > 0) {
+                // El backend ahora usa saved_index para identificar portafolios guardados.
+                // Es más fiable que el ID durante el ciclo de vida de la app.
+                const portfolioInState = state.savedPortfolios[result.saved_index];
+                if (portfolioInState) {
+                    portfolioInState.metrics = result.metrics;
+                    portfolioInState.analysis = result.metrics;
+                }
+            }
+        } else if (result.is_databank_portfolio) {
+            if (result.databank_index !== undefined && state.databankPortfolios[result.databank_index]) {
+                const databankPortfolio = state.databankPortfolios[result.databank_index];
+                if (databankPortfolio && result.metrics) {
+                    databankPortfolio.metrics = result.metrics;
+                }
+            }
+        } else if (result.is_current_portfolio) {
+            allAnalysisResults.push({ name: 'Portafolio Actual', analysis: result.metrics, isCurrentPortfolio: true });
+        } else {
+            // Si no es ningún tipo de portafolio, es una estrategia individual.
+            // Esto es más robusto que la condición anterior.
+            strategyAnalyses.push(result);
         }
     }
 
+    // Ahora, procesamos las estrategias individuales en orden.
+    // Esto asegura que el 'originalIndex' sea correcto.
+    strategyAnalyses.forEach((analysis, index) => {
+        if (index < state.loadedStrategyFiles.length) {
+            allAnalysisResults.push({
+                name: state.loadedStrategyFiles[index].name.replace('.csv', ''),
+                analysis: analysis,
+                originalIndex: index
+            });
+        }
+    });
+
+    // Después de enriquecer, añadimos los portafolios guardados a los resultados para los gráficos.
+    state.savedPortfolios.forEach((p, i) => {
+        if (p.metrics) {
+            allAnalysisResults.push({ name: p.name, analysis: p.metrics, isSavedPortfolio: true, savedIndex: i });
+        }
+    });
+
+    console.log("DEBUG ANALYSIS.JS: Estado final de 'savedPortfolios' antes de dibujar:", JSON.parse(JSON.stringify(state.savedPortfolios)));
     displayResults(allAnalysisResults);
 };
 

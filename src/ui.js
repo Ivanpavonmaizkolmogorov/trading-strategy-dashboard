@@ -369,6 +369,7 @@ const renderLorenzChart = (canvasId, analysis, color) => {
  * Muestra la lista de portafolios guardados.
  */
 export const displaySavedPortfoliosList = () => {
+    console.log("DEBUG UI.JS: Entrando a displaySavedPortfoliosList. Estado de 'savedPortfolios':", JSON.parse(JSON.stringify(state.savedPortfolios)));
     if (state.savedPortfolios.length === 0) {
         dom.savedPortfoliosSection.classList.add('hidden');
         return;
@@ -381,14 +382,10 @@ export const displaySavedPortfoliosList = () => {
 
     // Ordenar los portafolios antes de mostrarlos
     state.savedPortfolios.sort((a, b) => {
+        // Ahora es simple: cada portafolio tiene sus métricas.
         const sortConfig = state.savedPortfoliosSortConfig;
-        const analysisA = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === state.savedPortfolios.indexOf(a))?.analysis;
-        const analysisB = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === state.savedPortfolios.indexOf(b))?.analysis;
-
-        if (!analysisA || !analysisB) return 0;
-
-        let valA = sortConfig.key === 'name' ? a.name : analysisA[sortConfig.key];
-        let valB = sortConfig.key === 'name' ? b.name : analysisB[sortConfig.key];
+        let valA = sortConfig.key === 'name' ? a.name : (a.metrics?.[sortConfig.key] ?? 0);
+        let valB = sortConfig.key === 'name' ? b.name : (b.metrics?.[sortConfig.key] ?? 0);
 
         if (typeof valA === 'number') {
             valA = isFinite(valA) ? valA : (sortConfig.order === 'asc' ? Infinity : -Infinity);
@@ -413,28 +410,35 @@ export const displaySavedPortfoliosList = () => {
 
     let bodyHTML = '';
     state.savedPortfolios.forEach((p, i) => {
-        const portfolioAnalysis = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === i);
-        if (!portfolioAnalysis || !portfolioAnalysis.analysis) return;
+        // Ya no necesitamos buscar. ¡Las métricas están en el propio objeto 'p'!
+        if (!p.metrics || Object.keys(p.metrics).length === 0) {
+            console.log(`DEBUG UI.JS: Saltando portafolio ID ${p.id} ('${p.name}') porque no tiene métricas.`);
+            return; // Si no tiene métricas, lo saltamos.
+        }
+
+        // El índice original es su posición en el array de estado ANTES de ordenar.
+        // Para los botones, necesitamos el índice que corresponde al estado actual.
+        const originalIndex = state.savedPortfolios.indexOf(p);
 
         const weightsText = p.weights ? `(${p.weights.map(w => `${(w*100).toFixed(0)}%`).join('/')})` : '';
-        const isFeatured = i === state.featuredPortfolioIndex;
-        const isCompared = i === state.comparisonPortfolioIndex;
+        const isFeatured = originalIndex === state.featuredPortfolioIndex;
+        const isCompared = originalIndex === state.comparisonPortfolioIndex;
 
-        let rowHTML = `<tr class="text-xs cursor-pointer" data-row-type="saved" data-row-index="${i}">`;
+        let rowHTML = `<tr class="text-xs cursor-pointer" data-row-type="saved" data-row-index="${originalIndex}">`;
         activeViewColumns.forEach(key => {
             if (key === 'name') {
-                rowHTML += `<td class="p-2"><p class="font-semibold text-sky-300">${p.name}</p><p class="text-gray-400">${weightsText}</p></td>`;
+                rowHTML += `<td class="p-2"><p class="font-semibold text-sky-300">${p.name}</p><p class="text-gray-400 text-xs">${weightsText}</p></td>`;
             } else {
-                const value = portfolioAnalysis.analysis[key];
+                const value = p.metrics[key];
                 rowHTML += `<td class="p-2 text-right">${formatMetricForDisplay(value, key)}</td>`;
             }
         });
 
         rowHTML += `<td class="p-2 text-center whitespace-nowrap">
-            <button data-index="${i}" class="feature-portfolio-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isFeatured ? 'featured' : ''}" title="Destacar/Acciones">&#9733;</button>
-            ${p.weights ? `<button data-index="${i}" class="compare-original-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isCompared ? 'active' : ''}" title="Comparar con Original">🔄</button>` : ''}
-            <button data-index="${i}" class="view-edit-portfolio-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-1 px-2 rounded text-xs">Editar</button>
-            <button data-index="${i}" class="delete-portfolio-btn text-red-500 hover:text-red-400 font-bold text-lg px-1">&times;</button>
+            <button data-index="${originalIndex}" class="feature-portfolio-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isFeatured ? 'featured' : ''}" title="Destacar/Acciones">&#9733;</button>
+            ${p.weights ? `<button data-index="${originalIndex}" class="compare-original-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isCompared ? 'active' : ''}" title="Comparar con Original">🔄</button>` : ''}
+            <button data-index="${originalIndex}" class="view-edit-portfolio-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-1 px-2 rounded text-xs">Editar</button>
+            <button data-index="${originalIndex}" class="delete-portfolio-btn text-red-500 hover:text-red-400 font-bold text-lg px-1">&times;</button>
         </td></tr>`;
         bodyHTML += rowHTML;
     });

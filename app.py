@@ -43,6 +43,7 @@ class PortfolioDefinition(BaseModel):
     # Añadimos campos para identificar el portafolio en el frontend
     is_saved_portfolio: bool = False
     saved_index: Optional[int] = None
+    portfolio_id: Optional[int] = None
     is_current_portfolio: bool = False
     is_databank_portfolio: bool = False
     databank_index: Optional[int] = None
@@ -130,6 +131,9 @@ async def get_full_analysis(request: FullAnalysisRequest):
         benchmark_data_df = pd.DataFrame(request.benchmark_data)
         print(f"Received {len(strategies_data)} strategies and benchmark with {len(benchmark_data_df)} rows.")
 
+        # --- CORRECCIÓN ARQUITECTURAL CLAVE ---
+        # 1. Pre-procesar todas las estrategias y guardar sus DataFrames de trades.
+        processed_strategy_dfs = []
         all_metrics = []
         for i, strat_trades in enumerate(strategies_data):
             print(f"  Processing strategy {i+1}/{len(strategies_data)}...")
@@ -153,12 +157,14 @@ async def get_full_analysis(request: FullAnalysisRequest):
 
             if not strat_trades:
                 print(f"  -> Strategy {i+1} has no trades. Skipping.")
+                processed_strategy_dfs.append(pd.DataFrame()) # Añadir DF vacío como placeholder
                 all_metrics.append(None) # Añadir un placeholder si la estrategia no tiene trades
                 continue
             
             trades_df = pd.DataFrame(trades_to_analyze)
+            processed_strategy_dfs.append(trades_df) # Guardar el DF procesado
             analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy())
-            all_metrics.append(analysis_result[0] if analysis_result else None) # analysis_result[0] son las métricas
+            all_metrics.append(analysis_result[0] if analysis_result and analysis_result[0] else None)
             print(f"  -> Strategy {i+1} analysis complete.")
         
         # --- NUEVO: Analizar los portafolios solicitados ---
@@ -169,43 +175,56 @@ async def get_full_analysis(request: FullAnalysisRequest):
                 weights = p_def.weights if p_def.weights else [1/len(p_def.indices)] * len(p_def.indices)
                 
                 for i, strat_idx in enumerate(p_def.indices):
-                    if strat_idx < len(strategies_data):
+                    # 2. Usar los DataFrames pre-procesados, no los datos crudos.
+                    if strat_idx < len(processed_strategy_dfs):
                         weight = weights[i]
-                        for trade in strategies_data[strat_idx]:
-                            new_trade = trade.copy()
-                            new_trade['pnl'] *= weight
-                            portfolio_trades.append(new_trade)
+                        strat_df = processed_strategy_dfs[strat_idx].copy()
+                        if not strat_df.empty:
+                            strat_df['pnl'] *= weight
+                            portfolio_trades.append(strat_df)
                 
                 # --- LÓGICA DE NORMALIZACIÓN DE RIESGO PARA PORTAFOLIOS ---
-                trades_to_analyze = portfolio_trades
+                # Construir el DF del portafolio ANTES de la normalización
+                portfolio_df = pd.concat(portfolio_trades, ignore_index=True) if portfolio_trades else pd.DataFrame()
+                trades_to_analyze_df = portfolio_df
+
                 if request.is_risk_normalized and request.target_max_dd and request.target_max_dd > 0:
-                    if portfolio_trades:
-                        pre_analysis_df = pd.DataFrame([t.copy() for t in portfolio_trades])
-                        pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
+                    if not portfolio_df.empty:
+                        pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy())
                         if pre_analysis_result and pre_analysis_result[0]['maxDrawdownInDollars'] > 0:
                             scale_factor = request.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
-                            scaled_trades = []
-                            for trade in portfolio_trades:
-                                new_trade = trade.copy()
-                                new_trade['pnl'] *= scale_factor
-                                scaled_trades.append(new_trade)
-                            trades_to_analyze = scaled_trades
-
-                if not portfolio_trades:
-                    all_metrics.append(None)
-                    continue
+                            scaled_df = portfolio_df.copy()
+                            scaled_df['pnl'] *= scale_factor
+                            trades_to_analyze_df = scaled_df
 
                 # CORRECCIÓN CRÍTICA: Usar los trades que han sido potencialmente escalados ('trades_to_analyze')
                 # en lugar de los originales ('portfolio_trades') para el análisis final.
-                portfolio_df = pd.DataFrame(trades_to_analyze)
-                analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy())
+                analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy())
                 
                 # CORRECCIÓN: Devolver los trades escalados para que el frontend pueda generar los gráficos correctamente.
-                result_obj = {"metrics": analysis_result[0] if analysis_result else None, "trades": trades_to_analyze, **p_def.model_dump()}
+                # CORRECCIÓN FINAL: Si analysis_result es None, devolver un diccionario vacío para 'metrics'
+                # en lugar de None. Esto evita que el frontend filtre el resultado por completo.
+                metrics_payload = analysis_result[0] if analysis_result and analysis_result[0] else {}
+                
+                # --- CORRECCIÓN FINAL Y DEFINITIVA ---
+                # Construir el objeto de respuesta explícitamente para asegurar que todos los campos se incluyen.
+                # Y manejar el caso donde portfolio_id puede no existir (para el portafolio actual o del databank).
+                result_obj = {
+                    "metrics": metrics_payload, # The metrics are now directly in this property
+                    "is_saved_portfolio": p_def.is_saved_portfolio,
+                    "saved_index": p_def.saved_index,
+                    "is_current_portfolio": p_def.is_current_portfolio,
+                    "is_databank_portfolio": p_def.is_databank_portfolio,
+                    "databank_index": p_def.databank_index,
+                    "portfolio_id": p_def.portfolio_id
+                }
+
+                print(f"DEBUG BACKEND: Analysis for portfolio ID {p_def.portfolio_id if p_def.is_saved_portfolio else 'N/A'} -> Metrics found: {bool(metrics_payload)}")
 
                 all_metrics.append(result_obj)
                 print(f"  -> Portfolio analysis complete.")
         
+        print(f"DEBUG BACKEND: Final response contains {len(all_metrics)} total analysis objects.")
         print("--- Analysis complete. Sending response. ---")
         return json.loads(json.dumps(all_metrics, cls=CustomJSONEncoder))
     except Exception as e:

@@ -340,7 +340,7 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
     
     state.savedPortfolios.push({
         name: `P-DB (${names}) ${portfolio.metricName}`,
-        indices: portfolio.indices,
+        indices: portfolio.indices, // El ID se asigna aquí
         id: state.nextPortfolioId++,
         weights: null,
         comments: `Guardado desde DataBank. Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
