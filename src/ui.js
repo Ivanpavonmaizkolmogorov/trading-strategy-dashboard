@@ -226,10 +226,10 @@ const createStrategyTab = (result) => {
     const metricsHTML = `<div><h2 class="text-2xl font-bold text-white mb-4">Métricas Clave: ${result.name}</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
             ${Object.entries({
-                'Profit Factor': metrics.profitFactor, 'Coef. Sharpe': metrics.sharpeRatio, 'Max DD': `${metrics.maxDrawdown.toFixed(2)}%`, 'Profit/Mes': metrics.monthlyAvgProfit,
-                'Ret/DD': metrics.profitMaxDD_Ratio, 'Profit Mes/DD($)': metrics.monthlyProfitToDollarDD, 'Win %': `${metrics.winningPercentage.toFixed(2)}%`, 'Avg. Win': metrics.avgWin,
-                'Avg. Loss': metrics.avgLoss, 'Pérdidas Cons.': metrics.maxConsecutiveLosses, 'Ganadas Cons.': metrics.maxConsecutiveWins, 'Stagnation (Trades)': metrics.maxStagnationTrades,
-                'Meses Pérd. Cons.': metrics.maxConsecutiveLosingMonths, 'Capture Ratio': metrics.captureRatio, 'Sortino': metrics.sortinoRatio, 'UPI': metrics.upi
+                'Profit Factor': metrics.profitFactor, 'Coef. Sharpe': metrics.sharpeRatio, 'Max DD (%)': `${metrics.maxDrawdown.toFixed(2)}%`, 'Profit/Mes': metrics.monthlyAvgProfit,
+                'Ret/DD': metrics.profitMaxDD_Ratio, 'UPI': metrics.upi, 'Win %': `${metrics.winningPercentage.toFixed(2)}%`, 'Ulcer Index $': metrics.ulcerIndexInDollars,
+                'Max DD ($)': metrics.maxDrawdownInDollars, 'Pérdidas Cons.': metrics.maxConsecutiveLosses, 'Stagnation (Trades)': metrics.maxStagnationTrades,
+                'Meses Pérd. Cons.': metrics.maxConsecutiveLosingMonths, 'Capture Ratio': metrics.captureRatio, 'Sortino': metrics.sortinoRatio, 'SQN': metrics.sqn
             }).map(([label, value]) => `
                 <div class="bg-gray-800 p-4 rounded-xl shadow-lg border border-gray-700">
                     <h3 class="font-semibold text-gray-400 text-sm">${label}</h3>
@@ -535,9 +535,9 @@ export const renderFeaturedPortfolio = () => {
     const metrics = analysis;
 
     const metricsToShow = {
-        'Sortino': metrics.sortinoRatio, 'Max DD (%)': `${metrics.maxDrawdown.toFixed(2)}%`, 'Max DD ($)': `$${metrics.maxDrawdownInDollars.toFixed(0)}`,
-        'Profit Factor': metrics.profitFactor, 'Profit/Mes': `$${metrics.monthlyAvgProfit.toFixed(0)}`, 'Coef. Sharpe': metrics.sharpeRatio,
-        'Ratio Profit/DD': metrics.profitMaxDD_Ratio, 'UPI': metrics.upi, 'Pérdidas Cons.': metrics.maxConsecutiveLosses,
+        'Sortino': metrics.sortinoRatio, 'Max DD ($)': `$${metrics.maxDrawdownInDollars.toFixed(0)}`, 'Ulcer Index $': `$${metrics.ulcerIndexInDollars.toFixed(0)}`,
+        'Profit Factor': metrics.profitFactor, 'Profit/Mes': `$${metrics.monthlyAvgProfit.toFixed(0)}`, 'Coef. Sharpe': metrics.sharpeRatio, 'Ret/DD': metrics.profitMaxDD_Ratio, 
+        'UPI': metrics.upi, 'SQN': metrics.sqn,
         'Meses Pérd. Cons. (Max)': metrics.maxConsecutiveLosingMonths,
     };
 

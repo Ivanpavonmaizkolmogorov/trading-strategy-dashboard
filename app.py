@@ -67,9 +67,9 @@ class OptimizationRequest(BaseModel):
     strategies_data: List[List[Trade]]
     benchmark_data: List[Dict[str, Any]]
     params: OptimizationParams
-    # Risk scaling params
-    is_risk_scaled: bool = False
-    target_max_dd: Optional[float] = None
+    is_risk_normalized: bool = False
+    normalization_metric: Optional[str] = None
+    normalization_target_value: Optional[float] = None
 
 
 # --- Codificador JSON Personalizado y Robusto ---
@@ -142,16 +142,23 @@ async def get_full_analysis(request: FullAnalysisRequest):
             trades_to_analyze = strat_trades
             if request.is_risk_normalized and request.target_max_dd and request.target_max_dd > 0:
                 if strat_trades:
-                    # 1. Pre-análisis para obtener el MaxDD en dólares
                     pre_analysis_df = pd.DataFrame([t.copy() for t in strat_trades])
                     pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
-                    if pre_analysis_result and pre_analysis_result[0]['maxDrawdownInDollars'] > 0:
-                        # 2. Calcular y aplicar el factor de escala
-                        scale_factor = request.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
+                    
+                    if pre_analysis_result:
+                        metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
+                        current_metric_value = pre_analysis_result[0].get(metric_key, 0)
+
+                        if current_metric_value > 0:
+                            scale_factor = request.normalization_target_value / current_metric_value
+                            scaled_trades = [t.copy() for t in strat_trades]
+                            for trade in scaled_trades:
+                                trade['pnl'] *= scale_factor
+                            trades_to_analyze = scaled_trades
+
                         scaled_trades = []
                         for trade in strat_trades:
                             new_trade = trade.copy()
-                            new_trade['pnl'] *= scale_factor
                             scaled_trades.append(new_trade)
                         trades_to_analyze = scaled_trades
 
@@ -189,14 +196,20 @@ async def get_full_analysis(request: FullAnalysisRequest):
                 trades_to_analyze_df = portfolio_df.copy() # Empezamos con una copia
 
                 # --- LÓGICA DE NORMALIZACIÓN CORREGIDA: Se aplica por portafolio ---
-                if p_def.is_risk_normalized and p_def.target_max_dd and p_def.target_max_dd > 0:
+                if p_def.is_risk_normalized and p_def.normalization_target_value and p_def.normalization_target_value > 0:
                     if not portfolio_df.empty:
-                        # Usamos una copia para el pre-análisis para no modificar el DF original del portafolio
                         pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy()) 
-                        if pre_analysis_result and pre_analysis_result[0]['maxDrawdownInDollars'] > 0:
-                            scale_factor = p_def.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
-                            # Aplicamos el escalado a la copia que vamos a analizar
-                            trades_to_analyze_df['pnl'] *= scale_factor
+                        if pre_analysis_result:
+                            # Determinar qué métrica usar para la normalización
+                            metric_key = 'maxDrawdownInDollars' if p_def.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
+                            current_metric_value = pre_analysis_result[0].get(metric_key, 0)
+
+                            if current_metric_value > 0:
+                                scale_factor = p_def.normalization_target_value / current_metric_value
+                                # Aplicamos el escalado a la copia que vamos a analizar
+                                trades_to_analyze_df['pnl'] *= scale_factor
+                            else:
+                                print(f"  -> Skipping normalization for portfolio, current metric '{metric_key}' is 0.")
 
                 # CORRECCIÓN CRÍTICA: Usar los trades que han sido potencialmente escalados ('trades_to_analyze')
                 # en lugar de los originales ('portfolio_trades') para el análisis final.
@@ -413,23 +426,22 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
                 return None, None
 
             # Aplicar escalado de riesgo si es necesario
-            trades_to_analyze = portfolio_trades
-            if request.is_risk_scaled and request.target_max_dd and request.target_max_dd > 0:
+            trades_to_analyze_df = pd.DataFrame(portfolio_trades)
+            if request.is_risk_normalized and request.normalization_target_value and request.normalization_target_value > 0:
                 pre_analysis_df = pd.DataFrame([t.copy() for t in portfolio_trades])
                 pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
-                if pre_analysis_result and pre_analysis_result[0]['maxDrawdownInDollars'] > 0:
-                    scale_factor = request.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
-                    scaled_trades = []
-                    for trade in portfolio_trades:
-                        new_trade = trade.copy()
-                        new_trade['pnl'] *= scale_factor
-                        scaled_trades.append(new_trade)
-                    trades_to_analyze = scaled_trades
+                if pre_analysis_result:
+                    metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
+                    current_metric_value = pre_analysis_result[0].get(metric_key, 0)
 
-            final_df = pd.DataFrame(trades_to_analyze)
+                    if current_metric_value > 0:
+                        scale_factor = request.normalization_target_value / current_metric_value
+                        trades_to_analyze_df['pnl'] *= scale_factor
+
+            final_df = trades_to_analyze_df
             analysis_result = process_strategy_data(final_df, benchmark_data_df.copy())
             
-            return (analysis_result[0] if analysis_result else None), trades_to_analyze
+            return (analysis_result[0] if analysis_result else None), final_df.to_dict('records')
 
         # 1. Analizar la versión con pesos iguales (base)
         equal_weights = [1.0 / num_strategies] * num_strategies

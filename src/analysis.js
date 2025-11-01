@@ -50,8 +50,9 @@ const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios, isR
                 strategies_data: strategies,
                 benchmark_data: benchmark,
                 portfolios_to_analyze: portfolios,
-                is_risk_normalized: isRiskNormalized, // <-- NUEVO
-                target_max_dd: targetMaxDD             // <-- NUEVO
+                is_risk_normalized: isRiskNormalized,
+                normalization_metric: document.getElementById('normalization-metric-select')?.value || 'max_dd', // <-- CORREGIDO
+                normalization_target_value: targetMaxDD // El valor del input ahora es genérico
             })
         });
         if (!response.ok) {
@@ -84,7 +85,7 @@ export const reAnalyzeAllData = async () => {
     updateAnalysisModeSelector();
 
     const isRiskNormalized = dom.normalizeRiskCheckbox.checked;
-    const targetMaxDD = isRiskNormalized ? parseFloat(document.getElementById('target-max-dd').value) : 0;
+    const targetValue = isRiskNormalized ? parseFloat(document.getElementById('target-max-dd').value) : 0;
 
     // --- CORREGIDO: Construir una lista de TODOS los portafolios que necesitan análisis del backend ---
     const portfoliosToAnalyze = [];
@@ -102,8 +103,9 @@ export const reAnalyzeAllData = async () => {
             is_saved_portfolio: true,
             saved_index: i,
             portfolio_id: p.id,
-            is_risk_normalized: riskConfig.isScaled, // <-- Específico para este portafolio
-            target_max_dd: riskConfig.targetMaxDD    // <-- Específico para este portafolio
+            is_risk_normalized: riskConfig.isScaled,
+            normalization_metric: riskConfig.normalizationMetric || 'max_dd', // Guardar también la métrica
+            normalization_target_value: riskConfig.targetValue
         });
     });
 
@@ -124,13 +126,14 @@ export const reAnalyzeAllData = async () => {
             indices: Array.from(state.selectedPortfolioIndices),
             weights: null, // El backend calculará equal weight
             is_current_portfolio: true,
-            is_risk_normalized: isRiskNormalized, // <-- Usa el control global
-            target_max_dd: targetMaxDD            // <-- Usa el control global
+            is_risk_normalized: isRiskNormalized,
+            normalization_metric: document.getElementById('normalization-metric-select').value, // <-- Usa el control global
+            normalization_target_value: targetValue // <-- Usa el control global
         });
     }
 
     // 3. Obtener todos los análisis (estrategias + portafolios) en una sola llamada al backend.
-    const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze, isRiskNormalized, targetMaxDD);
+    const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze, isRiskNormalized, targetValue);
     // El log que has proporcionado confirma que los datos llegan aquí.
     console.log("DEBUG ANALYSIS.JS: Datos recibidos del backend:", JSON.parse(JSON.stringify(backendAnalyses)));
     if (!backendAnalyses || backendAnalyses.length === 0) return;

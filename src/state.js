@@ -35,6 +35,7 @@ export const state = {
         'maxStagnationTrades',          // Stagnation (Trades)
         'maxStagnationDays',            // Stagnation (Días)
         'winningPercentage',            // Win %
+        'ulcerIndexInDollars',          // Ulcer Index $ <-- AÑADIDO
         'sqn',                          // SQN
         'profitFactor',                 // Profit Factor
     ],
@@ -42,12 +43,12 @@ export const state = {
     // Vistas de tablas
     tableViews: {
         databank: {
-            'default': { name: 'Vista por Defecto', columns: ['name', 'metricValue', ...[ 'profitMaxDD_Ratio', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'sqn', 'profitFactor' ]] },
+            'default': { name: 'Vista por Defecto', columns: ['name', 'metricValue', ...[ 'profitMaxDD_Ratio', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'ulcerIndexInDollars', 'sqn', 'profitFactor' ]] },
             'risk': { name: 'Vista de Riesgo', columns: ['name', 'maxDrawdown', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'sortinoRatio', 'upi'] },
             'profit': { name: 'Vista de Beneficio', columns: ['name', 'profitFactor', 'monthlyAvgProfit', 'profitMaxDD_Ratio', 'monthlyProfitToDollarDD'] }
         },
         saved: {
-            'default': { name: 'Vista por Defecto', columns: ['name', ...[ 'profitMaxDD_Ratio', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'sqn', 'profitFactor' ]] },
+            'default': { name: 'Vista por Defecto', columns: ['name', ...[ 'profitMaxDD_Ratio', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'ulcerIndexInDollars', 'sqn', 'profitFactor' ]] },
             'risk': { name: 'Vista de Riesgo', columns: ['name', 'maxDrawdown', 'maxDrawdownInDollars', 'maxConsecutiveLosingMonths', 'sortinoRatio', 'upi'] },
             'profit': { name: 'Vista de Beneficio', columns: ['name', 'profitFactor', 'monthlyAvgProfit', 'profitMaxDD_Ratio', 'monthlyProfitToDollarDD'] }
         }

@@ -154,19 +154,21 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         else:
             cagr = ((final_equity / initial_capital)**(1/duration_years) - 1) * 100
     
-    # 3. Calcular Ulcer Index desde la curva por operación
+    # 3. Calcular Ulcer Index en DÓLARES desde la curva por operación
     peak_equity = initial_capital
     squared_drawdown_sum = 0
     n = len(equity_curve_by_trade)
     for current_point in equity_curve_by_trade:
         peak_equity = max(peak_equity, current_point)
-        drawdown_pct = ((current_point / peak_equity) - 1) * 100.0 if peak_equity > 0 else 0
-        squared_drawdown_sum += drawdown_pct**2
+        # --- CAMBIO CLAVE: Usar drawdown en dólares en lugar de porcentaje ---
+        drawdown_dollars = peak_equity - current_point
+        squared_drawdown_sum += drawdown_dollars**2
     
-    ulcer_index = np.sqrt(squared_drawdown_sum / n) if n > 0 else 0
+    ulcer_index_dollars = np.sqrt(squared_drawdown_sum / n) if n > 0 else 0
     
-    # 4. Calcular UPI final
-    upi = cagr / ulcer_index if ulcer_index > 0 else (999 if cagr > 0 else 0)
+    # 4. Calcular UPI final usando Beneficio Total (en dólares) y Ulcer Index (en dólares)
+    total_profit_for_upi = final_equity - initial_capital
+    upi = total_profit_for_upi / ulcer_index_dollars if ulcer_index_dollars > 0 else (999 if total_profit_for_upi > 0 else 0)
 
     # --- CÁLCULO DE STAGNATION EN TRADES ---
     max_stagnation_trades = 0
@@ -227,6 +229,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "maxDrawdown": max_drawdown,
         "monthlyAvgProfit": monthly_avg_profit,
         "maxConsecutiveLosingMonths": max_consecutive_losing_months,
+        "ulcerIndexInDollars": ulcer_index_dollars, # <-- NUEVO KPI
         "upi": upi,
         "sharpeRatio": sharpe_ratio,
         "captureRatio": capture_ratio,

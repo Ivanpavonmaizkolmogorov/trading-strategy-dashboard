@@ -22,6 +22,7 @@ function getOptimizationModalElements() {
             setupContainer: document.getElementById('optimization-setup-container'),
             scaleRiskCheckbox: document.getElementById('optimization-scale-risk-checkbox'),
             targetMaxDDInput: document.getElementById('optimization-target-max-dd'),
+            normalizationMetricSelect: document.getElementById('optimization-normalization-metric-select'), // <-- NUEVO
             targetMaxDDSlider: document.getElementById('optimization-target-max-dd-slider'),
             title: document.getElementById('optimization-modal-title'),
         };
@@ -57,7 +58,9 @@ export const openOptimizationModal = async (portfolioIndex) => {
     // --- MEJORA: Configurar controles de escalado de riesgo con el valor actual ---
     const riskConfig = portfolio.riskConfig || {};
     elements.scaleRiskCheckbox.checked = riskConfig.isScaled || false;
-    elements.targetMaxDDInput.value = riskConfig.targetMaxDD || (currentMetrics ? currentMetrics.maxDrawdownInDollars.toFixed(0) : 10000);
+    elements.normalizationMetricSelect.value = riskConfig.normalizationMetric || 'max_dd'; // <-- NUEVO
+    elements.targetMaxDDInput.value = riskConfig.targetValue || (currentMetrics ? currentMetrics.maxDrawdownInDollars.toFixed(0) : 10000);
+
     if (currentMetrics) {
         // Establecer el máximo del slider en 1.5x el DD actual, o el valor guardado si es mayor.
         const sliderMax = Math.max(currentMetrics.maxDrawdownInDollars * 1.5, parseFloat(elements.targetMaxDDInput.value));
@@ -114,8 +117,9 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
             portfolio_indices: portfolio.indices,
             strategies_data: state.rawStrategiesData,
             benchmark_data: state.rawBenchmarkData,
-            is_risk_scaled: elements.scaleRiskCheckbox.checked,
-            target_max_dd: parseFloat(elements.targetMaxDDInput.value),
+            is_risk_normalized: elements.scaleRiskCheckbox.checked,
+            normalization_metric: elements.normalizationMetricSelect.value, // <-- NUEVO
+            normalization_target_value: parseFloat(elements.targetMaxDDInput.value), // <-- NUEVO
             params: {
                 // Si es la carga inicial, no corremos simulaciones, solo analizamos el estado actual.
                 // Si el usuario pulsa el botón, sí corremos las simulaciones.
@@ -228,7 +232,8 @@ const displayOptimizationResults = (results) => {
         // para que no se aplique normalización a este portafolio en futuros análisis.
         const riskConfig = {
             isScaled: elements.scaleRiskCheckbox.checked,
-            targetMaxDD: elements.scaleRiskCheckbox.checked ? parseFloat(elements.targetMaxDDInput.value) : null
+            normalizationMetric: elements.normalizationMetricSelect.value, // <-- NUEVO
+            targetValue: elements.scaleRiskCheckbox.checked ? parseFloat(elements.targetMaxDDInput.value) : null
         };
 
         const newPortfolioData = {
@@ -236,10 +241,8 @@ const displayOptimizationResults = (results) => {
             indices: portfolio.indices,
             id: isNew ? state.nextPortfolioId++ : portfolio.id,
             weights: weightsToSave,
-            comments: isNew ? `Copia optimizada de '${portfolio.name}'.` : portfolio.comments || ''
-            // riskConfig se elimina de aquí porque la lógica se moverá al backend
-            // para ser más consistente. El frontend solo debe preocuparse de enviar
-            // la intención de normalizar.
+            comments: isNew ? `Copia optimizada de '${portfolio.name}'.` : portfolio.comments || '',
+            riskConfig: riskConfig // Guardamos la configuración completa
         };
 
         if (isNew) {

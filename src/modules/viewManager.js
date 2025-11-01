@@ -59,7 +59,8 @@ export const openViewManager = (viewSetKey) => {
     });
 
     Object.keys(ALL_METRICS).forEach(key => {
-        if (!visibleKeys.has(key) && key !== 'metricValue') {
+        // CORRECCIÓN: Asegurarse de que todas las métricas no visibles (excepto 'name') estén en la lista de ocultas.
+        if (!visibleKeys.has(key) && key !== 'name') {
             const colInfo = ALL_METRICS[key];
             elements.hiddenList.innerHTML += `<li class="p-2 bg-gray-700 rounded view-column-item" draggable="true" data-key="${key}">${colInfo.label.replace(/<div.*>(.*)<\/div>/, '$1' )}</li>`;
         }
