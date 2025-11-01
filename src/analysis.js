@@ -92,12 +92,18 @@ export const reAnalyzeAllData = async () => {
     // 1. Añadir todos los portafolios guardados a la lista de análisis.
     // El backend se encargará de calcular sus métricas siempre.
     state.savedPortfolios.forEach((p, i) => {
+        // --- CORRECCIÓN VITAL ---
+        // Cada portafolio guardado ahora lleva su propia configuración de riesgo.
+        // Si no tiene una, se asume que no se normaliza (is_risk_normalized: false).
+        const riskConfig = p.riskConfig || { isScaled: false, targetMaxDD: 0 };
         portfoliosToAnalyze.push({
             indices: p.indices,
             weights: p.weights,
             is_saved_portfolio: true,
             saved_index: i,
-            portfolio_id: p.id
+            portfolio_id: p.id,
+            is_risk_normalized: riskConfig.isScaled, // <-- Específico para este portafolio
+            target_max_dd: riskConfig.targetMaxDD    // <-- Específico para este portafolio
         });
     });
 
@@ -113,10 +119,13 @@ export const reAnalyzeAllData = async () => {
 
     // 2. Añadir el portafolio "en vivo" si hay estrategias seleccionadas en la tabla de resumen.
     if (state.selectedPortfolioIndices.size > 0) {
+        // El portafolio "actual" SÍ usa la configuración global de la UI.
         portfoliosToAnalyze.push({
             indices: Array.from(state.selectedPortfolioIndices),
             weights: null, // El backend calculará equal weight
-            is_current_portfolio: true
+            is_current_portfolio: true,
+            is_risk_normalized: isRiskNormalized, // <-- Usa el control global
+            target_max_dd: targetMaxDD            // <-- Usa el control global
         });
     }
 

@@ -223,10 +223,12 @@ const displayOptimizationResults = (results) => {
         const baseName = portfolio.name.replace(/ \(Opt.*?\)/, '').replace(' (Original)', '');
         const newName = `${baseName} ${nameSuffix}`;
 
-        // --- NUEVO: Guardar la configuración de riesgo junto al portafolio ---
+        // --- CORRECCIÓN: Guardar la configuración de riesgo junto al portafolio ---
+        // Si la casilla no está marcada, guardamos explícitamente isScaled: false
+        // para que no se aplique normalización a este portafolio en futuros análisis.
         const riskConfig = {
             isScaled: elements.scaleRiskCheckbox.checked,
-            targetMaxDD: parseFloat(elements.targetMaxDDInput.value)
+            targetMaxDD: elements.scaleRiskCheckbox.checked ? parseFloat(elements.targetMaxDDInput.value) : null
         };
 
         const newPortfolioData = {
@@ -234,8 +236,10 @@ const displayOptimizationResults = (results) => {
             indices: portfolio.indices,
             id: isNew ? state.nextPortfolioId++ : portfolio.id,
             weights: weightsToSave,
-            comments: isNew ? `Copia optimizada de '${portfolio.name}'.` : portfolio.comments || '',
-            riskConfig: riskConfig // Guardamos la configuración
+            comments: isNew ? `Copia optimizada de '${portfolio.name}'.` : portfolio.comments || ''
+            // riskConfig se elimina de aquí porque la lógica se moverá al backend
+            // para ser más consistente. El frontend solo debe preocuparse de enviar
+            // la intención de normalizar.
         };
 
         if (isNew) {

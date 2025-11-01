@@ -186,16 +186,17 @@ async def get_full_analysis(request: FullAnalysisRequest):
                 # --- LÓGICA DE NORMALIZACIÓN DE RIESGO PARA PORTAFOLIOS ---
                 # Construir el DF del portafolio ANTES de la normalización
                 portfolio_df = pd.concat(portfolio_trades, ignore_index=True) if portfolio_trades else pd.DataFrame()
-                trades_to_analyze_df = portfolio_df
+                trades_to_analyze_df = portfolio_df.copy() # Empezamos con una copia
 
-                if request.is_risk_normalized and request.target_max_dd and request.target_max_dd > 0:
+                # --- LÓGICA DE NORMALIZACIÓN CORREGIDA: Se aplica por portafolio ---
+                if p_def.is_risk_normalized and p_def.target_max_dd and p_def.target_max_dd > 0:
                     if not portfolio_df.empty:
-                        pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy())
+                        # Usamos una copia para el pre-análisis para no modificar el DF original del portafolio
+                        pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy()) 
                         if pre_analysis_result and pre_analysis_result[0]['maxDrawdownInDollars'] > 0:
-                            scale_factor = request.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
-                            scaled_df = portfolio_df.copy()
-                            scaled_df['pnl'] *= scale_factor
-                            trades_to_analyze_df = scaled_df
+                            scale_factor = p_def.target_max_dd / pre_analysis_result[0]['maxDrawdownInDollars']
+                            # Aplicamos el escalado a la copia que vamos a analizar
+                            trades_to_analyze_df['pnl'] *= scale_factor
 
                 # CORRECCIÓN CRÍTICA: Usar los trades que han sido potencialmente escalados ('trades_to_analyze')
                 # en lugar de los originales ('portfolio_trades') para el análisis final.

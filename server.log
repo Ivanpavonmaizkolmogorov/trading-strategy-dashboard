@@ -16599,3 +16599,1000 @@ INFO:     127.0.0.1:56832 - "POST /analysis/full HTTP/1.1" 200 OK
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 60 strategies and benchmark with 92594 rows.
+  Processing strategy 1/60...
+  -> Strategy 1 analysis complete.
+  Processing strategy 2/60...
+  -> Strategy 2 analysis complete.
+  Processing strategy 3/60...
+  -> Strategy 3 analysis complete.
+  Processing strategy 4/60...
+  -> Strategy 4 analysis complete.
+  Processing strategy 5/60...
+  -> Strategy 5 analysis complete.
+  Processing strategy 6/60...
+  -> Strategy 6 analysis complete.
+  Processing strategy 7/60...
+  -> Strategy 7 analysis complete.
+  Processing strategy 8/60...
+  -> Strategy 8 analysis complete.
+  Processing strategy 9/60...
+  -> Strategy 9 analysis complete.
+  Processing strategy 10/60...
+  -> Strategy 10 analysis complete.
+  Processing strategy 11/60...
+  -> Strategy 11 analysis complete.
+  Processing strategy 12/60...
+  -> Strategy 12 analysis complete.
+  Processing strategy 13/60...
+  -> Strategy 13 analysis complete.
+  Processing strategy 14/60...
+  -> Strategy 14 analysis complete.
+  Processing strategy 15/60...
+  -> Strategy 15 analysis complete.
+  Processing strategy 16/60...
+  -> Strategy 16 analysis complete.
+  Processing strategy 17/60...
+  -> Strategy 17 analysis complete.
+  Processing strategy 18/60...
+  -> Strategy 18 analysis complete.
+  Processing strategy 19/60...
+  -> Strategy 19 analysis complete.
+  Processing strategy 20/60...
+  -> Strategy 20 analysis complete.
+  Processing strategy 21/60...
+  -> Strategy 21 analysis complete.
+  Processing strategy 22/60...
+  -> Strategy 22 analysis complete.
+  Processing strategy 23/60...
+  -> Strategy 23 analysis complete.
+  Processing strategy 24/60...
+  -> Strategy 24 analysis complete.
+  Processing strategy 25/60...
+  -> Strategy 25 analysis complete.
+  Processing strategy 26/60...
+  -> Strategy 26 analysis complete.
+  Processing strategy 27/60...
+  -> Strategy 27 analysis complete.
+  Processing strategy 28/60...
+  -> Strategy 28 analysis complete.
+  Processing strategy 29/60...
+  -> Strategy 29 analysis complete.
+  Processing strategy 30/60...
+  -> Strategy 30 analysis complete.
+  Processing strategy 31/60...
+  -> Strategy 31 analysis complete.
+  Processing strategy 32/60...
+  -> Strategy 32 analysis complete.
+  Processing strategy 33/60...
+  -> Strategy 33 analysis complete.
+  Processing strategy 34/60...
+  -> Strategy 34 analysis complete.
+  Processing strategy 35/60...
+  -> Strategy 35 analysis complete.
+  Processing strategy 36/60...
+  -> Strategy 36 analysis complete.
+  Processing strategy 37/60...
+  -> Strategy 37 analysis complete.
+  Processing strategy 38/60...
+  -> Strategy 38 analysis complete.
+  Processing strategy 39/60...
+  -> Strategy 39 analysis complete.
+  Processing strategy 40/60...
+  -> Strategy 40 analysis complete.
+  Processing strategy 41/60...
+  -> Strategy 41 analysis complete.
+  Processing strategy 42/60...
+  -> Strategy 42 analysis complete.
+  Processing strategy 43/60...
+  -> Strategy 43 analysis complete.
+  Processing strategy 44/60...
+  -> Strategy 44 analysis complete.
+  Processing strategy 45/60...
+  -> Strategy 45 analysis complete.
+  Processing strategy 46/60...
+  -> Strategy 46 analysis complete.
+  Processing strategy 47/60...
+  -> Strategy 47 analysis complete.
+  Processing strategy 48/60...
+  -> Strategy 48 analysis complete.
+  Processing strategy 49/60...
+  -> Strategy 49 analysis complete.
+  Processing strategy 50/60...
+  -> Strategy 50 analysis complete.
+  Processing strategy 51/60...
+  -> Strategy 51 analysis complete.
+  Processing strategy 52/60...
+  -> Strategy 52 analysis complete.
+  Processing strategy 53/60...
+  -> Strategy 53 analysis complete.
+  Processing strategy 54/60...
+  -> Strategy 54 analysis complete.
+  Processing strategy 55/60...
+  -> Strategy 55 analysis complete.
+  Processing strategy 56/60...
+  -> Strategy 56 analysis complete.
+  Processing strategy 57/60...
+  -> Strategy 57 analysis complete.
+  Processing strategy 58/60...
+  -> Strategy 58 analysis complete.
+  Processing strategy 59/60...
+  -> Strategy 59 analysis complete.
+  Processing strategy 60/60...
+  -> Strategy 60 analysis complete.
+--- Analyzing 36 requested portfolios ---
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+--- Analysis complete. Sending response. ---
+INFO:     127.0.0.1:56838 - "POST /analysis/full HTTP/1.1" 200 OK
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/optimize-portfolio HIT ---
+--- Optimization complete. Sending response. ---
+INFO:     127.0.0.1:33446 - "POST /analysis/optimize-portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37222 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37222 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:37222 - "GET /src/analysis.js HTTP/1.1" 200 OK
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 60 strategies and benchmark with 92594 rows.
+  Processing strategy 1/60...
+  -> Strategy 1 analysis complete.
+  Processing strategy 2/60...
+  -> Strategy 2 analysis complete.
+  Processing strategy 3/60...
+  -> Strategy 3 analysis complete.
+  Processing strategy 4/60...
+  -> Strategy 4 analysis complete.
+  Processing strategy 5/60...
+  -> Strategy 5 analysis complete.
+  Processing strategy 6/60...
+  -> Strategy 6 analysis complete.
+  Processing strategy 7/60...
+  -> Strategy 7 analysis complete.
+  Processing strategy 8/60...
+  -> Strategy 8 analysis complete.
+  Processing strategy 9/60...
+  -> Strategy 9 analysis complete.
+  Processing strategy 10/60...
+  -> Strategy 10 analysis complete.
+  Processing strategy 11/60...
+  -> Strategy 11 analysis complete.
+  Processing strategy 12/60...
+  -> Strategy 12 analysis complete.
+  Processing strategy 13/60...
+  -> Strategy 13 analysis complete.
+  Processing strategy 14/60...
+  -> Strategy 14 analysis complete.
+  Processing strategy 15/60...
+  -> Strategy 15 analysis complete.
+  Processing strategy 16/60...
+  -> Strategy 16 analysis complete.
+  Processing strategy 17/60...
+  -> Strategy 17 analysis complete.
+  Processing strategy 18/60...
+  -> Strategy 18 analysis complete.
+  Processing strategy 19/60...
+  -> Strategy 19 analysis complete.
+  Processing strategy 20/60...
+  -> Strategy 20 analysis complete.
+  Processing strategy 21/60...
+  -> Strategy 21 analysis complete.
+  Processing strategy 22/60...
+  -> Strategy 22 analysis complete.
+  Processing strategy 23/60...
+  -> Strategy 23 analysis complete.
+  Processing strategy 24/60...
+  -> Strategy 24 analysis complete.
+  Processing strategy 25/60...
+  -> Strategy 25 analysis complete.
+  Processing strategy 26/60...
+  -> Strategy 26 analysis complete.
+  Processing strategy 27/60...
+  -> Strategy 27 analysis complete.
+  Processing strategy 28/60...
+  -> Strategy 28 analysis complete.
+  Processing strategy 29/60...
+  -> Strategy 29 analysis complete.
+  Processing strategy 30/60...
+  -> Strategy 30 analysis complete.
+  Processing strategy 31/60...
+  -> Strategy 31 analysis complete.
+  Processing strategy 32/60...
+  -> Strategy 32 analysis complete.
+  Processing strategy 33/60...
+  -> Strategy 33 analysis complete.
+  Processing strategy 34/60...
+  -> Strategy 34 analysis complete.
+  Processing strategy 35/60...
+  -> Strategy 35 analysis complete.
+  Processing strategy 36/60...
+  -> Strategy 36 analysis complete.
+  Processing strategy 37/60...
+  -> Strategy 37 analysis complete.
+  Processing strategy 38/60...
+  -> Strategy 38 analysis complete.
+  Processing strategy 39/60...
+  -> Strategy 39 analysis complete.
+  Processing strategy 40/60...
+  -> Strategy 40 analysis complete.
+  Processing strategy 41/60...
+  -> Strategy 41 analysis complete.
+  Processing strategy 42/60...
+  -> Strategy 42 analysis complete.
+  Processing strategy 43/60...
+  -> Strategy 43 analysis complete.
+  Processing strategy 44/60...
+  -> Strategy 44 analysis complete.
+  Processing strategy 45/60...
+  -> Strategy 45 analysis complete.
+  Processing strategy 46/60...
+  -> Strategy 46 analysis complete.
+  Processing strategy 47/60...
+  -> Strategy 47 analysis complete.
+  Processing strategy 48/60...
+  -> Strategy 48 analysis complete.
+  Processing strategy 49/60...
+  -> Strategy 49 analysis complete.
+  Processing strategy 50/60...
+  -> Strategy 50 analysis complete.
+  Processing strategy 51/60...
+  -> Strategy 51 analysis complete.
+  Processing strategy 52/60...
+  -> Strategy 52 analysis complete.
+  Processing strategy 53/60...
+  -> Strategy 53 analysis complete.
+  Processing strategy 54/60...
+  -> Strategy 54 analysis complete.
+  Processing strategy 55/60...
+  -> Strategy 55 analysis complete.
+  Processing strategy 56/60...
+  -> Strategy 56 analysis complete.
+  Processing strategy 57/60...
+  -> Strategy 57 analysis complete.
+  Processing strategy 58/60...
+  -> Strategy 58 analysis complete.
+  Processing strategy 59/60...
+  -> Strategy 59 analysis complete.
+  Processing strategy 60/60...
+  -> Strategy 60 analysis complete.
+--- Analyzing 36 requested portfolios ---
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+  -> Portfolio analysis complete.
+--- Analysis complete. Sending response. ---
+INFO:     127.0.0.1:37232 - "POST /analysis/full HTTP/1.1" 200 OK
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:104: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
