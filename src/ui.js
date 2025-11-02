@@ -473,7 +473,7 @@ const sortSavedPortfoliosTable = (headerEl) => {
  * Renderiza los gráficos de comparación de portafolios.
  */
 export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
-    const canvasId = 'portfolioEquityChart';
+    const canvasId = 'portfolioEquityChart'; // ID del canvas
     destroyChart(canvasId);
     const ctx = document.getElementById(canvasId)?.getContext('2d');
     if (!ctx) return;
@@ -513,7 +513,77 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     const firstAnalysis = allAnalyses[0].analysis;
     datasets.push({ label: 'Benchmark', data: firstAnalysis.chartData.benchmarkCurve, borderColor: '#f87171', borderWidth: 2, pointRadius: 0, tension: 0.1, borderDash: [5, 5] });
     
-    state.chartInstances[canvasId] = new Chart(ctx, { type: 'line', data: { datasets }, options: CHART_OPTIONS });
+    const chartOptionsWithClick = {
+        // Hacemos una copia profunda de las opciones para evitar conflictos
+        ...CHART_OPTIONS, // Usamos la copia superficial, es más simple.
+        onClick: (evt, elements, chart) => {
+            console.log('%c[CHART CLICK] 1. Evento onClick del gráfico disparado.', 'color: #f0abfc');
+            const points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+            console.log(`%c[CHART CLICK] 2. Puntos detectados bajo el cursor: ${points.length}`, 'color: #f0abfc');
+
+            if (points.length) {
+                const firstPoint = points[0];
+                const dataset = chart.data.datasets[firstPoint.datasetIndex];
+                const clickedPortfolioIndex = dataset.savedIndex;
+                console.log(`%c[CHART CLICK] 3. Índice de portafolio detectado: ${clickedPortfolioIndex}`, 'color: #f0abfc');
+
+                if (clickedPortfolioIndex === undefined) {
+                    console.log('%c[CHART CLICK] 3.1. Clic en Benchmark. Abortando.', 'color: #f0abfc');
+                    return; 
+                }
+
+                const activeAction = document.querySelector('#chart-actions-group .chart-action-item.active')?.dataset.action;
+                console.log(`%c[CHART CLICK] 4. Acción activa: '${activeAction}'`, 'color: #f0abfc');
+
+                if (activeAction === 'destacar') {
+                    console.log('%c[CHART CLICK] 5. Entrando en la lógica de "destacar".', 'color: #f0abfc; font-weight: bold;');
+                    const portfolio = state.savedPortfolios[clickedPortfolioIndex];
+                    if (!portfolio) {
+                        console.error(`[CHART CLICK] ERROR: No se encontró el portafolio con índice ${clickedPortfolioIndex}`);
+                        return;
+                    }
+
+                    const modal = document.getElementById('chart-click-modal');
+                    const modalTitle = document.getElementById('chart-click-modal-title');
+                    const modalBody = document.getElementById('chart-click-modal-body');
+                    const confirmBtn = document.getElementById('chart-click-confirm-btn');
+
+                    modalTitle.textContent = 'Confirmar Destacado';
+                    modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado?`;
+                    
+                    confirmBtn.onclick = () => {
+                        console.log(`%c[CHART CLICK] 6. Confirmado. Estableciendo portafolio destacado a índice ${clickedPortfolioIndex}`, 'color: #f0abfc; font-weight: bold;');
+                        state.featuredPortfolioIndex = clickedPortfolioIndex;
+                        renderFeaturedPortfolio();
+                        renderPortfolioComparisonCharts(portfolioAnalyses); // Re-render para actualizar el estilo
+                        closeChartClickModal(); // Cierra el modal directamente
+                    };
+                    
+                    console.log('%c[CHART CLICK] 7. Mostrando modal de confirmación.', 'color: #f0abfc');
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                    setTimeout(() => {
+                        document.getElementById('chart-click-modal-backdrop').classList.remove('opacity-0');
+                        document.getElementById('chart-click-modal-content').classList.remove('scale-95', 'opacity-0');
+                    }, 10);
+                } else if (activeAction === 'ocultar') {
+                    console.log('%c[CHART CLICK] 5. Entrando en la lógica de "ocultar/mostrar".', 'color: #f0abfc; font-weight: bold;');
+                    const isHidden = chart.getDatasetMeta(firstPoint.datasetIndex).hidden;
+                    chart.setDatasetVisibility(firstPoint.datasetIndex, !isHidden);
+                    chart.update();
+                } else {
+                    console.log(`%c[CHART CLICK] 5.1. La acción activa ('${activeAction}') no tiene una función de clic definida. No se hace nada.`, 'color: #f0abfc');
+                }
+            }
+        }
+    };
+
+    // --- CORRECCIÓN: Deshabilitar el plugin de zoom si se va a usar el onClick ---
+    // El plugin de zoom y el onClick a nivel de opciones son a menudo incompatibles.
+    // Damos prioridad al onClick.
+    delete chartOptionsWithClick.plugins.zoom;
+
+    state.chartInstances[canvasId] = new Chart(ctx, { type: 'line', data: { datasets }, options: chartOptionsWithClick});
 };
 
 /**
@@ -570,4 +640,20 @@ export const renderFeaturedPortfolio = () => {
     dom.featuredPortfolioSection.classList.remove('hidden');
 
     renderEquityChart('featured-portfolio-chart', analysis, portfolio.name, '#fbbf24');
+};
+
+/**
+ * Cierra el modal de confirmación de acción del gráfico.
+ */
+export const closeChartClickModal = () => {
+    const modal = document.getElementById('chart-click-modal');
+    if (modal) {
+        const backdrop = document.getElementById('chart-click-modal-backdrop');
+        const content = document.getElementById('chart-click-modal-content');
+        backdrop.classList.add('opacity-0');
+        content.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+        }, 300); // Coincide con la duración de la transición
+    }
 };

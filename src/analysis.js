@@ -270,3 +270,19 @@ export const sortSavedPortfoliosTable = (headerEl) => {
     console.log('<- Llamando a displaySavedPortfoliosList para redibujar la tabla de guardados.');
     displaySavedPortfoliosList();
 };
+
+/**
+ * Cierra el modal de confirmación de acción del gráfico.
+ */
+export const closeChartClickModal = () => {
+    const modal = document.getElementById('chart-click-modal');
+    if (modal) {
+        const backdrop = document.getElementById('chart-click-modal-backdrop');
+        const content = document.getElementById('chart-click-modal-content');
+        backdrop.classList.add('opacity-0');
+        content.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+        }, 300); // Coincide con la duración de la transición
+    }
+};

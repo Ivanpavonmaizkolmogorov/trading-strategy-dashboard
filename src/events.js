@@ -1,7 +1,7 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
 import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable } from './analysis.js';
-import { updateTradesFilesList, resetUI, renderAllCharts } from './ui.js';
+import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal } from './ui.js';
 import { findDatabankPortfolios, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay } from './modules/databank.js';
 import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
 import { openViewManager, closeViewManager, applyView, saveView, deleteView } from './modules/viewManager.js';
@@ -271,4 +271,22 @@ export function initializeEventListeners() {
             });
         }
     });
+
+    // --- NUEVO: Eventos para los botones de acción del gráfico comparativo ---
+    const chartActionsGroup = document.getElementById('chart-actions-group');
+    if (chartActionsGroup) {
+        chartActionsGroup.addEventListener('click', (e) => {
+            if (e.target.classList.contains('chart-action-item')) {
+                chartActionsGroup.querySelectorAll('.chart-action-item').forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+            }
+        });
+    }
+
+    // --- NUEVO: Eventos para el modal de confirmación del gráfico ---
+    const chartClickModal = document.getElementById('chart-click-modal');
+    if (chartClickModal) {
+        chartClickModal.querySelector('#chart-click-cancel-btn').addEventListener('click', closeChartClickModal);
+        chartClickModal.querySelector('#chart-click-modal-backdrop').addEventListener('click', closeChartClickModal);
+    }
 }
