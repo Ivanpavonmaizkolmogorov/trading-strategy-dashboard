@@ -11,41 +11,54 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         return None
 
     # Asegurarse de que las fechas son datetime objects y están en el índice
+    # --- CORRECCIÓN: Convertir AMBAS columnas de fecha a datetime ---
+    trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date'], errors='coerce')
     trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date'], errors='coerce')
-    trades_df = trades_df.dropna(subset=['exit_date', 'pnl'])
+    trades_df = trades_df.dropna(subset=['entry_date', 'exit_date', 'pnl'])
     
-    benchmark_df['date'] = pd.to_datetime(benchmark_df['date'], errors='coerce')
-    benchmark_df = benchmark_df.dropna(subset=['date', 'price']).set_index('date')
+    # --- CORRECCIÓN: Volvemos a un capital inicial fijo, como debe ser. ---
+    initial_capital = 10000
 
-    # --- CORRECCIÓN DEFINITIVA: La curva de equity se construye desde los trades, no desde el benchmark. ---
-    # 1. Agrupar PnL por día para obtener el rendimiento diario del portafolio.
-    daily_pnl = trades_df.groupby(trades_df['exit_date'].dt.date)['pnl'].sum()
+    # --- REESTRUCTURACIÓN TOTAL: LA CURVA POR OPERACIÓN ES LA FUENTE DE VERDAD ---
+    # 1. Construir la curva de equity por operación. Esta será la base para TODAS las métricas de rendimiento y riesgo.
+    #    Se ordena por fecha de salida para asegurar el orden cronológico correcto.
+    trades_df_sorted = trades_df.sort_values(by='exit_date')
+    equity_curve_by_trade_list = [initial_capital]
+    current_equity_by_trade = initial_capital
+    for pnl in trades_df_sorted['pnl']:
+        current_equity_by_trade += pnl
+        equity_curve_by_trade_list.append(current_equity_by_trade)
+    
+    equity_curve_by_trade = pd.Series(equity_curve_by_trade_list)
+
+    # 2. Calcular TODAS las métricas de drawdown desde la curva por operación.
+    rolling_max_by_trade = equity_curve_by_trade.cummax()
+    drawdowns_in_dollars_by_trade = rolling_max_by_trade - equity_curve_by_trade
+    drawdowns_in_pct_by_trade = drawdowns_in_dollars_by_trade / rolling_max_by_trade
+
+    max_drawdown = abs(drawdowns_in_pct_by_trade.max()) * 100
+    max_drawdown_dollars = drawdowns_in_dollars_by_trade.max()
+
+
+    # 3. Construir la curva de equity DIARIA a partir de los trades para métricas temporales (Sharpe, Sortino, etc.)
+    daily_pnl = trades_df_sorted.groupby(trades_df_sorted['exit_date'].dt.date)['pnl'].sum()
     if daily_pnl.empty:
         return None # No hay trades para analizar
     daily_pnl.index = pd.to_datetime(daily_pnl.index)
-
-    # 2. Crear un rango de fechas completo desde el primer hasta el último día de trading del portafolio/estrategia.
-    #    Esto asegura que el análisis se basa únicamente en el historial de operaciones del objeto analizado.
     full_date_range = pd.date_range(start=daily_pnl.index.min(), end=daily_pnl.index.max(), freq='D')
     
-    # 3. Construir la curva de equity sobre el rango de fechas propio del portafolio.
     equity_curve = pd.DataFrame(index=full_date_range)
     equity_curve['pnl'] = daily_pnl.reindex(full_date_range, fill_value=0.0)
-    # --- CORRECCIÓN: Volvemos a un capital inicial fijo, como debe ser. ---
-    initial_capital = 10000
     equity_curve['equity'] = initial_capital + equity_curve['pnl'].cumsum()
 
-    # Métricas de Drawdown
-    rolling_max = equity_curve['equity'].cummax()
-    drawdown = (equity_curve['equity'] - rolling_max) / rolling_max
-    max_drawdown = abs(drawdown.min()) * 100
-    max_drawdown_dollars = (rolling_max - equity_curve['equity']).max()
+    # --- CÁLCULO DE MÉTRICAS UNIFICADO ---
 
-    # Métricas de Retorno
-    total_profit = equity_curve['equity'].iloc[-1] - equity_curve['equity'].iloc[0]
-    # CORRECCIÓN FINAL: La duración se calcula desde la curva de equity del propio portafolio, no del benchmark.
-    # Esto asegura que el CAGR y otras métricas anualizadas sean siempre correctas.
-    duration_days = (equity_curve.index[-1] - equity_curve.index[0]).days if not equity_curve.empty else 0
+    # Métricas de Retorno (calculadas directamente desde los trades o la curva por operación)
+    total_profit = trades_df['pnl'].sum()
+    first_trade_date = trades_df_sorted['entry_date'].iloc[0]
+    last_trade_date = trades_df_sorted['exit_date'].iloc[-1]
+    duration_days = (last_trade_date - first_trade_date).days if pd.notna(first_trade_date) and pd.notna(last_trade_date) else 0
+
     duration_months = duration_days / 30.44
     monthly_avg_profit = total_profit / duration_months if duration_months > 0 else 0
 
@@ -53,14 +66,53 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     profit_max_dd_ratio = total_profit / max_drawdown_dollars if max_drawdown_dollars > 0 else None
     monthly_profit_to_dollar_dd = (monthly_avg_profit / max_drawdown_dollars) * 100 if max_drawdown_dollars > 0 else None
 
-    # Métricas basadas en retornos diarios
-    daily_returns = equity_curve['equity'].pct_change().fillna(0)
+    # --- CORRECCIÓN: Definir total_trades ANTES de su primer uso ---
+    total_trades = len(trades_df)
+
+    # --- MÉTRICAS DE RATIO (SHARPE, SORTINO) BASADAS EN RETORNOS POR OPERACIÓN ---
+    # 1. Calcular los retornos porcentuales para cada operación.
+    # El retorno de una operación es su PnL dividido por el capital justo antes de esa operación.
+    equity_before_each_trade = equity_curve_by_trade.iloc[:-1]
+    trade_returns = trades_df_sorted['pnl'].values / equity_before_each_trade.values
+    trade_returns = pd.Series(trade_returns) # Convertir a Series de pandas para usar sus métodos
+
+    # 2. Calcular el factor de anualización basado en la frecuencia de trades.
+    duration_years = duration_days / 365.25
+    trades_per_year = total_trades / duration_years if duration_years > 0 else 0
+    annualization_factor = np.sqrt(trades_per_year) if trades_per_year > 0 else 1
+
+    # 3. Calcular Sharpe Ratio
+    sharpe_ratio = 0
+    if trade_returns.std() > 0:
+        # (Retorno medio por trade / Desviación estándar de los retornos por trade) * sqrt(Trades por año)
+        sharpe_ratio = (trade_returns.mean() / trade_returns.std()) * annualization_factor
+
+    # 4. Calcular Sortino Ratio
+    mean_trade_return = trade_returns.mean()
+    negative_returns = trade_returns[trade_returns < 0]
+    if len(negative_returns) == 0:
+        sortino_ratio = 999.0 if mean_trade_return > 0 else 0.0
+    else:
+        downside_deviation = np.sqrt((negative_returns**2).sum() / len(trade_returns))
+        if downside_deviation == 0:
+            sortino_ratio = 999.0 if mean_trade_return > 0 else 0.0
+        else:
+            sortino_ratio = (mean_trade_return / downside_deviation) * annualization_factor
+
+    # Métricas de Trades
+    winning_trades = trades_df[trades_df['pnl'] > 0]
+    losing_trades = trades_df[trades_df['pnl'] < 0]
     
-    # Unir retornos del benchmark
+    win_pct = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
+    profit_factor = abs(winning_trades['pnl'].sum() / losing_trades['pnl'].sum()) if losing_trades['pnl'].sum() != 0 else None
+
+    # Métricas de Capture Ratio (siguen necesitando una base diaria para compararse con el benchmark)
+    daily_returns = equity_curve['equity'].pct_change().fillna(0)
+    benchmark_df['date'] = pd.to_datetime(benchmark_df['date'], errors='coerce')
+    benchmark_df = benchmark_df.dropna(subset=['date', 'price']).set_index('date')
     benchmark_returns = benchmark_df['price'].pct_change().fillna(0)
     combined_returns = pd.DataFrame({'portfolio': daily_returns, 'benchmark': benchmark_returns}).dropna()
 
-    # Capture Ratios
     positive_bench_days = combined_returns[combined_returns['benchmark'] > 0]
     negative_bench_days = combined_returns[combined_returns['benchmark'] < 0]
     
@@ -68,39 +120,6 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     avg_benchmark_up = positive_bench_days['benchmark'].mean()
     avg_portfolio_down = negative_bench_days['portfolio'].mean()
     avg_benchmark_down = negative_bench_days['benchmark'].mean()
-
-    # Sharpe Ratio
-    sharpe_ratio = 0
-    if daily_returns.std() > 0:
-        sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252)
-
-    # Sortino Ratio (corregido para coincidir con la lógica del frontend)
-    mean_daily_return = daily_returns.mean()
-    negative_returns = daily_returns[daily_returns < 0]
-    
-    if len(negative_returns) == 0:
-        # Si no hay retornos negativos, el riesgo es cero, por lo que el ratio es infinito.
-        # Se cambia np.inf por un número grande para evitar errores de JSON y ser coherente.
-        sortino_ratio = 999.0 if mean_daily_return > 0 else 0.0
-    else:
-        # La desviación a la baja se calcula sobre el total de retornos, no solo los negativos.
-        # Esto evita que el denominador sea cero fácilmente.
-        downside_deviation = np.sqrt((negative_returns**2).sum() / len(daily_returns))
-
-        # Si la desviación es 0, el ratio es teóricamente infinito.
-        # Lo manejamos para que sea un número grande si hay ganancias, o 0 si no.
-        if downside_deviation == 0:
-            sortino_ratio = 999.0 if mean_daily_return > 0 else 0.0
-        else:
-            sortino_ratio = (mean_daily_return / downside_deviation) * np.sqrt(252)
-
-    # Métricas de Trades
-    total_trades = len(trades_df)
-    winning_trades = trades_df[trades_df['pnl'] > 0]
-    losing_trades = trades_df[trades_df['pnl'] < 0]
-    
-    win_pct = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
-    profit_factor = abs(winning_trades['pnl'].sum() / losing_trades['pnl'].sum()) if losing_trades['pnl'].sum() != 0 else None
 
     # Meses consecutivos de pérdidas
     monthly_pnl = equity_curve['pnl'].resample('M').sum()
@@ -115,14 +134,13 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     max_consecutive_losing_months = max(max_consecutive_losing_months, consecutive_losing_months)
 
     # --- CÁLCULO DE STAGNATION (ESTANCAMIENTO) ---
-    # CORRECCIÓN: El cálculo anterior no contaba el estancamiento final si la estrategia terminaba en drawdown.
+    # Ahora se calcula desde la curva diaria, que es la definición estándar de "Stagnation in Days".
     max_stagnation_days = 0
     if not equity_curve.empty:
         last_peak_date = equity_curve.index[0]
         for current_date, current_equity in equity_curve['equity'].items():
             if current_equity >= equity_curve['equity'].loc[last_peak_date]:
                 last_peak_date = current_date
-            # Se calcula el estancamiento en cada punto y se actualiza el máximo
             stagnation_days = (current_date - last_peak_date).days
             max_stagnation_days = max(max_stagnation_days, stagnation_days)
 
@@ -133,43 +151,48 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     if std_pnl > 0 and total_trades > 0:
         sqn = (avg_pnl / std_pnl) * np.sqrt(total_trades)
 
-    # --- CÁLCULO DE UPI (ULCER PERFORMANCE INDEX) MEJORADO ---
-    # --- CORRECCIÓN DEFINITIVA: Se unifica el cálculo de UPI con la curva de equity principal ---
-    
-    # 1. Calcular CAGR (con manejo especial para < 1 año)
+    # --- CÁLCULO DE UPI (ULCER PERFORMANCE INDEX) - USA LA CURVA POR OPERACIÓN ---
+
+    # PASO 2: Calcular CAGR (Tasa de Crecimiento Anual Compuesta) en porcentaje.
     duration_years = duration_days / 365.25
     cagr = 0
-    final_equity = equity_curve['equity'].iloc[-1]
+    final_equity = equity_curve_by_trade.iloc[-1]
     if initial_capital > 0 and final_equity > 0 and duration_years > 0:
         if duration_years < 1.0:
+            # Extrapolación lineal para periodos menores a un año.
             total_return = (final_equity / initial_capital) - 1
             cagr = (total_return / duration_years) * 100.0
         else:
-            cagr = ((final_equity / initial_capital)**(1/duration_years) - 1) * 100
+            # Fórmula estándar de CAGR.
+            cagr = (((final_equity / initial_capital)**(1/duration_years)) - 1) * 100
 
-    # 2. Calcular Ulcer Index en DÓLARES desde la curva de equity principal
-    rolling_max_for_ulcer = equity_curve['equity'].cummax()
+    # PASO 3: Calcular Ulcer Index en PORCENTAJE.
+    n = len(equity_curve_by_trade_list)
+    peak_equity = initial_capital
     squared_drawdown_sum = 0
-    drawdowns_in_dollars = rolling_max_for_ulcer - equity_curve['equity']
-    squared_drawdown_sum = (drawdowns_in_dollars**2).sum()
-    n = len(equity_curve)
-    ulcer_index_dollars = np.sqrt(squared_drawdown_sum / n) if n > 0 else 0
+    for current_point in equity_curve_by_trade_list:
+        peak_equity = max(peak_equity, current_point)
+        drawdown_pct = ((current_point / peak_equity) - 1) * 100.0 if peak_equity > 0 else 0
+        squared_drawdown_sum += drawdown_pct**2
     
-    # 3. Calcular UPI final usando Beneficio Total (en dólares) y Ulcer Index (en dólares)
-    total_profit_for_upi = final_equity - initial_capital # total_profit es lo mismo
-    upi = total_profit_for_upi / ulcer_index_dollars if ulcer_index_dollars > 0 else (999 if total_profit_for_upi > 0 else 0)
+    ulcer_index_pct = np.sqrt(squared_drawdown_sum / n) if n > 0 else 0
+
+    # PASO 4: Calcular UPI final.
+    upi = cagr / ulcer_index_pct if ulcer_index_pct > 0 else (999 if cagr > 0 else 0)
+
+    # --- CÁLCULO DE ULCER INDEX EN DÓLARES ---
+    # Ahora se calcula desde la curva por operación para consistencia.
+    ulcer_index_dollars = np.sqrt((drawdowns_in_dollars_by_trade**2).sum() / n) if n > 0 else 0
 
     # --- CÁLCULO DE STAGNATION EN TRADES ---
     max_stagnation_trades = 0
     trades_since_peak = 0
-    peak_equity_by_trade = initial_capital
-    # Iteramos desde el primer trade (índice 1 de la curva de equity por operación)
-    for pnl in trades_df.sort_values(by='exit_date')['pnl']:
-        current_equity_point = peak_equity_by_trade + pnl # Simular la curva trade a trade
+    peak_equity_by_trade = equity_curve_by_trade.iloc[0]
+    for equity_point in equity_curve_by_trade_list[1:]:
         trades_since_peak += 1
-        if current_equity_point > peak_equity_by_trade:
+        if equity_point > peak_equity_by_trade:
             max_stagnation_trades = max(max_stagnation_trades, trades_since_peak)
-            peak_equity_by_trade = current_equity_point
+            peak_equity_by_trade = equity_point
             trades_since_peak = 0
     max_stagnation_trades = max(max_stagnation_trades, trades_since_peak)
     
