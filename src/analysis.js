@@ -42,18 +42,20 @@ export const runAnalysis = async () => {
  * @returns {Promise<Array>} - Promesa que resuelve a un array de resultados de análisis del backend.
  */
 const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios, isRiskNormalized, targetMaxDD) => {
+    const payload = {
+        strategies_data: strategies,
+        benchmark_data: benchmark,
+        portfolios_to_analyze: portfolios,
+        is_risk_normalized: isRiskNormalized,
+        normalization_metric: document.getElementById('normalization-metric-select')?.value || 'max_dd',
+        normalization_target_value: targetMaxDD
+    };
+    console.log('%c[FRONTEND-LOG] 1. PAYLOAD A ENVIAR AL BACKEND:', 'color: cyan; font-weight: bold;', JSON.parse(JSON.stringify(payload)));
     try {
         const response = await fetch('/analysis/full', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                strategies_data: strategies,
-                benchmark_data: benchmark,
-                portfolios_to_analyze: portfolios,
-                is_risk_normalized: isRiskNormalized,
-                normalization_metric: document.getElementById('normalization-metric-select')?.value || 'max_dd', // <-- CORREGIDO
-                normalization_target_value: targetMaxDD // El valor del input ahora es genérico
-            })
+            body: JSON.stringify(payload)
         });
         if (!response.ok) {
             const errorData = await response.json();
@@ -86,26 +88,41 @@ export const reAnalyzeAllData = async () => {
 
     const isRiskNormalized = dom.normalizeRiskCheckbox.checked;
     const targetValue = isRiskNormalized ? parseFloat(document.getElementById('target-max-dd').value) : 0;
+    console.log(`%c[FRONTEND-LOG] 0. Normalización Global Activada: ${isRiskNormalized}, Valor Objetivo: ${targetValue}`, 'color: yellow;');
 
     // --- CORREGIDO: Construir una lista de TODOS los portafolios que necesitan análisis del backend ---
     const portfoliosToAnalyze = [];
 
     // 1. Añadir todos los portafolios guardados a la lista de análisis.
     // El backend se encargará de calcular sus métricas siempre.
-    state.savedPortfolios.forEach((p, i) => {
-        // --- CORRECCIÓN VITAL ---
-        // Cada portafolio guardado ahora lleva su propia configuración de riesgo.
-        // Si no tiene una, se asume que no se normaliza (is_risk_normalized: false).
-        const riskConfig = p.riskConfig || { isScaled: false, targetMaxDD: 0 };
+    state.savedPortfolios.forEach((p, i) => {        
+        // --- CORRECCIÓN DEFINITIVA: La normalización global siempre tiene prioridad ---
+        let isNormalizedForThisRun, metricForThisRun, targetForThisRun;
+
+        if (isRiskNormalized) {
+            // Si la casilla global está marcada, se usa esa configuración para TODOS.
+            isNormalizedForThisRun = true;
+            metricForThisRun = document.getElementById('normalization-metric-select').value;
+            targetForThisRun = targetValue;
+        } else {
+            // Si la global no está marcada, se usa la configuración individual del portafolio.
+            const riskConfig = p.riskConfig || { isScaled: false };
+            isNormalizedForThisRun = riskConfig.isScaled;
+            metricForThisRun = riskConfig.normalizationMetric || 'max_dd';
+            targetForThisRun = riskConfig.targetValue || 0;
+        }
+
+        console.log(`[FRONTEND-LOG] 1.1. Preparando Portafolio Guardado (índice ${i}, id: ${p.id}) para backend. Normalización: ${isNormalizedForThisRun}, Métrica: ${metricForThisRun}, Objetivo: ${targetForThisRun}`);
+
         portfoliosToAnalyze.push({
             indices: p.indices,
             weights: p.weights,
             is_saved_portfolio: true,
             saved_index: i,
             portfolio_id: p.id,
-            is_risk_normalized: riskConfig.isScaled,
-            normalization_metric: riskConfig.normalizationMetric || 'max_dd', // Guardar también la métrica
-            normalization_target_value: riskConfig.targetValue
+            is_risk_normalized: isNormalizedForThisRun,
+            normalization_metric: metricForThisRun,
+            normalization_target_value: targetForThisRun
         });
     });
 
@@ -135,7 +152,7 @@ export const reAnalyzeAllData = async () => {
     // 3. Obtener todos los análisis (estrategias + portafolios) en una sola llamada al backend.
     const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze, isRiskNormalized, targetValue);
     // El log que has proporcionado confirma que los datos llegan aquí.
-    console.log("DEBUG ANALYSIS.JS: Datos recibidos del backend:", JSON.parse(JSON.stringify(backendAnalyses)));
+    console.log("%c[FRONTEND-LOG] 4. DATOS RECIBIDOS DEL BACKEND:", 'color: cyan; font-weight: bold;', JSON.parse(JSON.stringify(backendAnalyses)));
     if (!backendAnalyses || backendAnalyses.length === 0) return;
 
     // 4. Mapear los resultados del backend al formato que espera el frontend.
@@ -156,7 +173,9 @@ export const reAnalyzeAllData = async () => {
                 // El backend ahora usa saved_index para identificar portafolios guardados.
                 // Es más fiable que el ID durante el ciclo de vida de la app.
                 const portfolioInState = state.savedPortfolios[result.saved_index];
+                console.log(`%c[FRONTEND-LOG] 5. Asignando métricas al portafolio guardado (índice ${result.saved_index})`, 'color: lightgreen;');
                 if (portfolioInState) {
+                    console.log(`[FRONTEND-LOG] 5.1. Métricas recibidas para portafolio '${portfolioInState.name}': Ret/DD=${result.metrics?.profitMaxDD_Ratio?.toFixed(2)}, MaxDD$=${result.metrics?.maxDrawdownInDollars?.toFixed(2)}`);
                     portfolioInState.metrics = result.metrics;
                     portfolioInState.analysis = result.metrics;
                 }
@@ -196,7 +215,7 @@ export const reAnalyzeAllData = async () => {
         }
     });
 
-    console.log("DEBUG ANALYSIS.JS: Estado final de 'savedPortfolios' antes de dibujar:", JSON.parse(JSON.stringify(state.savedPortfolios)));
+    console.log("%c[FRONTEND-LOG] 6. ESTADO FINAL de 'savedPortfolios' antes de dibujar:", 'color: orange; font-weight: bold;', JSON.parse(JSON.stringify(state.savedPortfolios)));
     displayResults(allAnalysisResults);
 };
 

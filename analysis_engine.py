@@ -31,7 +31,9 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     # 3. Construir la curva de equity sobre el rango de fechas propio del portafolio.
     equity_curve = pd.DataFrame(index=full_date_range)
     equity_curve['pnl'] = daily_pnl.reindex(full_date_range, fill_value=0.0)
-    equity_curve['equity'] = 10000 + equity_curve['pnl'].cumsum()
+    # --- CORRECCIÓN: Volvemos a un capital inicial fijo, como debe ser. ---
+    initial_capital = 10000
+    equity_curve['equity'] = initial_capital + equity_curve['pnl'].cumsum()
 
     # Métricas de Drawdown
     rolling_max = equity_curve['equity'].cummax()
@@ -132,42 +134,29 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         sqn = (avg_pnl / std_pnl) * np.sqrt(total_trades)
 
     # --- CÁLCULO DE UPI (ULCER PERFORMANCE INDEX) MEJORADO ---
-    # Basado en la referencia de StrategyQuant, usamos una curva de equity por operación.
+    # --- CORRECCIÓN DEFINITIVA: Se unifica el cálculo de UPI con la curva de equity principal ---
     
-    # 1. Construir curva de equity por operación
-    trades_df_sorted = trades_df.sort_values(by='exit_date')
-    initial_capital = 10000
-    equity_curve_by_trade = [initial_capital]
-    current_equity_by_trade = initial_capital
-    for pnl in trades_df_sorted['pnl']:
-        current_equity_by_trade += pnl
-        equity_curve_by_trade.append(current_equity_by_trade)
-
-    # 2. Calcular CAGR (con manejo especial para < 1 año)
+    # 1. Calcular CAGR (con manejo especial para < 1 año)
     duration_years = duration_days / 365.25
     cagr = 0
-    final_equity = equity_curve_by_trade[-1] if equity_curve_by_trade else initial_capital
+    final_equity = equity_curve['equity'].iloc[-1]
     if initial_capital > 0 and final_equity > 0 and duration_years > 0:
         if duration_years < 1.0:
             total_return = (final_equity / initial_capital) - 1
             cagr = (total_return / duration_years) * 100.0
         else:
             cagr = ((final_equity / initial_capital)**(1/duration_years) - 1) * 100
-    
-    # 3. Calcular Ulcer Index en DÓLARES desde la curva por operación
-    peak_equity = initial_capital
+
+    # 2. Calcular Ulcer Index en DÓLARES desde la curva de equity principal
+    rolling_max_for_ulcer = equity_curve['equity'].cummax()
     squared_drawdown_sum = 0
-    n = len(equity_curve_by_trade)
-    for current_point in equity_curve_by_trade:
-        peak_equity = max(peak_equity, current_point)
-        # --- CAMBIO CLAVE: Usar drawdown en dólares en lugar de porcentaje ---
-        drawdown_dollars = peak_equity - current_point
-        squared_drawdown_sum += drawdown_dollars**2
-    
+    drawdowns_in_dollars = rolling_max_for_ulcer - equity_curve['equity']
+    squared_drawdown_sum = (drawdowns_in_dollars**2).sum()
+    n = len(equity_curve)
     ulcer_index_dollars = np.sqrt(squared_drawdown_sum / n) if n > 0 else 0
     
-    # 4. Calcular UPI final usando Beneficio Total (en dólares) y Ulcer Index (en dólares)
-    total_profit_for_upi = final_equity - initial_capital
+    # 3. Calcular UPI final usando Beneficio Total (en dólares) y Ulcer Index (en dólares)
+    total_profit_for_upi = final_equity - initial_capital # total_profit es lo mismo
     upi = total_profit_for_upi / ulcer_index_dollars if ulcer_index_dollars > 0 else (999 if total_profit_for_upi > 0 else 0)
 
     # --- CÁLCULO DE STAGNATION EN TRADES ---
@@ -175,13 +164,13 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     trades_since_peak = 0
     peak_equity_by_trade = initial_capital
     # Iteramos desde el primer trade (índice 1 de la curva de equity por operación)
-    for equity_point in equity_curve_by_trade[1:]:
+    for pnl in trades_df.sort_values(by='exit_date')['pnl']:
+        current_equity_point = peak_equity_by_trade + pnl # Simular la curva trade a trade
         trades_since_peak += 1
-        if equity_point > peak_equity_by_trade:
+        if current_equity_point > peak_equity_by_trade:
             max_stagnation_trades = max(max_stagnation_trades, trades_since_peak)
-            peak_equity_by_trade = equity_point
+            peak_equity_by_trade = current_equity_point
             trades_since_peak = 0
-    # CORRECCIÓN: Asegurarse de contar el estancamiento final si la estrategia termina en drawdown.
     max_stagnation_trades = max(max_stagnation_trades, trades_since_peak)
     
     # Cálculo final de Capture Ratio

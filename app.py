@@ -47,12 +47,18 @@ class PortfolioDefinition(BaseModel):
     is_current_portfolio: bool = False
     is_databank_portfolio: bool = False
     databank_index: Optional[int] = None
+    # --- CORRECCIÓN DEFINITIVA: Añadir los campos de normalización que faltaban ---
+    is_risk_normalized: Optional[bool] = False
+    normalization_metric: Optional[str] = None
+    normalization_target_value: Optional[float] = None
 
-class FullAnalysisRequest(BaseModel):
+
+class FullAnalysisRequest(BaseModel): # Contenido movido a PortfolioDefinition
     strategies_data: List[List[Trade]]
     benchmark_data: List[Dict[str, Any]]
     is_risk_normalized: Optional[bool] = False
-    target_max_dd: Optional[float] = None
+    normalization_metric: Optional[str] = None
+    normalization_target_value: Optional[float] = None
     portfolios_to_analyze: Optional[List[PortfolioDefinition]] = None
 
 class OptimizationParams(BaseModel):
@@ -123,7 +129,7 @@ def read_root():
 @app.post("/analysis/full")
 async def get_full_analysis(request: FullAnalysisRequest):
     """
-    Recibe una lista de estrategias y devuelve una lista de sus análisis de métricas.
+    Recibe estrategias y definiciones de portafolios, y devuelve todos los análisis.
     """
     print("\n--- Endpoint /analysis/full HIT ---")
     try:
@@ -134,83 +140,86 @@ async def get_full_analysis(request: FullAnalysisRequest):
         # --- CORRECCIÓN ARQUITECTURAL CLAVE ---
         # 1. Pre-procesar todas las estrategias y guardar sus DataFrames de trades.
         processed_strategy_dfs = []
-        all_metrics = []
         for i, strat_trades in enumerate(strategies_data):
             print(f"  Processing strategy {i+1}/{len(strategies_data)}...")
-            
-            # --- LÓGICA DE NORMALIZACIÓN DE RIESGO ---
-            trades_to_analyze = strat_trades
-            if request.is_risk_normalized and request.target_max_dd and request.target_max_dd > 0:
-                if strat_trades:
-                    pre_analysis_df = pd.DataFrame([t.copy() for t in strat_trades])
-                    pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
-                    
-                    if pre_analysis_result:
-                        metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
-                        current_metric_value = pre_analysis_result[0].get(metric_key, 0)
-
-                        if current_metric_value > 0:
-                            scale_factor = request.normalization_target_value / current_metric_value
-                            scaled_trades = [t.copy() for t in strat_trades]
-                            for trade in scaled_trades:
-                                trade['pnl'] *= scale_factor
-                            trades_to_analyze = scaled_trades
-
-                        scaled_trades = []
-                        for trade in strat_trades:
-                            new_trade = trade.copy()
-                            scaled_trades.append(new_trade)
-                        trades_to_analyze = scaled_trades
-
-            if not strat_trades:
+            trades_df = pd.DataFrame(strat_trades) if strat_trades else pd.DataFrame()
+            if trades_df.empty:
                 print(f"  -> Strategy {i+1} has no trades. Skipping.")
                 processed_strategy_dfs.append(pd.DataFrame()) # Añadir DF vacío como placeholder
-                all_metrics.append(None) # Añadir un placeholder si la estrategia no tiene trades
                 continue
             
-            trades_df = pd.DataFrame(trades_to_analyze)
-            processed_strategy_dfs.append(trades_df) # Guardar el DF procesado
-            analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy())
-            all_metrics.append(analysis_result[0] if analysis_result and analysis_result[0] else None)
+            processed_strategy_dfs.append(trades_df) # Guardar el DF procesado SIN escalar
+
+        # 2. Analizar las estrategias individuales (con posible escalado global)
+        # --- CORRECCIÓN CLAVE: Separar los resultados de estrategias y portafolios ---
+        strategy_analysis_results = []
+        for i, strat_df in enumerate(processed_strategy_dfs):
+            trades_to_analyze_df = strat_df.copy()
+            # Aplicar normalización global SOLO a las estrategias individuales
+            if request.is_risk_normalized and request.normalization_target_value and request.normalization_target_value > 0 and not trades_to_analyze_df.empty:
+                # Usamos strat_df (original) para el pre-análisis
+                pre_analysis_result = process_strategy_data(strat_df.copy(), benchmark_data_df.copy())
+                if pre_analysis_result:
+                    metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
+                    current_metric_value = pre_analysis_result[0].get(metric_key, 0)
+                    if current_metric_value > 0:
+                        scale_factor = request.normalization_target_value / current_metric_value
+                        # Y aplicamos el escalado a la copia que se va a analizar
+                        trades_to_analyze_df['pnl'] *= scale_factor
+            
+            analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy())
+            strategy_analysis_results.append(analysis_result[0] if analysis_result and analysis_result[0] else None)
             print(f"  -> Strategy {i+1} analysis complete.")
         
         # --- NUEVO: Analizar los portafolios solicitados ---
+        portfolio_analysis_results = []
         if request.portfolios_to_analyze:
             print(f"--- Analyzing {len(request.portfolios_to_analyze)} requested portfolios ---")
-            for p_def in request.portfolios_to_analyze:
+            for p_idx, p_def in enumerate(request.portfolios_to_analyze):
+                print(f"\n[BACKEND-LOG] 2.{p_idx} Procesando portafolio (saved_index: {p_def.saved_index}, is_current: {p_def.is_current_portfolio}, is_databank: {p_def.is_databank_portfolio})")
                 portfolio_trades = []
                 weights = p_def.weights if p_def.weights else [1/len(p_def.indices)] * len(p_def.indices)
                 
                 for i, strat_idx in enumerate(p_def.indices):
-                    # 2. Usar los DataFrames pre-procesados, no los datos crudos.
                     if strat_idx < len(processed_strategy_dfs):
+                        # --- CORRECCIÓN CLAVE ---
+                        # Usar los DFs originales (sin escalar) para construir el portafolio.
                         weight = weights[i]
                         strat_df = processed_strategy_dfs[strat_idx].copy()
                         if not strat_df.empty:
                             strat_df['pnl'] *= weight
                             portfolio_trades.append(strat_df)
-                
-                # --- LÓGICA DE NORMALIZACIÓN DE RIESGO PARA PORTAFOLIOS ---
-                # Construir el DF del portafolio ANTES de la normalización
+
                 portfolio_df = pd.concat(portfolio_trades, ignore_index=True) if portfolio_trades else pd.DataFrame()
                 trades_to_analyze_df = portfolio_df.copy() # Empezamos con una copia
 
+                print(f"  [BACKEND-LOG] 2.{p_idx}.a -> Normalización Recibida: is_risk_normalized={p_def.is_risk_normalized}, metric='{p_def.normalization_metric}', value={p_def.normalization_target_value}")
+
                 # --- LÓGICA DE NORMALIZACIÓN CORREGIDA: Se aplica por portafolio ---
                 if p_def.is_risk_normalized and p_def.normalization_target_value and p_def.normalization_target_value > 0:
+                    print(f"  [BACKEND-LOG] 2.{p_idx}.b -> ✅ ENTRANDO en bloque de normalización.")
+                    # --- CORRECCIÓN FINALÍSIMA: Usar 'portfolio_df' (los trades combinados originales) para el pre-análisis ---
                     if not portfolio_df.empty:
                         pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy()) 
                         if pre_analysis_result:
-                            # Determinar qué métrica usar para la normalización
+                            # Determinar qué métrica usar para la normalización desde los resultados del pre-análisis
                             metric_key = 'maxDrawdownInDollars' if p_def.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
                             current_metric_value = pre_analysis_result[0].get(metric_key, 0)
 
+                            print(f"    [BACKEND-LOG] Métrica: '{metric_key}', Valor Actual: {current_metric_value:.2f}, Valor Objetivo: {p_def.normalization_target_value:.2f}")
                             if current_metric_value > 0:
                                 scale_factor = p_def.normalization_target_value / current_metric_value
-                                # Aplicamos el escalado a la copia que vamos a analizar
-                                trades_to_analyze_df['pnl'] *= scale_factor
+                                print(f"    [BACKEND-LOG] -> 🔥 Aplicando Factor de Escala: {scale_factor:.4f}")
+                                # --- CORRECCIÓN CRÍTICA Y DEFINITIVA ---
+                                # Forzamos una copia profunda para evitar el SettingWithCopyWarning y asegurar la modificación.
+                                # En lugar de 'in-place' ( *= ), asignamos el resultado a la columna.
+                                # Esto es más robusto contra los problemas de 'SettingWithCopyWarning' de pandas.
+                                trades_to_analyze_df['pnl'] = trades_to_analyze_df['pnl'] * scale_factor
                             else:
-                                print(f"  -> Skipping normalization for portfolio, current metric '{metric_key}' is 0.")
-
+                                print(f"    [BACKEND-LOG] -> ⚠️ Saltando normalización (valor actual de la métrica es 0).")
+                else:
+                    print(f"  [BACKEND-LOG] 2.{p_idx}.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).")
+                
                 # CORRECCIÓN CRÍTICA: Usar los trades que han sido potencialmente escalados ('trades_to_analyze')
                 # en lugar de los originales ('portfolio_trades') para el análisis final.
                 analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy())
@@ -233,14 +242,15 @@ async def get_full_analysis(request: FullAnalysisRequest):
                     "portfolio_id": p_def.portfolio_id
                 }
 
-                print(f"DEBUG BACKEND: Analysis for portfolio ID {p_def.portfolio_id if p_def.is_saved_portfolio else 'N/A'} -> Metrics found: {bool(metrics_payload)}")
+                print(f"  [BACKEND-LOG] 2.{p_idx}.c -> Análisis finalizado. ¿Métricas encontradas?: {bool(metrics_payload)}. Enviando de vuelta.")
 
-                all_metrics.append(result_obj)
-                print(f"  -> Portfolio analysis complete.")
+                portfolio_analysis_results.append(result_obj)
         
-        print(f"DEBUG BACKEND: Final response contains {len(all_metrics)} total analysis objects.")
-        print("--- Analysis complete. Sending response. ---")
-        return json.loads(json.dumps(all_metrics, cls=CustomJSONEncoder))
+        # --- CORRECCIÓN FINAL: Combinar los resultados de forma explícita y correcta ---
+        final_results = strategy_analysis_results + portfolio_analysis_results
+        
+        print(f"\n[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando {len(final_results)} objetos de resultados al frontend.")
+        return json.loads(json.dumps(final_results, cls=CustomJSONEncoder))
     except Exception as e:
         print(f"!!!!!! ERROR in /analysis/full: {e} !!!!!!")
         traceback.print_exc()
