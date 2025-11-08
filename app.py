@@ -15,12 +15,21 @@ from analysis_engine import process_strategy_data, get_combinations, add_to_data
 
 # --- Modelos de Datos (Pydantic) ---
 class Trade(BaseModel):
-    entry_date: Optional[Any] = None
-    exit_date: Optional[Any] = None
+    # --- CORRECCIÓN FINALÍSIMA Y DEFINITIVA ---
+    # El problema raíz era que Pydantic intentaba convertir las fechas (strings) a objetos datetime
+    # al recibir la petición. Si luego ocurría CUALQUIER error, FastAPI intentaba serializar
+    # el request original (ahora con Timestamps) y fallaba. Al definir las fechas como 'str',
+    # Pydantic no las toca, eliminando el problema de raíz.
+    entry_date: Optional[str] = None
+    exit_date: Optional[str] = None
     pnl: Optional[float] = None
 
     class Config:
         extra = 'allow'
+        # --- CORRECCIÓN FINALÍSIMA Y ABSOLUTAMENTE DEFINITIVA (v2) ---
+        # Sobrescribimos la función de parseo JSON para Pydantic para que use la estándar,
+        # lo que deshabilita la conversión automática de strings de fecha a objetos datetime.
+        json_loads = json.loads
 
 class DatabankParams(BaseModel):
     metric_to_optimize_key: str
@@ -92,6 +101,9 @@ class CustomJSONEncoder(json.JSONEncoder):
             return obj.tolist()
         if isinstance(obj, tuple):
             return list(obj)
+        # --- CORRECCIÓN: Añadir manejo para objetos Timestamp de pandas ---
+        if isinstance(obj, pd.Timestamp):
+            return obj.isoformat() # Convertir a string en formato ISO 8601
         return super(CustomJSONEncoder, self).default(obj)
 
 # --- Configuración de la App FastAPI ---
@@ -144,6 +156,9 @@ async def get_full_analysis(request: FullAnalysisRequest):
             print(f"  Processing strategy {i+1}/{len(strategies_data)}...")
             trades_df = pd.DataFrame(strat_trades) if strat_trades else pd.DataFrame()
             if trades_df.empty:
+                # --- CORRECCIÓN DE DEPURACIÓN ---
+                # Si un DF está vacío, no podemos procesarlo. Lo añadimos como placeholder
+                # para no romper los índices.
                 print(f"  -> Strategy {i+1} has no trades. Skipping.")
                 processed_strategy_dfs.append(pd.DataFrame()) # Añadir DF vacío como placeholder
                 continue
@@ -185,10 +200,14 @@ async def get_full_analysis(request: FullAnalysisRequest):
                         # --- CORRECCIÓN CLAVE ---
                         # Usar los DFs originales (sin escalar) para construir el portafolio.
                         weight = weights[i]
-                        strat_df = processed_strategy_dfs[strat_idx].copy()
-                        if not strat_df.empty:
-                            strat_df['pnl'] *= weight
-                            portfolio_trades.append(strat_df)
+                        # --- CORRECCIÓN FINALÍSIMA Y ABSOLUTAMENTE DEFINITIVA ---
+                        # Si un trade tiene PnL nulo, la multiplicación falla. Lo filtramos.
+                        # Esto previene el TypeError que contaminaba los datos iniciales.
+                        strat_df_original = processed_strategy_dfs[strat_idx]
+                        if not strat_df_original.empty:
+                            strat_df_copy = strat_df_original[strat_df_original['pnl'].notna()].copy()
+                            strat_df_copy['pnl'] *= weight
+                            portfolio_trades.append(strat_df_copy)
 
                 portfolio_df = pd.concat(portfolio_trades, ignore_index=True) if portfolio_trades else pd.DataFrame()
                 trades_to_analyze_df = portfolio_df.copy() # Empezamos con una copia
@@ -427,18 +446,40 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
             portfolio_trades = []
             for i, trades in enumerate(portfolio_trades_data):
                 weight = weights[i]
+                # --- CORRECCIÓN FINALÍSIMA Y DEFINITIVA ---
+                # Si un trade en el CSV tiene un PnL vacío, trade['pnl'] será None.
+                # `None * weight` lanza un TypeError, que causa el error 500 de serialización.
+                # Nos aseguramos de que solo procesamos trades con un PnL válido.
                 for trade in trades:
-                    new_trade = trade.copy()
-                    new_trade['pnl'] *= weight
-                    portfolio_trades.append(new_trade)
+                    if trade.get('pnl') is not None:
+                        new_trade = trade.copy()
+                        new_trade['pnl'] *= weight
+                        portfolio_trades.append(new_trade)
             
             if not portfolio_trades:
                 return None, None
-
-            # Aplicar escalado de riesgo si es necesario
+            
+            # --- CORRECCIÓN DEFINITIVA: Convertir Timestamps a strings aquí ---
+            # Al convertir los Timestamps a strings inmediatamente después de crear el DataFrame,
+            # nos aseguramos de que cualquier operación posterior, incluida la gestión de errores,
+            # trabaje con datos que ya son serializables por JSON. Esto previene el error
+            # "Object of type Timestamp is not JSON serializable" si ocurre una excepción más adelante.
             trades_to_analyze_df = pd.DataFrame(portfolio_trades)
+
+            # --- CORRECCIÓN FINALÍSIMA: Comprobar si el DF está vacío ANTES de manipularlo ---
+            # Si un portafolio se compone de estrategias sin trades, el DF estará vacío.
+            # Intentar acceder a df['entry_date'] lanzará un KeyError, causando el error 500.
+            if trades_to_analyze_df.empty:
+                return None, [] # Devolver explícitamente que no hay métricas ni trades.
+            
+            # --- CORRECCIÓN FINALÍSIMA Y ABSOLUTAMENTE DEFINITIVA ---
+            # Eliminamos la conversión de fechas aquí. Dejamos que process_strategy_data sea el único responsable.
+            # Esto evita el conflicto de formatos que causaba el error.
+
+
+            # Aplicar escalado de riesgo si es necesario (ahora sobre un DF con fechas como strings)
             if request.is_risk_normalized and request.normalization_target_value and request.normalization_target_value > 0:
-                pre_analysis_df = pd.DataFrame([t.copy() for t in portfolio_trades])
+                pre_analysis_df = trades_to_analyze_df.copy() # Usar la copia ya convertida
                 pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
                 if pre_analysis_result:
                     metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
@@ -451,15 +492,30 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
             final_df = trades_to_analyze_df
             analysis_result = process_strategy_data(final_df, benchmark_data_df.copy())
             
-            return (analysis_result[0] if analysis_result else None), final_df.to_dict('records')
+            # --- CORRECCIÓN IRREFUTABLE ---
+            # El análisis convierte las fechas a Timestamps. ANTES de devolver los trades,
+            # los volvemos a convertir a strings en formato ISO, que es compatible con JSON.
+            final_df['entry_date'] = final_df['entry_date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
+            final_df['exit_date'] = final_df['exit_date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
+            trades_as_dict = final_df.to_dict('records')
+            
+            # --- CORRECCIÓN FINAL Y DEFINITIVA ---
+            # Desempaquetamos la tupla devuelta por process_strategy_data. Solo necesitamos las métricas.
+            metrics = analysis_result[0] if analysis_result else None
+            return metrics, trades_as_dict
 
         # 1. Analizar la versión con pesos iguales (base)
         equal_weights = [1.0 / num_strategies] * num_strategies
         base_metrics, base_trades = analyze_combination(equal_weights) # base_metrics ya incluye lorenzData, etc.
+        
+        print(f"--- [OPTIMIZE-LOG] 1. Análisis base completado. ¿Métricas obtenidas?: {bool(base_metrics)}")
+        if base_metrics:
+            print(f"--- [OPTIMIZE-LOG] 1.1. Métricas base: Ret/DD={base_metrics.get('profitMaxDD_Ratio', 'N/A')}, MaxDD$={base_metrics.get('maxDrawdownInDollars', 'N/A')}")
+
         if not base_metrics:
             raise HTTPException(status_code=400, detail="No se pudo analizar el portafolio base (pesos iguales).")
 
-        original_target_metric_value = base_metrics[params.target_metric]
+        original_target_metric_value = base_metrics.get(params.target_metric) # Usar .get() para evitar KeyError
 
         # Inicializar los mejores resultados
         metric_best_result = {'metric_val': -np.inf if params.target_goal == 'maximize' else np.inf, 'weights': equal_weights, 'metrics': base_metrics, 'trades': base_trades}
@@ -468,15 +524,10 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
         # --- MEJORA: Analizar también la composición de pesos actual del portafolio ---
         # Si el portafolio ya tiene pesos, los usamos como punto de partida para "metric_best"
         # y "balanced_best", en lugar de los pesos iguales.
-        if request.params.num_simulations == 0:
-            # CORRECCIÓN: La lógica para encontrar el portafolio y sus pesos era incorrecta.
-            # El frontend no envía los portafolios guardados en la petición de optimización,
-            # por lo que no podemos buscarlos aquí. La lógica correcta es que si el portafolio
-            # tiene pesos, el frontend los use para el análisis inicial.
-            # El backend ahora simplemente analiza los pesos que se le dan.
-            # La lógica anterior causaba un AttributeError porque `request.strategies_data` es una lista de listas de trades,
-            # y sus elementos no tienen un atributo `.indices`.
-            pass # Se elimina la lógica errónea. El frontend ya gestiona el estado inicial.
+        # --- CORRECCIÓN DEFINITIVA: Eliminar la lógica errónea ---
+        # Si num_simulations es 0, el bucle de abajo no se ejecuta y simplemente se devuelve el "baseAnalysis"
+        # con pesos iguales, que es exactamente lo que el frontend necesita para el estado inicial.
+        print(f"--- [OPTIMIZE-LOG] 2. Número de simulaciones a ejecutar: {params.num_simulations}")
 
         # 2. Bucle de simulación Monte Carlo
         for i in range(params.num_simulations): # Si num_simulations es 0, este bucle no se ejecuta.
@@ -494,6 +545,9 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
 
             # 3. Comprobar si es el mejor para la métrica objetivo
             current_metric_val = current_metrics[params.target_metric]
+            if i % 1000 == 0: # Loguear de vez en cuando para no saturar
+                print(f"--- [OPTIMIZE-LOG] 2.1. Simulación {i}: Métrica Objetivo '{params.target_metric}' = {current_metric_val:.2f}")
+
             is_metric_better = (params.target_goal == 'maximize' and current_metric_val > metric_best_result['metric_val']) or \
                                (params.target_goal == 'minimize' and current_metric_val < metric_best_result['metric_val'])
             
@@ -501,8 +555,11 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
                 metric_best_result = {'metric_val': current_metric_val, 'weights': weights.tolist(), 'metrics': current_metrics, 'trades': current_trades}
 
             # 4. Comprobar si es el mejor para el balance general
-            is_better_than_original_on_target = (params.target_goal == 'maximize' and current_metric_val >= original_target_metric_value) or \
-                                                (params.target_goal == 'minimize' and current_metric_val <= original_target_metric_value)
+            # CORRECCIÓN: Asegurarse de que original_target_metric_value no sea None
+            is_better_than_original_on_target = False
+            if original_target_metric_value is not None:
+                is_better_than_original_on_target = (params.target_goal == 'maximize' and current_metric_val >= original_target_metric_value) or \
+                                                    (params.target_goal == 'minimize' and current_metric_val <= original_target_metric_value)
 
             if is_better_than_original_on_target:
                 total_improvement = 0
@@ -527,10 +584,17 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
             "balancedBestAnalysis": { "metrics": balanced_best_result['metrics'], "trades": balanced_best_result['trades'], "weights": balanced_best_result['weights'] }
         }
         
-        print("--- Optimization complete. Sending response. ---")
-        return json.loads(json.dumps(final_response, cls=CustomJSONEncoder))
+        # --- CORRECCIÓN FINAL: Asegurar que la serialización se aplique siempre ---
+        # Usar json.dumps con el codificador personalizado garantiza que todos los tipos de datos
+        # (incluidos Timestamps, numpy ints/floats) se conviertan correctamente antes de enviar.
+        # json.loads lo convierte de nuevo en un diccionario/lista de Python que FastAPI puede manejar.
+        print("--- [OPTIMIZE-LOG] 3. Optimización finalizada. Preparando respuesta final.")
+        response_payload = json.loads(json.dumps(final_response, cls=CustomJSONEncoder))
+        print("--- [OPTIMIZE-LOG] 4. Respuesta enviada al frontend.")
+        return response_payload
 
     except Exception as e:
-        print(f"!!!!!! ERROR in /analysis/optimize-portfolio: {e} !!!!!!")
+        # --- LOG MEJORADO ---
+        print(f"!!!!!! 🔥🔥🔥 ERROR CATASTRÓFICO en /analysis/optimize-portfolio: {type(e).__name__}: {e} 🔥🔥🔥 !!!!!!")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

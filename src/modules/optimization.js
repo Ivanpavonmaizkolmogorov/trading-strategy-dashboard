@@ -51,13 +51,10 @@ export const openOptimizationModal = async (portfolioIndex) => {
     elements.targetMetricSelect.value = 'sortinoRatio';
     elements.targetGoalSelect.value = 'maximize';
     
-    // Buscamos el análisis ya hecho para obtener las métricas del backend y el MaxDD
-    const originalPortfolioAnalysis = window.analysisResults?.find(r => r.isSavedPortfolio && r.savedIndex === portfolioIndex);
-    const currentMetrics = originalPortfolioAnalysis?.analysis;
-
     // --- MEJORA: Configurar controles de escalado de riesgo con el valor actual ---
     const riskConfig = portfolio.riskConfig || {};
     elements.scaleRiskCheckbox.checked = riskConfig.isScaled || false;
+    const currentMetrics = portfolio.metrics; // Usar las métricas ya guardadas en el portafolio
     elements.normalizationMetricSelect.value = riskConfig.normalizationMetric || 'max_dd'; // <-- NUEVO
     elements.targetMaxDDInput.value = riskConfig.targetValue || (currentMetrics ? currentMetrics.maxDrawdownInDollars.toFixed(0) : 10000);
 
@@ -69,12 +66,16 @@ export const openOptimizationModal = async (portfolioIndex) => {
     elements.targetMaxDDSlider.value = elements.targetMaxDDInput.value;
     elements.targetMaxDDInput.parentElement.classList.toggle('hidden', !elements.scaleRiskCheckbox.checked);
 
-    // Al abrir, mostramos el panel de configuración y lanzamos un análisis inicial
-    // para mostrar el estado actual del portafolio.
-    elements.setupContainer.classList.remove('hidden');
-    await startOptimizationSearch(true); // `isInitialLoad = true` para no mostrar el spinner
-    
+    // --- LÓGICA DE VISUALIZACIÓN CORREGIDA Y FINAL ---
+    // 1. Mostrar el contenedor de resultados y poner el spinner.
+    elements.resultsContainer.classList.remove('hidden');
+    elements.resultsContainer.innerHTML = `<div class="text-center p-8"><div class="spinner-blue"></div><p class="mt-2 text-gray-400">Cargando estado actual...</p></div>`;
+
+    // 2. Mostrar el modal.
     showModalWithAnimation(elements);
+    
+    // 3. Lanzar el análisis inicial para rellenar la tabla.
+    await startOptimizationSearch(true); // `isInitialLoad = true` para no mostrar el spinner
 };
 
 export const closeOptimizationModal = () => {
@@ -102,13 +103,7 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
     if (!isInitialLoad) {
         toggleLoading(true, 'start-single-optimization-btn', 'start-optimization-btn-text', 'start-optimization-btn-spinner');
         elements.resultsContainer.innerHTML = `<div class="text-center p-8"><div class="spinner-blue"></div><p class="mt-2 text-gray-400">Optimizando...</p></div>`;
-        elements.resultsContainer.classList.remove('hidden');
-    } else {
-        elements.resultsContainer.innerHTML = `<div class="text-center p-8"><div class="spinner-blue"></div><p class="mt-2 text-gray-400">Cargando estado actual...</p></div>`;
     }
-
-    await new Promise(resolve => setTimeout(resolve, 10));
-    
     try {
         const portfolio = state.savedPortfolios[state.currentOptimizationData.portfolioIndex];
         const metricsForBalance = state.defaultMetricColumns; // Usar la vista por defecto centralizada
@@ -151,7 +146,10 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
         };
 
         state.currentOptimizationData.lastResults = finalResults; // Guardar para recálculo
+        
         displayOptimizationResults(finalResults);
+        // Una vez que los resultados se muestran, hacemos visible el panel de configuración.
+        elements.setupContainer.classList.remove('hidden');
 
     } catch (error) {
         console.error("Error during optimization:", error);
@@ -256,20 +254,21 @@ const displayOptimizationResults = (results) => {
     };
 
     html += `<div class="mt-6 grid grid-cols-2 gap-x-4 gap-y-2">
-        <button id="apply-metric-btn" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded">Aplicar Óptimo (Métrica)</button>
-        <button id="apply-balanced-btn" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-3 rounded">Aplicar Óptimo (Balance)</button>
-        <button id="save-new-metric-btn" class="w-full bg-teal-800 hover:bg-teal-900 text-white font-semibold py-1.5 px-3 rounded text-xs">Guardar como Nuevo (Opt. Métrica)</button>
-        <button id="save-new-balanced-btn" class="w-full bg-sky-800 hover:bg-sky-900 text-white font-semibold py-1.5 px-3 rounded text-xs">Guardar como Nuevo (Opt. Balance)</button>
+        <button id="apply-metric-btn" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded">Aplicar Óptimo (${optimizationMetricName})</button>
+        <button id="apply-balanced-btn" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-3 rounded">Aplicar Óptimo (Balanceado)</button>
+        <button id="save-new-metric-btn" class="w-full bg-teal-800 hover:bg-teal-900 text-white font-semibold py-1.5 px-3 rounded text-xs">Guardar como Nuevo (Opt. ${optimizationMetricName})</button>
+        <button id="save-new-balanced-btn" class="w-full bg-sky-800 hover:bg-sky-900 text-white font-semibold py-1.5 px-3 rounded text-xs">Guardar como Nuevo (Opt. Balanceado)</button>
     </div>`;
 
     elements.resultsContainer.innerHTML = html;
-    elements.resultsContainer.classList.remove('hidden');
 
     document.getElementById('apply-metric-btn').addEventListener('click', () => savePortfolio(false, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
     document.getElementById('apply-balanced-btn').addEventListener('click', () => savePortfolio(false, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`));
     document.getElementById('save-new-metric-btn').addEventListener('click', () => savePortfolio(true, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
     document.getElementById('save-new-balanced-btn').addEventListener('click', () => savePortfolio(true, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`));
 };
+
+
 
 /**
  * Recalcula los resultados en el modal cuando cambia el Target Max DD.

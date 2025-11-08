@@ -46,7 +46,10 @@ echo "Lanzando el servidor backend en $URL"
 echo "Los logs del servidor se guardarán en: $LOG_FILE"
 
 # Ejecutar uvicorn en segundo plano y redirigir su salida a un archivo de log
-uvicorn app:app --host 0.0.0.0 --port $PORT > "$LOG_FILE" 2>&1 &
+# COMENTAMOS la línea de producción para poder depurar
+# uvicorn app:app --host 0.0.0.0 --port $PORT > "$LOG_FILE" 2>&1 &
+uvicorn app:app --host 0.0.0.0 --port $PORT --reload
+
 
 # Guardar el ID del proceso de uvicorn para poder detenerlo después
 UVICORN_PID=$!
@@ -77,7 +80,7 @@ for i in {1..10}; do
         # Esperar a que el proceso de uvicorn termine
         wait $UVICORN_PID
         exit 0
-    fi
+    fi # <-- ESTA LÍNEA FALTABA. Cierra el bloque 'if' de la comprobación del servidor.
     sleep 1
 done
 

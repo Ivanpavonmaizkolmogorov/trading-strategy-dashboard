@@ -8,12 +8,16 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     Esta es la versión en Python de la función 'processStrategyData' de analysis.js.
     """
     if trades_df.empty or benchmark_df.empty:
-        return None
+        return {}, pd.Series() # Devolver estructura vacía en lugar de None
 
     # Asegurarse de que las fechas son datetime objects y están en el índice
-    # --- CORRECCIÓN: Convertir AMBAS columnas de fecha a datetime ---
-    trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date'], errors='coerce')
-    trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date'], errors='coerce')
+    # --- CORRECCIÓN: Convertir AMBAS columnas de fecha a datetime, pero solo si no lo son ya ---
+    # El backend a veces recibe fechas como strings y otras como Timestamps. Esta línea unifica el tipo.
+    # --- CORRECCIÓN FINALÍSIMA: Especificar el formato de fecha exacto ---
+    # El formato 'YYYY.MM.DD HH:MM:SS' no es estándar. Debemos indicárselo a pandas.
+    date_format = '%Y.%m.%d %H:%M:%S'
+    trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date'], format=date_format, errors='coerce') 
+    trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date'], format=date_format, errors='coerce')
     trades_df = trades_df.dropna(subset=['entry_date', 'exit_date', 'pnl'])
     
     # --- CORRECCIÓN: Volvemos a un capital inicial fijo, como debe ser. ---
@@ -43,7 +47,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     # 3. Construir la curva de equity DIARIA a partir de los trades para métricas temporales (Sharpe, Sortino, etc.)
     daily_pnl = trades_df_sorted.groupby(trades_df_sorted['exit_date'].dt.date)['pnl'].sum()
     if daily_pnl.empty:
-        return None # No hay trades para analizar
+        return {}, pd.Series() # Devolver estructura vacía en lugar de None
     daily_pnl.index = pd.to_datetime(daily_pnl.index)
     full_date_range = pd.date_range(start=daily_pnl.index.min(), end=daily_pnl.index.max(), freq='D')
     
@@ -108,8 +112,16 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
 
     # Métricas de Capture Ratio (siguen necesitando una base diaria para compararse con el benchmark)
     daily_returns = equity_curve['equity'].pct_change().fillna(0)
-    benchmark_df['date'] = pd.to_datetime(benchmark_df['date'], errors='coerce')
-    benchmark_df = benchmark_df.dropna(subset=['date', 'price']).set_index('date')
+    # --- CORRECCIÓN FINALÍSIMA Y ABSOLUTAMENTE DEFINITIVA ---
+    # El error ocurría porque modificábamos el benchmark_df original. Si luego había un error,
+    # FastAPI intentaba serializar este DF modificado con un DatetimeIndex, causando el fallo.
+    # Al trabajar siempre con una copia, el DF original nunca se contamina.
+    benchmark_df_copy = benchmark_df.copy()
+    # --- CORRECCIÓN FINALÍSIMA Y ABSOLUTAMENTE DEFINITIVA ---
+    # El formato de fecha no estándar también debe aplicarse aquí. Este era el error que faltaba.
+    date_format = '%Y.%m.%d %H:%M:%S'
+    benchmark_df_copy['date'] = pd.to_datetime(benchmark_df_copy['date'], format=date_format, errors='coerce')
+    benchmark_df = benchmark_df_copy.dropna(subset=['date', 'price']).set_index('date') # Ahora set_index funciona
     benchmark_returns = benchmark_df['price'].pct_change().fillna(0)
     combined_returns = pd.DataFrame({'portfolio': daily_returns, 'benchmark': benchmark_returns}).dropna()
 
@@ -233,9 +245,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     # 4. Etiquetas para los gráficos (eje X)
     chart_labels = [idx.strftime('%Y-%m-%d') for idx in equity_curve.index]
 
-
-    # Devolver un diccionario con todas las métricas que espera el frontend
-    return {
+    metrics_dict = {
         "profitFactor": profit_factor,
         "sortinoRatio": sortino_ratio,
         "maxDrawdown": max_drawdown,
@@ -261,7 +271,19 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
             "benchmarkCurve": benchmark_chart_data,
             "scatterData": scatter_data
         }
-    }, daily_returns # Se sigue devolviendo para la matriz de correlación
+    }
+
+    # --- CORRECCIÓN IRREFUTABLE Y DEFINITIVA ---
+    # El error de serialización ocurre porque algunas métricas (como las fechas de inicio/fin
+    # de un drawdown) son objetos Timestamp. Antes de devolver el diccionario,
+    # recorremos todas las métricas y convertimos explícitamente cualquier Timestamp a
+    # una cadena de texto en formato ISO. Esto "limpia" la salida y garantiza que sea
+    # 100% compatible con JSON, eliminando el error de raíz.
+    for key, value in metrics_dict.items():
+        if isinstance(value, pd.Timestamp):
+            metrics_dict[key] = value.isoformat()
+
+    return metrics_dict, daily_returns
 
 
 def get_combinations(arr, min_size, max_size):

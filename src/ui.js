@@ -1,6 +1,7 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
 import { updateDatabankDisplay, sortDatabank } from './modules/databank.js';
+import { openOptimizationModal } from './modules/optimization.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
 
@@ -566,11 +567,16 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                         document.getElementById('chart-click-modal-backdrop').classList.remove('opacity-0');
                         document.getElementById('chart-click-modal-content').classList.remove('scale-95', 'opacity-0');
                     }, 10);
-                } else if (activeAction === 'ocultar') {
+                } else if (activeAction === 'ocultar') { // Lógica para Ocultar/Mostrar
                     console.log('%c[CHART CLICK] 5. Entrando en la lógica de "ocultar/mostrar".', 'color: #f0abfc; font-weight: bold;');
-                    const isHidden = chart.getDatasetMeta(firstPoint.datasetIndex).hidden;
-                    chart.setDatasetVisibility(firstPoint.datasetIndex, !isHidden);
-                    chart.update();
+                    // --- CORRECCIÓN: Usar chart.toggleDataVisibility() es la forma más limpia ---
+                    const datasetMeta = chart.getDatasetMeta(firstPoint.datasetIndex);
+                    chart.toggleDataVisibility(firstPoint.datasetIndex);
+                    chart.update(); // Actualizar el gráfico para que el cambio sea visible
+                } else if (activeAction === 'editar') { // Lógica para Editar
+                    console.log('%c[CHART CLICK] 5. Entrando en la lógica de "editar".', 'color: #f0abfc; font-weight: bold;');
+                    // El índice del portafolio ya lo tenemos en 'clickedPortfolioIndex'
+                    openOptimizationModal(clickedPortfolioIndex);
                 } else {
                     console.log(`%c[CHART CLICK] 5.1. La acción activa ('${activeAction}') no tiene una función de clic definida. No se hace nada.`, 'color: #f0abfc');
                 }
