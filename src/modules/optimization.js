@@ -265,15 +265,11 @@ const displayOptimizationResults = (results) => {
 
     elements.resultsContainer.innerHTML = html;
 
-    // --- CORRECCIÓN IRREFUTABLE: Delegación de Eventos en el contenedor de resultados ---
-    // Se asigna el listener al contenedor que SÍ existe, y se comprueba qué botón se pulsó.
-    elements.resultsContainer.addEventListener('click', (e) => {
-        const targetId = e.target.id;
-        if (targetId === 'apply-metric-btn') savePortfolio(false, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`);
-        if (targetId === 'apply-balanced-btn') savePortfolio(false, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`);
-        if (targetId === 'save-new-metric-btn') savePortfolio(true, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`);
-        if (targetId === 'save-new-balanced-btn') savePortfolio(true, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`);
-    });
+    // Re-asignar listeners a los nuevos botones
+    document.getElementById('apply-metric-btn').addEventListener('click', () => savePortfolio(false, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
+    document.getElementById('apply-balanced-btn').addEventListener('click', () => savePortfolio(false, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`));
+    document.getElementById('save-new-metric-btn').addEventListener('click', () => savePortfolio(true, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
+    document.getElementById('save-new-balanced-btn').addEventListener('click', () => savePortfolio(true, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`));
 };
 
 /**
@@ -285,17 +281,10 @@ export const reevaluateOptimizationResults = () => {
     }
 };
 
-// --- CORRECCIÓN FINAL: Listener para el botón "Iniciar Búsqueda" ---
-// Este listener se añade UNA VEZ cuando el módulo se carga, pero se asigna al
-// contenedor del modal, que siempre existe.
 document.addEventListener('DOMContentLoaded', () => {
     const elements = getOptimizationModalElements();
-    if (elements.setupContainer) {
-        elements.setupContainer.addEventListener('click', (e) => {
-            if (e.target.id === 'start-single-optimization-btn' || e.target.closest('#start-single-optimization-btn')) {
-                console.log('[OPTIMIZATION.JS-LOG] ¡Clic en "Iniciar Búsqueda" identificado! Llamando a startOptimizationSearch(false)...');
-                startOptimizationSearch(false);
-            }
-        });
+    const startBtn = elements.startBtn;
+    if (startBtn) {
+        startBtn.addEventListener('click', () => startOptimizationSearch(false));
     }
 });

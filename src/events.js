@@ -216,10 +216,8 @@ export function initializeEventListeners() {
     // --- Optimization Modal ---
     const optModalElements = document.getElementById('optimization-modal');
     optModalElements.querySelector('#close-optimization-modal-btn').addEventListener('click', closeOptimizationModal);
-    const backdrop = optModalElements.querySelector('#optimization-modal-backdrop');
-    if (backdrop) backdrop.addEventListener('click', closeOptimizationModal);
-    // El resto de los listeners del modal (como el botón de búsqueda) se gestionarán
-    // directamente en optimization.js para asegurar que los elementos existan.
+    document.getElementById('optimization-modal-backdrop').addEventListener('click', closeOptimizationModal);
+    // El listener para 'start-single-optimization-btn' se ha movido a optimization.js
 
     // --- NUEVO: Eventos para el escalado de riesgo en el modal de optimización ---
     const scaleRiskCheckbox = optModalElements.querySelector('#optimization-scale-risk-checkbox');
