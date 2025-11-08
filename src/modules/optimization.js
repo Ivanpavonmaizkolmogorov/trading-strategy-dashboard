@@ -104,6 +104,9 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
         toggleLoading(true, 'start-single-optimization-btn', 'start-optimization-btn-text', 'start-optimization-btn-spinner');
         elements.resultsContainer.innerHTML = `<div class="text-center p-8"><div class="spinner-blue"></div><p class="mt-2 text-gray-400">Optimizando...</p></div>`;
     }
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+    
     try {
         const portfolio = state.savedPortfolios[state.currentOptimizationData.portfolioIndex];
         const metricsForBalance = state.defaultMetricColumns; // Usar la vista por defecto centralizada
@@ -262,21 +265,37 @@ const displayOptimizationResults = (results) => {
 
     elements.resultsContainer.innerHTML = html;
 
-    document.getElementById('apply-metric-btn').addEventListener('click', () => savePortfolio(false, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
-    document.getElementById('apply-balanced-btn').addEventListener('click', () => savePortfolio(false, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`));
-    document.getElementById('save-new-metric-btn').addEventListener('click', () => savePortfolio(true, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`));
-    document.getElementById('save-new-balanced-btn').addEventListener('click', () => savePortfolio(true, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`));
+    // --- CORRECCIÓN IRREFUTABLE: Delegación de Eventos en el contenedor de resultados ---
+    // Se asigna el listener al contenedor que SÍ existe, y se comprueba qué botón se pulsó.
+    elements.resultsContainer.addEventListener('click', (e) => {
+        const targetId = e.target.id;
+        if (targetId === 'apply-metric-btn') savePortfolio(false, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`);
+        if (targetId === 'apply-balanced-btn') savePortfolio(false, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`);
+        if (targetId === 'save-new-metric-btn') savePortfolio(true, metricBestAnalysis.weights, metricBestAnalysis, `(Opt. ${optimizationMetricName})`);
+        if (targetId === 'save-new-balanced-btn') savePortfolio(true, balancedBestAnalysis.weights, balancedBestAnalysis, `(Opt. Balanceado)`);
+    });
 };
-
-
 
 /**
  * Recalcula los resultados en el modal cuando cambia el Target Max DD.
  */
 export const reevaluateOptimizationResults = () => {
     if (state.currentOptimizationData && state.currentOptimizationData.lastResults) {
-        // En lugar de una búsqueda completa, solo re-analizamos los pesos existentes
-        // con la nueva configuración de riesgo. Esto es mucho más rápido.
         startOptimizationSearch(true);
     }
 };
+
+// --- CORRECCIÓN FINAL: Listener para el botón "Iniciar Búsqueda" ---
+// Este listener se añade UNA VEZ cuando el módulo se carga, pero se asigna al
+// contenedor del modal, que siempre existe.
+document.addEventListener('DOMContentLoaded', () => {
+    const elements = getOptimizationModalElements();
+    if (elements.setupContainer) {
+        elements.setupContainer.addEventListener('click', (e) => {
+            if (e.target.id === 'start-single-optimization-btn' || e.target.closest('#start-single-optimization-btn')) {
+                console.log('[OPTIMIZATION.JS-LOG] ¡Clic en "Iniciar Búsqueda" identificado! Llamando a startOptimizationSearch(false)...');
+                startOptimizationSearch(false);
+            }
+        });
+    }
+});

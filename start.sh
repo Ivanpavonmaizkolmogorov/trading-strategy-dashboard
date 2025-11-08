@@ -47,8 +47,8 @@ echo "Los logs del servidor se guardarán en: $LOG_FILE"
 
 # Ejecutar uvicorn en segundo plano y redirigir su salida a un archivo de log
 # COMENTAMOS la línea de producción para poder depurar
-# uvicorn app:app --host 0.0.0.0 --port $PORT > "$LOG_FILE" 2>&1 &
-uvicorn app:app --host 0.0.0.0 --port $PORT --reload
+uvicorn app:app --host 0.0.0.0 --port $PORT > "$LOG_FILE" 2>&1 &
+# uvicorn app:app --host 0.0.0.0 --port $PORT --reload
 
 
 # Guardar el ID del proceso de uvicorn para poder detenerlo después
