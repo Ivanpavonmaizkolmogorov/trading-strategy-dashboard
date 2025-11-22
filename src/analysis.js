@@ -15,7 +15,7 @@ export const runAnalysis = async () => {
         return;
     }
 
-    toggleLoading(true, 'analyzeBtn', 'analyzeBtnText', 'analyzeBtnSpinner');
+    toggleLoading(true, 'Cargando Datos', 'Procesando archivos CSV...');
     dom.resultsDiv.classList.add('hidden');
 
     try {
@@ -26,12 +26,17 @@ export const runAnalysis = async () => {
         const strategiesPromises = state.loadedStrategyFiles.map(file => parseCsv(file));
         state.rawStrategiesData = await Promise.all(strategiesPromises);
 
+        // --- CORRECCIÓN: Limpiar métricas antiguas antes de un nuevo análisis completo ---
+        // Esto asegura que si cambiamos el benchmark, todo se recalcule.
+        state.savedPortfolios.forEach(p => { delete p.metrics; delete p.analysis; });
+        state.databankPortfolios.forEach(p => { delete p.metrics; });
+
         await reAnalyzeAllData(); // Análisis inicial
     } catch (error) {
         console.error("Error en el proceso de análisis:", error);
         displayError(error.message);
     } finally {
-        toggleLoading(false, 'analyzeBtn', 'analyzeBtnText', 'analyzeBtnSpinner');
+        toggleLoading(false);
     }
 };
 
@@ -95,7 +100,7 @@ export const reAnalyzeAllData = async () => {
 
     // 1. Añadir todos los portafolios guardados a la lista de análisis.
     // El backend se encargará de calcular sus métricas siempre.
-    state.savedPortfolios.forEach((p, i) => {        
+    state.savedPortfolios.forEach((p, i) => {
         // --- CORRECCIÓN DEFINITIVA: La normalización global siempre tiene prioridad ---
         let isNormalizedForThisRun, metricForThisRun, targetForThisRun;
 
@@ -112,29 +117,52 @@ export const reAnalyzeAllData = async () => {
             targetForThisRun = riskConfig.targetValue || 0;
         }
 
-        console.log(`[FRONTEND-LOG] 1.1. Preparando Portafolio Guardado (índice ${i}, id: ${p.id}) para backend. Normalización: ${isNormalizedForThisRun}, Métrica: ${metricForThisRun}, Objetivo: ${targetForThisRun}`);
+        // --- OPTIMIZACIÓN INCREMENTAL ---
+        // Solo enviamos al backend si:
+        // 1. No tiene métricas calculadas (es nuevo o se borraron).
+        // 2. La configuración de riesgo global está activa (obliga a recalcular todo).
+        // 3. Tiene configuración de riesgo propia y no tiene métricas (cubierto por 1).
+        // NOTA: Si ya tiene métricas y NO estamos en modo global, asumimos que son válidas.
 
-        portfoliosToAnalyze.push({
-            indices: p.indices,
-            weights: p.weights,
-            is_saved_portfolio: true,
-            saved_index: i,
-            portfolio_id: p.id,
-            is_risk_normalized: isNormalizedForThisRun,
-            normalization_metric: metricForThisRun,
-            normalization_target_value: targetForThisRun
-        });
+        const hasMetrics = p.metrics && Object.keys(p.metrics).length > 0;
+        const needsRecalculation = !hasMetrics || isRiskNormalized; // Si hay normalización global, siempre recalcular para asegurar consistencia visual
+
+        if (needsRecalculation) {
+            console.log(`[FRONTEND-LOG] 1.1. Preparando Portafolio Guardado (índice ${i}, id: ${p.id}) para backend. Normalización: ${isNormalizedForThisRun}, Métrica: ${metricForThisRun}, Objetivo: ${targetForThisRun}`);
+
+            portfoliosToAnalyze.push({
+                indices: p.indices,
+                weights: p.weights,
+                is_saved_portfolio: true,
+                saved_index: i,
+                portfolio_id: p.id,
+                is_risk_normalized: isNormalizedForThisRun,
+                normalization_metric: metricForThisRun,
+                normalization_target_value: targetForThisRun
+            });
+        } else {
+            console.log(`[FRONTEND-LOG] 1.1. OMITIENDO Portafolio Guardado (índice ${i}) - Ya tiene métricas y no se requiere normalización global.`);
+        }
     });
 
     // 1b. Añadir todos los portafolios del DataBank a la lista de análisis.
-    state.databankPortfolios.forEach((p, i) => {
-        portfoliosToAnalyze.push({
-            indices: p.indices,
-            weights: null, // DataBank portfolios son siempre equal-weight
-            is_databank_portfolio: true,
-            databank_index: i
+    // --- OPTIMIZACIÓN: Si estamos normalizando riesgo, IGNORAR los portafolios del DataBank para ahorrar tiempo.
+    // El usuario generalmente solo quiere ver sus portafolios guardados normalizados.
+    if (!isRiskNormalized) {
+        state.databankPortfolios.forEach((p, i) => {
+            // --- CORRECCIÓN: Solo enviar al backend si NO tiene métricas ---
+            if (!p.metrics) {
+                portfoliosToAnalyze.push({
+                    indices: p.indices,
+                    weights: null, // DataBank portfolios son siempre equal-weight
+                    is_databank_portfolio: true,
+                    databank_index: i
+                });
+            }
         });
-    });
+    } else {
+        console.log('[FRONTEND-LOG] 1.2. OMITIENDO Portafolios del DataBank por estar en modo Normalización de Riesgo.');
+    }
 
     // 2. Añadir el portafolio "en vivo" si hay estrategias seleccionadas en la tabla de resumen.
     if (state.selectedPortfolioIndices.size > 0) {
@@ -150,17 +178,38 @@ export const reAnalyzeAllData = async () => {
     }
 
     // 3. Obtener todos los análisis (estrategias + portafolios) en una sola llamada al backend.
-    const backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze, isRiskNormalized, targetValue);
-    // El log que has proporcionado confirma que los datos llegan aquí.
-    console.log("%c[FRONTEND-LOG] 4. DATOS RECIBIDOS DEL BACKEND:", 'color: cyan; font-weight: bold;', JSON.parse(JSON.stringify(backendAnalyses)));
-    if (!backendAnalyses || backendAnalyses.length === 0) return;
+    // --- CORRECCIÓN: Siempre mostrar loading si vamos a llamar al backend, aunque sea solo para estrategias ---
+    let backendAnalyses = [];
+
+    // Siempre mostramos loading porque SIEMPRE llamamos al backend para las estrategias individuales como mínimo
+    toggleLoading(true, 'Analizando Datos', `Procesando ${state.loadedStrategyFiles.length} estrategias y ${portfoliosToAnalyze.length} portafolios...`, null);
+
+    try {
+        console.log(`[FRONTEND-LOG] Enviando ${portfoliosToAnalyze.length} portafolios en una sola petición.`);
+        backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze, isRiskNormalized, targetValue);
+    } catch (error) {
+        console.error("Error durante el análisis:", error);
+        displayError("Ocurrió un error durante el análisis. Revisa la consola.");
+    } finally {
+        toggleLoading(false);
+    }
+
+    console.log("%c[FRONTEND-LOG] 4. DATOS RECIBIDOS DEL BACKEND (Acumulados):", 'color: cyan; font-weight: bold;', JSON.parse(JSON.stringify(backendAnalyses)));
+
+    if (!backendAnalyses) return;
 
     // 4. Mapear los resultados del backend al formato que espera el frontend.
     let allAnalysisResults = [];
-    // Limpiar métricas antiguas de los portafolios guardados antes de enriquecerlos
-    state.savedPortfolios.forEach(p => { delete p.metrics; delete p.analysis; });
-    // Limpiar métricas antiguas de los portafolios del databank
-    state.databankPortfolios.forEach(p => { delete p.metrics; });
+    // --- OPTIMIZACIÓN: NO borrar métricas existentes si no se han recalculado ---
+    // state.savedPortfolios.forEach(p => { delete p.metrics; delete p.analysis; }); 
+
+    // Limpiar métricas antiguas de los portafolios del databank (estos siempre se recalculan si se envían, o se borran si no)
+    // En este caso, como databankPortfolios siempre se envía completo si hay algo, está bien.
+    // SOLO si no estamos en modo normalización (porque si lo estamos, no los enviamos y no queremos borrar sus datos viejos aunque no se muestren)
+    // SOLO si no estamos en modo normalización (porque si lo estamos, no los enviamos y no queremos borrar sus datos viejos aunque no se muestren)
+    // if (!isRiskNormalized) {
+    //    state.databankPortfolios.forEach(p => { delete p.metrics; });
+    // }
 
     // Contadores para mapear estrategias individuales
     const strategyAnalyses = [];

@@ -34,7 +34,7 @@ export const exportAnalysis = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `analisis_estrategias_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `analisis_estrategias_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -45,7 +45,7 @@ export const exportAnalysis = () => {
  * Fusiona los portafolios guardados de un estado importado con el estado actual.
  * @param {Object} importedState - El objeto de estado importado.
  */
-const mergeState = (importedState) => {
+const mergeState = async (importedState) => {
     // 1. Comprobación de compatibilidad: Las estrategias base deben ser las mismas.
     const currentStrategyNames = state.loadedStrategyFiles.map(f => f.name).sort().join(',');
     const importedStrategyNames = importedState.loadedStrategyFiles.map(f => f.name).sort().join(',');
@@ -83,7 +83,7 @@ const mergeState = (importedState) => {
     if (newPortfoliosAdded > 0) {
         alert(`${newPortfoliosAdded} portafolios nuevos han sido fusionados con tu sesión.`);
         // Re-analizar todo para que los nuevos portafolios se muestren correctamente.
-        reAnalyzeAllData();
+        await reAnalyzeAllData();
     } else {
         alert("No se encontraron portafolios nuevos para fusionar. Todos los portafolios del archivo ya existían en tu sesión.");
     }
@@ -98,21 +98,21 @@ export const importAnalysis = (e) => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
         try {
             const importedState = JSON.parse(event.target.result);
 
             // Si no hay un espacio de trabajo activo, simplemente reemplaza.
             if (state.rawStrategiesData.length === 0) {
-                restoreState(importedState);
+                await restoreState(importedState);
                 return;
             }
 
             // Preguntar al usuario qué acción realizar.
             if (confirm("¿Deseas fusionar los portafolios guardados con tu sesión actual?\n\n- Pulsa 'Aceptar' para FUSIONAR.\n- Pulsa 'Cancelar' para REEMPLAZAR todo el espacio de trabajo.")) {
-                mergeState(importedState);
+                await mergeState(importedState);
             } else {
-                restoreState(importedState);
+                await restoreState(importedState);
             }
 
         } catch (error) {
@@ -127,7 +127,7 @@ export const importAnalysis = (e) => {
  * Restaura el estado de la aplicación desde un objeto de estado importado.
  * @param {Object} importedState - El objeto de estado a restaurar.
  */
-const restoreState = (importedState) => {
+const restoreState = async (importedState) => {
     resetUI();
 
     state.loadedStrategyFiles = importedState.loadedStrategyFiles.map(f => ({ name: f.name, isPlaceholder: true }));
@@ -145,8 +145,8 @@ const restoreState = (importedState) => {
     dom.benchmarkFileNameEl.textContent = importedState.benchmarkFileName || '(date, price)';
     populateViewSelector('databank');
     populateViewSelector('saved');
-    
-    reAnalyzeAllData();
+
+    await reAnalyzeAllData();
 
     if (state.databankPortfolios.length > 0) {
         dom.databankSection.classList.remove('hidden');

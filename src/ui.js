@@ -33,7 +33,7 @@ export const resetUI = () => {
     state.savedPortfolios = [];
     state.featuredPortfolioIndex = null;
     state.comparisonPortfolioIndex = null;
-    
+
     updateTradesFilesList();
     updateAnalysisModeSelector();
     dom.benchmarkFileNameEl.textContent = '(date, price)';
@@ -41,11 +41,20 @@ export const resetUI = () => {
     dom.savedPortfoliosSection.classList.add('hidden');
     dom.featuredPortfolioSection.classList.add('hidden');
     dom.portfolioComparisonChartSection.classList.add('hidden');
-    
+
     hideError();
     destroyAllCharts();
     dom.tabNav.innerHTML = '';
+    dom.tabNav.innerHTML = '';
     dom.tabContentArea.innerHTML = '';
+
+    // Resetear controles de normalización
+    if (dom.normalizeRiskCheckbox) {
+        dom.normalizeRiskCheckbox.checked = false;
+        // Si tuviéramos el panel ocultable ligado al checkbox, lo ocultaríamos aquí.
+        // En la nueva UI, el panel es visible pero el checkbox es el "estado".
+        // dom.riskNormalizationControls.classList.add('hidden'); 
+    }
 };
 
 /**
@@ -54,7 +63,7 @@ export const resetUI = () => {
 export const updateAnalysisModeSelector = () => {
     const selectedValue = dom.analysisModeSelect.value;
     dom.analysisModeSelect.innerHTML = '<option value="-1">Análisis Completo</option>';
-    
+
     state.rawStrategiesData.forEach((_, i) => {
         const fileName = state.loadedStrategyFiles[i].name.replace('.csv', '');
         dom.analysisModeSelect.innerHTML += `<option value="${i}">Filtrar por ${fileName}</option>`;
@@ -63,7 +72,7 @@ export const updateAnalysisModeSelector = () => {
     if (state.selectedPortfolioIndices.size > 0) {
         dom.analysisModeSelect.innerHTML += `<option value="portfolio">Filtrar por Portafolio</option>`;
     }
-    
+
     dom.analysisModeSelect.value = selectedValue;
     if (!dom.analysisModeSelect.querySelector(`option[value="${selectedValue}"]`)) {
         dom.analysisModeSelect.value = '-1';
@@ -91,10 +100,10 @@ export const displayResults = (results) => {
         navHTML += strategyResult.nav;
         contentHTML += strategyResult.content;
     });
-    
+
     dom.tabNav.innerHTML = navHTML;
     dom.tabContentArea.innerHTML = contentHTML;
-    
+
     const tabToActivate = dom.tabNav.querySelector(`.tab-btn[data-target="${activeTabId}"]`) || dom.tabNav.querySelector('.tab-btn');
     if (tabToActivate) {
         tabToActivate.classList.add('active');
@@ -108,7 +117,7 @@ export const displayResults = (results) => {
     renderChartsForTab(tabToActivate?.dataset.target);
     displaySavedPortfoliosList();
     updateDatabankDisplay(); // <-- NUEVO: Refrescar el DataBank con las métricas actualizadas.
-    
+
     const savedPortfolioAnalyses = window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal);
     if (savedPortfolioAnalyses.length > 0 || state.comparisonPortfolioIndex !== null) {
         renderPortfolioComparisonCharts(savedPortfolioAnalyses);
@@ -124,7 +133,7 @@ export const displayResults = (results) => {
 const createSummaryTab = (results) => {
     const tabId = 'summary';
     const nav = `<button class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data-target="${tabId}">Resumen Comparativo</button>`;
-    
+
     // Ordenar los resultados antes de mostrarlos
     sortArrayByConfig(results, state.summarySortConfig, r => r.analysis);
 
@@ -219,7 +228,7 @@ const sortArrayByConfig = (array, sortConfig, metricAccessor) => {
  */
 const createStrategyTab = (result) => {
     if (result.isPortfolio || result.isSavedPortfolio) return { nav: '', content: '' };
-    
+
     const tabId = `strategy-${result.originalIndex}`;
     const nav = `<button id="${tabId}-btn" class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data-target="${tabId}">${result.name}</button>`;
     const metrics = result.analysis;
@@ -227,18 +236,18 @@ const createStrategyTab = (result) => {
     const metricsHTML = `<div><h2 class="text-2xl font-bold text-white mb-4">Métricas Clave: ${result.name}</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
             ${Object.entries({
-                'Profit Factor': metrics.profitFactor, 'Coef. Sharpe': metrics.sharpeRatio, 'Max DD (%)': `${metrics.maxDrawdown.toFixed(2)}%`, 'Profit/Mes': metrics.monthlyAvgProfit,
-                'Ret/DD': metrics.profitMaxDD_Ratio, 'UPI': metrics.upi, 'Win %': `${metrics.winningPercentage.toFixed(2)}%`, 'Ulcer Index $': metrics.ulcerIndexInDollars,
-                'Max DD ($)': metrics.maxDrawdownInDollars, 'Pérdidas Cons.': metrics.maxConsecutiveLosses, 'Stagnation (Trades)': metrics.maxStagnationTrades,
-                'Meses Pérd. Cons.': metrics.maxConsecutiveLosingMonths, 'Capture Ratio': metrics.captureRatio, 'Sortino': metrics.sortinoRatio, 'SQN': metrics.sqn
-            }).map(([label, value]) => `
+        'Profit Factor': metrics.profitFactor, 'Coef. Sharpe': metrics.sharpeRatio, 'Max DD (%)': `${metrics.maxDrawdown.toFixed(2)}%`, 'Profit/Mes': metrics.monthlyAvgProfit,
+        'Ret/DD': metrics.profitMaxDD_Ratio, 'UPI': metrics.upi, 'Win %': `${metrics.winningPercentage.toFixed(2)}%`, 'Ulcer Index $': metrics.ulcerIndexInDollars,
+        'Max DD ($)': metrics.maxDrawdownInDollars, 'Pérdidas Cons.': metrics.maxConsecutiveLosses, 'Stagnation (Trades)': metrics.maxStagnationTrades,
+        'Meses Pérd. Cons.': metrics.maxConsecutiveLosingMonths, 'Capture Ratio': metrics.captureRatio, 'Sortino': metrics.sortinoRatio, 'SQN': metrics.sqn
+    }).map(([label, value]) => `
                 <div class="bg-gray-800 p-4 rounded-xl shadow-lg border border-gray-700">
                     <h3 class="font-semibold text-gray-400 text-sm">${label}</h3>
                     <p class="text-3xl font-bold">${formatMetricForDisplay(value, label)}</p>
                 </div>`).join('')}
         </div>
     </div>`;
-    
+
     const chartsHTML = `<div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 xl:col-span-2"><h2 class="text-xl font-bold">Equity vs. Benchmark</h2><div class="h-96"><canvas id="equityChart-${tabId}"></canvas></div></div>
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-xl font-bold">Dispersión de Rendimientos</h2><div class="h-80"><canvas id="scatterChart-${tabId}"></canvas></div></div>
@@ -264,7 +273,7 @@ export const renderChartsForTab = (tabId) => {
 
         const analysis = result.analysis;
         const color = STRATEGY_COLORS[result.originalIndex % STRATEGY_COLORS.length];
-        
+
         if (document.getElementById(`equityChart-${tabId}`)) {
             renderEquityChart(`equityChart-${tabId}`, analysis, result.name, color);
             renderScatterChart(`scatterChart-${tabId}`, analysis, color);
@@ -300,15 +309,15 @@ const renderEquityChart = (canvasId, analysis, name, color) => {
     if (!ctx) return;
     destroyChart(canvasId);
 
-    state.chartInstances[canvasId] = new Chart(ctx, { 
-        type: 'line', 
-        data: { 
-            datasets: [ 
-                { label: name, data: analysis.chartData.equityCurve, borderColor: color, backgroundColor: `${color}1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true }, 
-                { label: 'Benchmark', data: analysis.chartData.benchmarkCurve, borderColor: '#f87171', backgroundColor: '#f871711a', borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true } 
-            ] 
-        }, 
-        options: CHART_OPTIONS 
+    state.chartInstances[canvasId] = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [
+                { label: name, data: analysis.chartData.equityCurve, borderColor: color, backgroundColor: `${color}1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true },
+                { label: 'Benchmark', data: analysis.chartData.benchmarkCurve, borderColor: '#f87171', backgroundColor: '#f871711a', borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true }
+            ]
+        },
+        options: CHART_OPTIONS
     });
 };
 
@@ -353,7 +362,7 @@ const renderLorenzChart = (canvasId, analysis, color) => {
             datasets: [{
                 label: 'Curva de Beneficios', data: analysis.lorenzData, showLine: true, borderColor: color, backgroundColor: `${color}1a`, tension: .1, pointRadius: 0, fill: true
             }, {
-                label: 'Consistencia Perfecta', data: [{x: 0, y: 0}, {x: 100, y: 100}], borderColor: '#4ade80', borderWidth: 2, pointRadius: 0, borderDash: [5, 5], fill: false
+                label: 'Consistencia Perfecta', data: [{ x: 0, y: 0 }, { x: 100, y: 100 }], borderColor: '#4ade80', borderWidth: 2, pointRadius: 0, borderDash: [5, 5], fill: false
             }]
         },
         options: {
@@ -375,7 +384,7 @@ export const displaySavedPortfoliosList = () => {
         dom.savedPortfoliosSection.classList.add('hidden');
         return;
     }
-    
+
     dom.savedPortfoliosSection.classList.remove('hidden');
     dom.savedPortfoliosCount.textContent = `${state.savedPortfolios.length} portafolios`;
 
@@ -421,7 +430,7 @@ export const displaySavedPortfoliosList = () => {
         // Para los botones, necesitamos el índice que corresponde al estado actual.
         const originalIndex = state.savedPortfolios.indexOf(p);
 
-        const weightsText = p.weights ? `(${p.weights.map(w => `${(w*100).toFixed(0)}%`).join('/')})` : '';
+        const weightsText = p.weights ? `(${p.weights.map(w => `${(w * 100).toFixed(0)}%`).join('/')})` : '';
         const isFeatured = originalIndex === state.featuredPortfolioIndex;
         const isCompared = originalIndex === state.comparisonPortfolioIndex;
 
@@ -490,7 +499,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     const originalResult = window.analysisResults.find(r => r.isTemporaryOriginal);
     if (originalResult) {
         if (!allAnalyses.some(a => a.name === originalResult.name)) {
-             allAnalyses.push(originalResult);
+            allAnalyses.push(originalResult);
         }
     }
     if (allAnalyses.length === 0) return;
@@ -510,10 +519,10 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             order: isFeatured ? 0 : 1
         };
     });
-    
+
     const firstAnalysis = allAnalyses[0].analysis;
     datasets.push({ label: 'Benchmark', data: firstAnalysis.chartData.benchmarkCurve, borderColor: '#f87171', borderWidth: 2, pointRadius: 0, tension: 0.1, borderDash: [5, 5] });
-    
+
     const chartOptionsWithClick = {
         // Hacemos una copia profunda de las opciones para evitar conflictos
         ...CHART_OPTIONS, // Usamos la copia superficial, es más simple.
@@ -530,7 +539,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
                 if (clickedPortfolioIndex === undefined) {
                     console.log('%c[CHART CLICK] 3.1. Clic en Benchmark. Abortando.', 'color: #f0abfc');
-                    return; 
+                    return;
                 }
 
                 const activeAction = document.querySelector('#chart-actions-group .chart-action-item.active')?.dataset.action;
@@ -551,7 +560,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
                     modalTitle.textContent = 'Confirmar Destacado';
                     modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado?`;
-                    
+
                     confirmBtn.onclick = () => {
                         console.log(`%c[CHART CLICK] 6. Confirmado. Estableciendo portafolio destacado a índice ${clickedPortfolioIndex}`, 'color: #f0abfc; font-weight: bold;');
                         state.featuredPortfolioIndex = clickedPortfolioIndex;
@@ -559,7 +568,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                         renderPortfolioComparisonCharts(portfolioAnalyses); // Re-render para actualizar el estilo
                         closeChartClickModal(); // Cierra el modal directamente
                     };
-                    
+
                     console.log('%c[CHART CLICK] 7. Mostrando modal de confirmación.', 'color: #f0abfc');
                     modal.classList.remove('hidden');
                     modal.classList.add('flex');
@@ -589,7 +598,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     // Damos prioridad al onClick.
     delete chartOptionsWithClick.plugins.zoom;
 
-    state.chartInstances[canvasId] = new Chart(ctx, { type: 'line', data: { datasets }, options: chartOptionsWithClick});
+    state.chartInstances[canvasId] = new Chart(ctx, { type: 'line', data: { datasets }, options: chartOptionsWithClick });
 };
 
 /**
@@ -612,7 +621,7 @@ export const renderFeaturedPortfolio = () => {
 
     const metricsToShow = {
         'Sortino': metrics.sortinoRatio, 'Max DD ($)': `$${metrics.maxDrawdownInDollars.toFixed(0)}`, 'Ulcer Index $': `$${metrics.ulcerIndexInDollars.toFixed(0)}`,
-        'Profit Factor': metrics.profitFactor, 'Profit/Mes': `$${metrics.monthlyAvgProfit.toFixed(0)}`, 'Coef. Sharpe': metrics.sharpeRatio, 'Ret/DD': metrics.profitMaxDD_Ratio, 
+        'Profit Factor': metrics.profitFactor, 'Profit/Mes': `$${metrics.monthlyAvgProfit.toFixed(0)}`, 'Coef. Sharpe': metrics.sharpeRatio, 'Ret/DD': metrics.profitMaxDD_Ratio,
         'UPI': metrics.upi, 'SQN': metrics.sqn,
         'Meses Pérd. Cons. (Max)': metrics.maxConsecutiveLosingMonths,
     };

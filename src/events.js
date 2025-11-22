@@ -6,6 +6,7 @@ import { findDatabankPortfolios, clearDatabank, savePortfolioFromDatabank, sortD
 import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
 import { openViewManager, closeViewManager, applyView, saveView, deleteView } from './modules/viewManager.js';
 import { exportAnalysis, importAnalysis } from './modules/importExport.js';
+import { showToast } from './modules/notifications.js';
 
 export function initializeEventListeners() {
     // --- Controles Principales ---
@@ -41,13 +42,60 @@ export function initializeEventListeners() {
         }
     });
 
+    // --- NUEVO: Listener para el botón de Aplicar Normalización ---
+    const applyNormalizationBtn = document.getElementById('apply-normalization-btn');
+    if (applyNormalizationBtn) {
+        applyNormalizationBtn.addEventListener('click', () => {
+            // Forzamos el check del checkbox oculto para mantener compatibilidad con analysis.js
+            // O mejor, actualizamos analysis.js para no depender del checkbox.
+            // Por ahora, usaremos el checkbox oculto como "estado de verdad" si queremos persistencia simple,
+            // pero la lógica de "Aplicar" implica que el usuario quiere ejecutar AHORA.
+
+            // Vamos a marcar el checkbox oculto como true si se aplica, para que reAnalyzeAllData sepa que debe normalizar.
+            // Si el usuario quisiera "Desactivar", necesitaríamos un botón de desactivar o toggle.
+            // Asumimos que "Aplicar" activa la normalización con los parámetros dados.
+
+            // Sin embargo, el usuario podría querer desactivarla.
+            // El diseño actual es un panel siempre visible.
+            // Vamos a asumir que si el usuario hace clic en "Aplicar", quiere normalizar.
+            // Para desactivar, quizás deberíamos tener un botón "Resetear" o "Desactivar".
+            // Por simplicidad y siguiendo el prompt: "normalizar preo k previamente haya podido configurar parametros".
+            // Vamos a usar el checkbox oculto para indicar si está activo o no.
+
+            dom.normalizeRiskCheckbox.checked = true;
+            reAnalyzeAllData();
+        });
+    }
+
+    // --- NUEVO: Listener para el botón de Restaurar Normalización ---
+    const restoreNormalizationBtn = document.getElementById('restore-normalization-btn');
+    if (restoreNormalizationBtn) {
+        restoreNormalizationBtn.addEventListener('click', () => {
+            dom.normalizeRiskCheckbox.checked = false;
+
+            // --- CORRECCIÓN: Forzar recálculo desde cero ---
+            // Borramos las métricas cacheadas para que reAnalyzeAllData las vuelva a calcular
+            // usando las estrategias originales (rawStrategiesData).
+            state.savedPortfolios.forEach(p => {
+                delete p.metrics;
+                delete p.analysis;
+            });
+
+            reAnalyzeAllData();
+            showToast('Valores originales restaurados (recalculando...)', 'info');
+        });
+    }
+
+    // Listener antiguo eliminado o comentado
+    /*
     dom.normalizeRiskCheckbox.addEventListener('change', (e) => {
         dom.riskNormalizationControls.classList.toggle('hidden', !e.target.checked);
         if (!dom.resultsDiv.classList.contains('hidden')) {
             reAnalyzeAllData();
         }
     });
-    
+    */
+
     /**
      * Sincroniza un input de tipo 'range' (slider) con un input de tipo 'number'.
      * @param {HTMLInputElement} sliderEl - El elemento del slider.
@@ -56,7 +104,7 @@ export function initializeEventListeners() {
      */
     const setupSyncedSlider = (sliderEl, numberEl, onCommit) => {
         const syncValues = (source) => {
-        const value = parseFloat(source.value);
+            const value = parseFloat(source.value);
             if (source.type === 'number' && value > parseFloat(sliderEl.max)) {
                 sliderEl.max = value;
             }
@@ -70,11 +118,13 @@ export function initializeEventListeners() {
     };
 
     // Sincronizar controles de Normalización de Riesgo Global
+    // El slider fue eliminado en la nueva UI, así que solo mantenemos el input.
+    // No necesitamos sincronización.
+    /*
     setupSyncedSlider(dom.targetMaxDDSlider, dom.targetMaxDDInput, () => {
-        if (!dom.resultsDiv.classList.contains('hidden') && dom.normalizeRiskCheckbox.checked) {
-            reAnalyzeAllData();
-        }
+        // Ahora solo actualiza el input visualmente, el usuario debe dar a "Aplicar".
     });
+    */
 
     // --- Pestañas y Gráficos ---
     dom.tabNav.addEventListener('click', (e) => {
@@ -92,7 +142,7 @@ export function initializeEventListeners() {
 
     // --- Selección de Portafolio en Tabla de Resumen ---
     dom.tabContentArea.addEventListener('change', (e) => {
-        if(e.target.classList.contains('portfolio-checkbox')) {
+        if (e.target.classList.contains('portfolio-checkbox')) {
             reAnalyzeAllData();
             // Actualizar indicador del botón de búsqueda
             const findModeIndicator = document.getElementById('find-mode-indicator');
@@ -127,12 +177,35 @@ export function initializeEventListeners() {
             const indexToRemove = parseInt(e.target.dataset.index, 10);
             if (indexToRemove === state.featuredPortfolioIndex) state.featuredPortfolioIndex = null;
             if (indexToRemove === state.comparisonPortfolioIndex) state.comparisonPortfolioIndex = null;
-            state.savedPortfolios.splice(indexToRemove, 1); // Esto debería funcionar
-            await reAnalyzeAllData();
+            state.savedPortfolios.splice(indexToRemove, 1);
+            // --- OPTIMIZACIÓN: Actualizar UI localmente sin llamar al backend ---
+            displaySavedPortfoliosList();
+            renderPortfolioComparisonCharts(window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal));
+            showToast('Portafolio eliminado correctamente', 'success');
+            // await reAnalyzeAllData(); // <-- ELIMINADO: Innecesario
         }
         if (e.target.classList.contains('view-edit-portfolio-btn')) {
             const index = parseInt(e.target.dataset.index, 10);
             openOptimizationModal(index);
+        }
+        // --- CORRECCIÓN: Añadir el listener para el botón de destacar (estrella) ---
+        if (e.target.classList.contains('feature-portfolio-btn')) {
+            const index = parseInt(e.target.dataset.index, 10);
+            // Si ya está destacado, quitar el destaque. Si no, establecerlo.
+            state.featuredPortfolioIndex = state.featuredPortfolioIndex === index ? null : index;
+
+            // --- OPTIMIZACIÓN: Actualizar UI localmente sin llamar al backend ---
+            renderFeaturedPortfolio();
+            displaySavedPortfoliosList(); // Actualiza la estrella en la lista
+            renderPortfolioComparisonCharts(window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal));
+
+            if (state.featuredPortfolioIndex !== null) {
+                showToast('Portafolio destacado actualizado', 'success');
+            } else {
+                showToast('Portafolio ya no está destacado', 'info');
+            }
+
+            // await reAnalyzeAllData(); // <-- ELIMINADO: Innecesario
         }
     });
 
@@ -144,6 +217,7 @@ export function initializeEventListeners() {
             const feedbackEl = document.getElementById('save-comments-feedback');
             feedbackEl.textContent = '¡Guardado!';
             setTimeout(() => { feedbackEl.textContent = ''; }, 2000);
+            showToast('Comentarios guardados', 'success');
         }
     });
 
@@ -199,16 +273,33 @@ export function initializeEventListeners() {
             }
         });
         if (savedCount > 0) {
-            reAnalyzeAllData();
+            // --- OPTIMIZACIÓN: Solo re-analizar si faltan métricas (raro desde Databank) ---
+            // savePortfolioFromDatabank ya adjunta las métricas si existen.
+            // Verificamos si algún portafolio guardado recientemente NO tiene métricas.
+            const needsAnalysis = state.savedPortfolios.some(p => !p.metrics);
+            if (needsAnalysis) {
+                reAnalyzeAllData();
+            } else {
+                displaySavedPortfoliosList();
+                // No necesitamos actualizar gráficos comparativos aquí, el usuario puede hacerlo manualmente si quiere
+            }
+            showToast(`${savedCount} portafolios guardados`, 'success');
         }
     });
-    
+
     dom.databankTableBody.addEventListener('click', (e) => {
         if (e.target.classList.contains('databank-save-single-btn')) {
             const index = parseInt(e.target.dataset.index, 10);
             const portfolioData = state.databankPortfolios[index];
             if (portfolioData && savePortfolioFromDatabank(index, portfolioData.metrics)) {
-                reAnalyzeAllData();
+                // --- OPTIMIZACIÓN: Igual que arriba ---
+                const needsAnalysis = state.savedPortfolios.some(p => !p.metrics);
+                if (needsAnalysis) {
+                    reAnalyzeAllData();
+                } else {
+                    displaySavedPortfoliosList();
+                }
+                showToast('Portafolio guardado', 'success');
             }
         }
     });
@@ -239,7 +330,9 @@ export function initializeEventListeners() {
     });
     dom.savedViewSelector.addEventListener('change', (e) => {
         state.activeViews.saved = e.target.value;
-        reAnalyzeAllData();
+        // --- OPTIMIZACIÓN: Solo redibujar la tabla, no re-analizar ---
+        displaySavedPortfoliosList();
+        // reAnalyzeAllData(); // <-- ELIMINADO
     });
     const viewManagerModal = document.getElementById('view-manager-modal');
     viewManagerModal.querySelector('#apply-view-btn').addEventListener('click', applyView);
