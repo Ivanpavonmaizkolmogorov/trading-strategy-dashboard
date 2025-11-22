@@ -14,42 +14,44 @@
         src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom/dist/chartjs-plugin-zoom.min.js"></script>
     <style>
-        .databank-top3 {
-            background-color: rgba(20, 184, 166, 0.1);
-            /* teal-600 with 10% opacity */
-        }
-
-        .databank-top3:hover {
-            background-color: rgba(20, 184, 166, 0.2);
-        }
-
-        /* Custom font and scrollbar for a better look and feel */
+        /* Custom font and scrollbar */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
         body {
             font-family: 'Inter', sans-serif;
         }
 
-        /* Custom styles for file inputs */
-        .file-input-label {
-            transition: all 0.2s ease-in-out;
+        /* Custom Scrollbar for Webkit */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
         }
 
-        .file-input-label:hover {
-            background-color: #374151;
-            /* gray-700 */
-            border-color: #38bdf8;
-            /* sky-400 */
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
         }
 
-        /* Styles for active and inactive tabs */
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        .databank-top3 {
+            background-color: rgba(20, 184, 166, 0.1);
+        }
+
+        .databank-top3:hover {
+            background-color: rgba(20, 184, 166, 0.2);
+        }
+
         .tab-btn.active {
-            border-color: #38bdf8;
-            /* sky-400 */
+            border-bottom: 2px solid #38bdf8;
             color: #e5e7eb;
-            /* gray-200 */
-            background-color: #374151;
-            /* gray-700 */
+            background-color: rgba(55, 65, 81, 0.5);
         }
 
         .tab-content {
@@ -60,7 +62,6 @@
             display: block;
         }
 
-        /* Sortable table header style */
         .sortable {
             cursor: pointer;
             transition: color 0.2s ease-in-out;
@@ -80,657 +81,328 @@
             font-size: 0.7em;
         }
 
-        .corr-cell {
+        /* Sidebar Tooltip */
+        .sidebar-tooltip {
+            position: absolute;
+            left: 100%;
+            top: 50%;
+            transform: translateY(-50%);
+            margin-left: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            background-color: #1f2937;
             color: white;
-            font-weight: bold;
-            text-align: center;
-            padding: 0.75rem;
-            font-size: 0.875rem;
-        }
-
-        .corr-header {
-            writing-mode: vertical-rl;
-            transform: rotate(180deg);
+            font-size: 0.75rem;
+            border-radius: 0.25rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
             white-space: nowrap;
-            padding: 0.5rem;
-            text-align: left;
-            font-weight: 600;
+            z-index: 50;
         }
 
-        .spinner {
-            animation: spin 1s linear infinite;
+        .sidebar-item:hover .sidebar-tooltip {
+            opacity: 1;
         }
 
-        @keyframes spin {
-            from {
-                transform: rotate(0deg);
-            }
-
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        /* Modal Styles */
-        .modal-backdrop {
-            transition: opacity 0.3s ease;
-        }
-
-        .modal-content {
-            transition: transform 0.3s ease;
-        }
-
-        .feature-portfolio-btn.featured,
-        .compare-original-btn.active {
-            color: #fbbf24;
-            /* amber-400 */
-        }
-
-        /* View Manager Styles */
-        .view-column-item {
-            cursor: grab;
-        }
-
-        .view-column-item:active {
-            cursor: grabbing;
+        .sidebar-item.active {
             background-color: #374151;
+            border-left: 3px solid #38bdf8;
         }
 
-        .copyable-strategy:hover {
-            background-color: #374151;
-            cursor: pointer;
+        /* Resizer Handle */
+        #panel-resizer {
+            transition: background-color 0.2s;
         }
 
-        .chart-action-item.active {
+        #panel-resizer:hover,
+        #panel-resizer.resizing {
             background-color: #0ea5e9;
             /* sky-500 */
-            color: white;
-            font-weight: 600;
-        }
-
-        /* Smooth scrolling */
-        html {
-            scroll-behavior: smooth;
         }
     </style>
 </head>
 
-<body class="bg-gray-900 text-gray-200 antialiased">
+<body class="bg-gray-900 text-gray-200 antialiased h-screen w-screen overflow-hidden flex">
 
-    <div class="container mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
-
-        <!-- Header Section -->
-        <header class="mb-8 text-center">
-            <h1 class="text-4xl sm:text-5xl font-bold text-sky-400 mb-2">Dashboard Comparativo de Estrategias</h1>
-            <p class="text-lg text-gray-400">Sube múltiples estrategias y compáralas contra un activo para encontrar la
-                mejor.</p>
-        </header>
-
-        <!-- Barra de Navegación Flotante -->
-        <div id="page-index"
-            class="fixed top-0 left-0 right-0 z-50 bg-gray-800/80 backdrop-blur-sm border-b border-gray-700 p-2">
-            <div
-                class="container mx-auto max-w-7xl flex justify-center items-center gap-x-4 sm:gap-x-6 text-xs sm:text-sm">
-                <a href="#controls-section"
-                    class="hover:text-sky-400 transition-colors flex items-center gap-1.5"><span>🔼</span><span
-                        class="hidden sm:inline">Controles</span></a>
-                <a href="#databank-section"
-                    class="hover:text-sky-400 transition-colors flex items-center gap-1.5"><span>🏦</span><span
-                        class="hidden sm:inline">DataBank</span></a>
-                <a href="#saved-portfolios-section"
-                    class="hover:text-sky-400 transition-colors flex items-center gap-1.5"><span>💾</span><span
-                        class="hidden sm:inline">Portafolios</span></a>
-                <a href="#portfolio-comparison-chart-section"
-                    class="hover:text-sky-400 transition-colors flex items-center gap-1.5"><span>📊</span><span
-                        class="hidden sm:inline">Gráfico</span></a>
-                <a href="#featured-portfolio-section"
-                    class="hover:text-sky-400 transition-colors flex items-center gap-1.5"><span>⭐</span><span
-                        class="hidden sm:inline">Destacado</span></a>
-                <a href="#results"
-                    class="hover:text-sky-400 transition-colors flex items-center gap-1.5"><span>📈</span><span
-                        class="hidden sm:inline">Análisis</span></a>
-            </div>
+    <!-- SIDEBAR -->
+    <aside class="w-16 bg-gray-800 border-r border-gray-700 flex flex-col items-center py-4 z-20 flex-shrink-0">
+        <!-- Logo / Brand -->
+        <div class="mb-8 p-2 bg-gray-900 rounded-lg">
+            <span class="text-2xl">🚀</span>
         </div>
 
-        <!-- Controls Section -->
-        <div id="controls-section"
-            class="bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-2xl p-6 mb-8 border border-gray-700">
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-6 items-end">
-                <!-- Optimization Metric Select -->
-                <div>
-                    <label for="optimization-metric-select"
-                        class="block text-sm font-semibold text-teal-400 mb-2">Optimizar Métrica</label>
-                    <select id="optimization-metric-select"
-                        class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5">
-                        <option value="profitFactor">Profit Factor</option>
-                        <option value="profitMaxDD_Ratio">Ret/DD</option>
-                        <option value="monthlyProfitToDollarDD">Ratio Profit Mes / DD($)</option>
-                        <option value="upi">UPI</option>
-                        <option value="sortinoRatio">Sortino</option>
-                        <option value="sharpeRatio">Coef. Sharpe</option>
-                        <option value="captureRatio">Capture Ratio</option>
-                        <option value="monthlyAvgProfit">Profit Prom./Mes</option>
-                        <option value="maxConsecutiveLosingMonths">Meses Cons. Pérdida (Max)</option>
-                        <option value="winningPercentage">Win %</option>
-                        <option value="avgWin">Avg. Win</option>
-                        <option value="avgLoss">Avg. Loss</option>
-                        <option value="maxDrawdownInDollars">Max DD ($)</option>
-                        <option value="maxDrawdown">Max Drawdown (%)</option>
-                        <option value="maxStagnationTrades">Stagnation (trades)</option>
-                        <option value="maxConsecutiveLosses">Pérdidas Consecutivas</option>
-                        <option value="ulcerIndexInDollars">Ulcer Index $</option>
-                        <option value="maxConsecutiveWins">Ganadas Consecutivas</option>
-                        <option value="upsideCapture">Upside Capture</option>
-                        <option value="totalTrades">Número de Trades</option>
-                        <option value="maxStagnationDays">Stagnation (días)</option>
-                        <option value="sqn">SQN</option>
-                        <option value="downsideCapture">Downside Capture</option>
-                    </select>
-                </div>
-                <!-- Optimization Goal Select -->
-                <div>
-                    <label for="optimization-goal-select"
-                        class="block text-sm font-semibold text-teal-400 mb-2">Objetivo</label>
-                    <select id="optimization-goal-select"
-                        class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5">
-                        <option value="maximize">Maximizar</option>
-                        <option value="minimize">Minimizar</option>
-                    </select>
-                </div>
-                <!-- Correlation Filter -->
-                <div>
-                    <label for="correlation-filter" class="block text-sm font-semibold text-teal-400 mb-2">Max.
-                        Correlación</label>
-                    <input type="number" id="correlation-filter" value="0.3" step="0.1" min="-1" max="1"
-                        class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5">
-                </div>
-                <!-- Min Weight Filter -->
-                <div>
-                    <label for="min-weight-filter" class="block text-sm font-semibold text-teal-400 mb-2">Min. Peso
-                        (%)</label>
-                    <input type="number" id="min-weight-filter" value="10" step="1" min="0" max="100"
-                        class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5">
-                </div>
-                <!-- Monte Carlo Simulations -->
-                <div>
-                    <label for="search-threshold" class="block text-sm font-semibold text-teal-400 mb-2">Umbral
-                        Exhaustiva/MC</label>
-                    <input type="number" id="search-threshold" value="500000" step="10000" min="10000"
-                        class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5"
-                        title="Si las combinaciones totales superan este número, se usará Monte Carlo.">
-                </div>
-                <!-- Find Portfolios Button -->
-                <button id="findDatabankPortfoliosBtn"
-                    class="w-full bg-teal-500 hover:bg-teal-600 disabled:bg-teal-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transform transition-transform duration-200 hover:scale-105">
-                    <div id="findBestBtnText">
-                        <span class="block">🔍 Buscar en DataBank</span>
-                        <span id="find-mode-indicator" class="text-xs text-teal-200 font-normal">(Búsqueda
-                            Global)</span>
-                    </div>
-                    <span id="findBestBtnSpinner" class="hidden">
-                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline"
-                            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
-                            </circle>
-                            <path class="opacity-75" fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                            </path>
-                        </svg>
-                        Buscando...
-                    </span>
-                </button>
-                <!-- Analyze & Reset Buttons -->
-                <div class="md:col-span-1 flex flex-col space-y-3">
-                    <button id="analyzeBtn"
-                        class="w-full bg-sky-500 hover:bg-sky-600 disabled:bg-sky-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg shadow-lg transform transition-transform duration-200 hover:scale-105">
-                        <span id="analyzeBtnText">Analizar</span>
-                        <span id="analyzeBtnSpinner" class="hidden">
-                            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline"
-                                xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
-                                    stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor"
-                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                                </path>
-                            </svg>
-                            Procesando...
-                        </span>
-                    </button>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button id="exportBtn"
-                            class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-2 rounded-lg text-sm">Exportar</button>
-                        <label for="importFile"
-                            class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-2 rounded-lg text-sm text-center cursor-pointer">Importar</label>
-                        <input type="file" id="importFile" class="hidden" accept=".json">
-                    </div>
-                    <button id="resetBtn"
-                        class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transform transition-transform duration-200 hover:scale-105">
-                        Limpiar
-                    </button>
+        <!-- Navigation Items -->
+        <nav class="flex-1 w-full flex flex-col gap-4">
+            <button id="nav-analysis"
+                class="sidebar-item active relative w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 transition-all"
+                title="Análisis">
+                <span class="text-xl">📊</span>
+                <span class="sidebar-tooltip">Análisis & Gráficos</span>
+            </button>
+
+            <button id="nav-config"
+                class="sidebar-item relative w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 transition-all"
+                title="Configuración">
+                <span class="text-xl">⚙️</span>
+                <span class="sidebar-tooltip">Configuración & Archivos</span>
+            </button>
+
+            <div class="flex-1"></div> <!-- Spacer -->
+
+            <button id="nav-help"
+                class="sidebar-item relative w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 transition-all"
+                title="Ayuda">
+                <span class="text-xl">❓</span>
+                <span class="sidebar-tooltip">Ayuda</span>
+            </button>
+        </nav>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <div class="flex-1 flex flex-col min-w-0 bg-gray-900">
+
+        <!-- TOP BAR (Global Controls & Status) -->
+        <header
+            class="h-14 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4 flex-shrink-0 z-10">
+            <div class="flex items-center gap-4">
+                <h1 class="text-lg font-bold text-sky-400 truncate">Dashboard Comparativo</h1>
+
+                <!-- Global Status / Notifications -->
+                <div id="global-status"
+                    class="hidden md:flex items-center gap-2 text-xs text-gray-400 bg-gray-900 px-3 py-1 rounded-full border border-gray-700">
+                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                    <span>Sistema Listo</span>
                 </div>
             </div>
 
-            <div
-                class="mt-6 border-t border-gray-700 pt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-                <!-- Strategies File Input -->
-                <div>
-                    <label for="tradesFiles"
-                        class="file-input-label flex flex-col items-center justify-center w-full h-full p-4 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer">
-                        <div class="text-center">
-                            <svg class="mx-auto h-12 w-12 text-gray-500" stroke="currentColor" fill="none"
-                                viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <span class="mt-2 block text-sm font-semibold text-sky-400">Subir Estrategias</span>
-                            <span class="mt-1 block text-xs text-gray-400">(Puedes seleccionar varios)</span>
-                        </div>
-                    </label>
-                    <input id="tradesFiles" type="file" class="hidden" accept=".csv" multiple>
-                    <div id="tradesFilesList" class="mt-2 text-sm text-gray-400 space-y-1"></div>
+            <!-- Right Side: Risk Normalization & Actions -->
+            <div class="flex items-center gap-4">
+                <!-- Risk Normalization Panel (Always Visible) -->
+                <div class="flex items-center gap-2 bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-600">
+                    <span class="text-xs font-semibold text-sky-400">Normalizar:</span>
+                    <select id="normalization-metric-select"
+                        class="bg-gray-700 border border-gray-600 text-white text-xs rounded focus:ring-sky-500 p-1">
+                        <option value="max_dd">Max DD ($)</option>
+                        <option value="ulcer">Ulcer Index ($)</option>
+                    </select>
+                    <input type="number" id="target-max-dd" value="1000"
+                        class="bg-gray-700 border border-gray-600 text-white text-xs rounded w-16 p-1 text-center">
+                    <button id="apply-normalization-btn"
+                        class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-1 px-2 rounded text-xs">Aplicar</button>
+                    <button id="restore-normalization-btn"
+                        class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-1 px-2 rounded text-xs"
+                        title="Restaurar">↺</button>
+                    <input type="checkbox" id="normalize-risk-checkbox" class="hidden">
                 </div>
 
-                <!-- Benchmark File Input -->
-                <div>
-                    <label for="benchmarkFile"
-                        class="file-input-label flex flex-col items-center justify-center w-full h-full p-4 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer">
-                        <div class="text-center">
-                            <svg class="mx-auto h-12 w-12 text-gray-500" stroke="currentColor" fill="none"
-                                viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                            </svg>
-                            <span class="mt-2 block text-sm font-semibold text-sky-400">Subir Activo</span>
-                            <span id="benchmarkFileName" class="mt-1 block text-xs text-gray-400">(date, price)</span>
+                <button id="analyzeBtn"
+                    class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-1.5 px-4 rounded-lg text-sm shadow-lg flex items-center gap-2">
+                    <span>Analizar</span>
+                    <span id="analyzeBtnSpinner" class="hidden animate-spin">↻</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- WORKSPACE (Split View) -->
+        <main class="flex-1 flex flex-col overflow-hidden relative">
+
+            <!-- VIEWER CONTAINER (Top Panel) -->
+            <div id="viewer-container" class="flex-1 bg-gray-900 overflow-hidden flex flex-col min-h-0">
+                <!-- Chart Header / Toolbar -->
+                <div
+                    class="h-10 bg-gray-800/50 border-b border-gray-700 flex items-center justify-between px-4 flex-shrink-0">
+                    <span class="text-sm font-semibold text-gray-300">Visor Principal</span>
+                    <div id="chart-actions-group" class="flex items-center text-xs">
+                        <button data-action="destacar"
+                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-l border-r border-gray-600">Destacar</button>
+                        <button data-action="ocultar"
+                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-r">Ocultar/Mostrar</button>
+                    </div>
+                </div>
+
+                <!-- Chart Area -->
+                <div class="flex-1 relative p-2">
+                    <canvas id="portfolioEquityChart"></canvas>
+                </div>
+            </div>
+
+            <!-- RESIZER HANDLE -->
+            <div id="panel-resizer"
+                class="h-1.5 bg-gray-800 border-y border-gray-700 cursor-row-resize flex items-center justify-center z-20 flex-shrink-0">
+                <div class="w-8 h-0.5 bg-gray-500 rounded-full"></div>
+            </div>
+
+            <!-- SOURCE PANEL (Bottom Panel - Dockable) -->
+            <div id="source-panel" class="h-80 bg-gray-800 flex flex-col flex-shrink-0 min-h-[150px] max-h-[80vh]">
+                <!-- Panel Tabs -->
+                <div class="flex border-b border-gray-700 bg-gray-800">
+                    <button
+                        class="tab-btn active px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
+                        data-target="databank-content">
+                        🏦 DataBank
+                    </button>
+                    <button
+                        class="tab-btn px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
+                        data-target="saved-portfolios-content">
+                        💾 Guardados <span id="saved-portfolios-count"
+                            class="ml-1 text-xs bg-gray-700 px-1.5 rounded-full">0</span>
+                    </button>
+                    <button
+                        class="tab-btn px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
+                        data-target="strategies-content">
+                        📂 Estrategias
+                    </button>
+
+                    <div class="flex-1"></div>
+
+                    <!-- Panel Toolbar (Contextual) -->
+                    <div id="panel-toolbar" class="flex items-center px-2 gap-2">
+                        <!-- Databank Controls -->
+                        <div id="databank-controls" class="flex items-center gap-2">
+                            <button id="findDatabankPortfoliosBtn"
+                                class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold py-1 px-2 rounded">
+                                🔍 Buscar
+                            </button>
+                            <button id="databank-save-selected-btn"
+                                class="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold py-1 px-2 rounded">
+                                Guardar Sel.
+                            </button>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Panel Content Area -->
+                <div class="flex-1 overflow-hidden relative bg-gray-900">
+
+                    <!-- 1. DataBank Content -->
+                    <div id="databank-content" class="tab-content active h-full flex flex-col">
+                        <div class="flex-1 overflow-auto">
+                            <table class="w-full text-sm text-left text-gray-300">
+                                <thead class="bg-gray-800 text-xs uppercase sticky top-0 z-10"
+                                    id="databank-table-header">
+                                    <!-- JS Generated -->
+                                </thead>
+                                <tbody id="databank-table-body" class="divide-y divide-gray-700">
+                                    <tr id="databank-empty-row">
+                                        <td colspan="8" class="p-4 text-center text-gray-500">DataBank vacío. Inicia una
+                                            búsqueda.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 2. Saved Portfolios Content -->
+                    <div id="saved-portfolios-content" class="tab-content h-full flex flex-col">
+                        <div class="flex-1 overflow-auto">
+                            <table class="w-full text-sm text-left text-gray-300">
+                                <thead id="saved-portfolios-header"
+                                    class="bg-gray-800 text-xs uppercase sticky top-0 z-10">
+                                    <!-- JS Generated -->
+                                </thead>
+                                <tbody id="saved-portfolios-body" class="divide-y divide-gray-700">
+                                    <!-- JS Generated -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 3. Strategies Content (Placeholder for now) -->
+                    <div id="strategies-content" class="tab-content h-full p-4 text-gray-400 text-center">
+                        <p>Gestión de estrategias individuales (Próximamente)</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODALS & OVERLAYS (Keep existing ones, just hidden by default) -->
+
+    <!-- Config Modal (Simulated as a "View" but we can keep it as a modal for now or integrate into Sidebar view) -->
+    <!-- For Phase 1, we will put the File Inputs in a Modal triggered by the Config Sidebar Button -->
+    <div id="config-modal" class="fixed inset-0 z-50 hidden items-center justify-center">
+        <div class="fixed inset-0 bg-black/70 backdrop-blur-sm" id="config-modal-backdrop"></div>
+        <div
+            class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl m-4 border border-gray-700 relative z-10 flex flex-col max-h-[90vh]">
+            <div class="p-6 border-b border-gray-700 flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-white">Configuración & Datos</h2>
+                <button id="close-config-btn" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Strategies Input -->
+                <div>
+                    <h3 class="text-lg font-semibold text-sky-400 mb-4">1. Estrategias (.csv)</h3>
+                    <label for="tradesFiles"
+                        class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors">
+                        <span class="text-sm text-gray-400">Click para subir archivos</span>
+                    </label>
+                    <input id="tradesFiles" type="file" class="hidden" accept=".csv" multiple>
+                    <div id="tradesFilesList" class="mt-2 text-sm text-gray-400 max-h-40 overflow-y-auto"></div>
+                </div>
+                <!-- Benchmark Input -->
+                <div>
+                    <h3 class="text-lg font-semibold text-sky-400 mb-4">2. Benchmark (.csv)</h3>
+                    <label for="benchmarkFile"
+                        class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors">
+                        <span class="text-sm text-gray-400">Click para subir benchmark</span>
+                        <span id="benchmarkFileName" class="text-xs text-gray-500 mt-1">(date, price)</span>
                     </label>
                     <input id="benchmarkFile" type="file" class="hidden" accept=".csv">
                 </div>
 
-                <!-- Analysis Mode Dropdown -->
-                <div class="flex flex-col justify-center h-full space-y-3">
-                    <label for="analysis-mode-select"
-                        class="block text-sm font-semibold text-sky-400 text-center mb-2">Filtrar Tiempo de
-                        Análisis</label>
-                    <select id="analysis-mode-select"
-                        class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
-                        <option value="-1">Análisis Completo</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Error Message Area -->
-            <div id="error-message"
-                class="hidden mt-4 text-center bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded-lg"
-                role="alert"></div>
-            <!-- Best Portfolios Results Area -->
-
-            <!-- Saved Portfolios Area -->
-            <div id="saved-portfolios-container" class="hidden mt-6"></div>
-
-        </div>
-
-        <div id="databank-section"
-            class="hidden mt-8 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-2xl p-6 border border-gray-700">
-            <div class="absolute top-4 right-4">
-                <a href="#controls-section" class="text-xs text-gray-400 hover:text-sky-400">🔼 Volver al Índice</a>
-            </div>
-            <div class="flex flex-wrap justify-between items-center mb-4 gap-4">
-                <div class="flex items-center gap-4">
-                    <h2 class="text-2xl font-bold text-teal-400">DataBank de optimizacion</h2>
-                    <div class="flex items-center gap-2">
-                        <select id="view-selector"
-                            class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 p-1.5"></select>
-                        <button id="manage-views-btn" class="p-1.5 bg-gray-600 hover:bg-gray-700 rounded-lg"
-                            title="Gestionar Vistas">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20"
-                                fill="currentColor">
-                                <path
-                                    d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-                <div>
-                    <label for="databank-size" class="text-sm text-gray-400 mr-2">Tamaño DataBank:</label>
-                    <input type="number" id="databank-size" value="20" min="10" max="500" step="10"
-                        class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg w-20 p-1.5">
-                </div>
-                <div id="databank-status" class="w-full sm:w-auto text-center text-gray-300 font-mono"></div>
-                <div class="flex gap-2">
-                    <button id="pause-search-btn"
-                        class="w-24 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-lg text-sm">Pausar</button>
-                    <button id="stop-search-btn"
-                        class="w-24 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Detener</button>
-                    <button id="clear-databank-btn"
-                        class="w-24 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Limpiar</button>
-                </div>
-            </div>
-            <div id="databank-table-container"
-                class="max-h-96 overflow-y-auto overflow-x-auto rounded-lg border border-gray-700">
-                <table class="w-full text-sm text-left">
-                    <thead class="bg-gray-700 text-xs text-gray-400 uppercase sticky top-0" id="databank-table-header">
-                                            <tr>
-                            <!-- Header generated by JS -->
-                                               
-                        </tr>
-                                        </thead>
-                    <tbody id="databank-table-body" class="divide-y divide-gray-700">
-                        <tr id="databank-empty-row">
-                            <td colspan="8" class="p-8 text-center text-gray-500">
-                                Inicia una búsqueda para poblar el DataBank.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            <div class="mt-4 flex justify-end">
-                <button id="databank-save-selected-btn"
-                    class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg">
-                    Guardar Seleccionados
-                </button>
-            </div>
-        </div>
-
-        <!-- Saved Portfolios Section -->
-        <div id="saved-portfolios-section"
-            class="hidden mt-8 bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-2xl p-6 border border-gray-700">
-            <div class="absolute top-4 right-4">
-                <a href="#controls-section" class="text-xs text-gray-400 hover:text-sky-400">🔼 Volver al Índice</a>
-            </div>
-            <h2 class="text-2xl font-bold text-sky-400 mb-4">Mis Portafolios Guardados</h2>
-            <div class="max-h-96 overflow-y-auto rounded-lg border border-gray-700">
-                <table class="w-full text-sm text-left">
-                    <thead id="saved-portfolios-header"
-                        class="bg-gray-700 text-xs text-gray-400 uppercase sticky top-0">
-                        <!-- Header will be generated by JavaScript -->
-                    </thead>
-                    <tbody id="saved-portfolios-body" class="divide-y divide-gray-700">
-                        <!-- Body will be generated by JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-            <div class="flex flex-wrap justify-between items-center mt-4 gap-4">
-                <div class="flex items-center gap-4">
-                    <div class="flex items-center gap-2">
-                        <select id="saved-view-selector"
-                            class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 p-1.5"></select>
-                        <button id="saved-manage-views-btn" class="p-1.5 bg-gray-600 hover:bg-gray-700 rounded-lg"
-                            title="Gestionar Vistas">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20"
-                                fill="currentColor">
-                                <path
-                                    d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z" />
-                            </svg>
-                        </button>
-                    </div>
-                    <!-- Risk Normalization Panel -->
-                    <div class="ml-4 bg-gray-900/50 p-2 rounded-lg border border-gray-600 flex items-center gap-4">
-                        <div class="flex items-center gap-2">
-                            <span class="text-sm font-semibold text-sky-400">Normalizar Riesgo:</span>
-                            <select id="normalization-metric-select"
-                                class="bg-gray-700 border border-gray-600 text-white text-xs rounded-lg focus:ring-sky-500 focus:border-sky-500 p-1">
-                                <option value="max_dd">Max Drawdown ($)</option>
-                                <option value="ulcer">Ulcer Index ($)</option>
+                <!-- Optimization Settings (Moved here from main view) -->
+                <div class="md:col-span-2 border-t border-gray-700 pt-6">
+                    <h3 class="text-lg font-semibold text-teal-400 mb-4">Parámetros de Optimización</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Métrica</label>
+                            <select id="optimization-metric-select"
+                                class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-sm text-white">
+                                <option value="profitFactor">Profit Factor</option>
+                                <option value="sharpeRatio">Sharpe Ratio</option>
+                                <option value="maxDrawdown">Max Drawdown %</option>
+                                <option value="netProfit">Net Profit</option>
+                                <!-- Add others as needed -->
                             </select>
-                            <div class="flex items-center gap-1">
-                                <label for="target-max-dd" class="text-xs font-semibold text-gray-300">Obj:</label>
-                                <input type="number" id="target-max-dd" value="1000"
-                                    class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg w-20 p-1 text-center">
-                            </div>
-                            <button id="apply-normalization-btn"
-                                class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-1 px-3 rounded-lg text-xs">
-                                Aplicar
-                            </button>
-                            <button id="restore-normalization-btn"
-                                class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-1 px-3 rounded-lg text-xs"
-                                title="Restaurar valores originales">
-                                Restaurar
-                            </button>
-                        </div>
-                        <!-- Hidden inputs for compatibility/logic storage if needed, but we use values directly -->
-                        <input type="checkbox" id="normalize-risk-checkbox" class="hidden">
-                    </div>
-                </div>
-                <span id="saved-portfolios-count" class="text-sm text-gray-400 bg-gray-700 px-3 py-1 rounded-full">0
-                    portafolios</span>
-            </div>
-        </div>
-
-        <!-- Portfolio Comparison Chart Section -->
-        <div id="portfolio-comparison-chart-section" class="hidden mt-8">
-            <div class="absolute top-4 right-4">
-                <a href="#controls-section" class="text-xs text-gray-400 hover:text-sky-400">🔼 Volver al Índice</a>
-            </div>
-            <div class="bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-2xl p-6 border border-gray-700">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-bold text-white">Curvas de Equity (Portafolios Guardados)</h2>
-                    <div id="chart-actions-group"
-                        class="flex items-center border border-gray-600 rounded-lg bg-gray-800 text-gray-300">
-                        <button data-action="destacar"
-                            class="chart-action-item px-3 py-1.5 text-xs font-medium rounded-l-md active">Destacar</button>
-                        <button data-action="editar"
-                            class="chart-action-item px-3 py-1.5 text-xs font-medium border-x border-gray-600">Editar</button>
-                        <button data-action="ocultar"
-                            class="chart-action-item px-3 py-1.5 text-xs font-medium rounded-r-md">Ocultar/Mostrar</button>
-                    </div>
-                </div>
-                <div class="h-96"><canvas id="portfolioEquityChart"></canvas></div>
-            </div>
-        </div>
-
-
-        <!-- Featured Portfolio Section -->
-        <div id="featured-portfolio-section" class="hidden mb-8 relative">
-            <div class="absolute top-4 right-4 z-10">
-                <a href="#controls-section" class="text-xs text-gray-400 hover:text-sky-400">🔼 Volver al Índice</a>
-            </div>
-        </div>
-
-
-        <!-- Results Section -->
-        <div id="results" class="hidden">
-            <a href="#controls-section" class="text-xs text-gray-400 hover:text-sky-400 float-right mb-2">🔼 Volver al
-                Índice</a>
-            <!-- Tab Navigation -->
-            <div id="tab-container" class="mb-4 border-b border-gray-700">
-                <div class="flex justify-between items-center">
-                    <nav id="tab-nav" class="-mb-px flex space-x-4 overflow-x-auto" aria-label="Tabs"></nav>
-                    <button id="redraw-charts-btn"
-                        class="ml-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-sm whitespace-nowrap">📊
-                        Dibujar Gráficos</button>
-                </div>
-            </div>
-
-            <!-- Tab Content Area -->
-            <div id="tab-content-area"></div>
-        </div>
-    </div>
-
-    <!-- Floating Quick Index -->
-    <div id="quick-index" class="fixed bottom-4 right-4 z-50">
-        <div id="quick-index-content"
-            class="hidden bg-gray-800/80 backdrop-blur-sm border border-gray-600 rounded-lg shadow-lg p-4 w-64 mb-2 transition-all duration-300 ease-in-out">
-            <h4 class="font-bold text-sky-400 mb-2">Índice Rápido</h4>
-            <ul class="space-y-2 text-sm">
-                <li><a href="#controls-section" class="hover:text-sky-400 block">🔼 Controles y Carga</a></li>
-                <li><a href="#databank-section" class="hover:text-sky-400 block">🏦 DataBank</a></li>
-                <li><a href="#saved-portfolios-section" class="hover:text-sky-400 block">💾 Mis Portafolios</a></li>
-                <li><a href="#portfolio-comparison-chart-section" class="hover:text-sky-400 block">📊 Gráfico
-                        Comparativo</a></li>
-                <li><a href="#featured-portfolio-section" class="hover:text-sky-400 block">⭐ Portafolio Destacado</a>
-                </li>
-                <li><a href="#results" class="hover:text-sky-400 block">📈 Pestañas de Análisis</a></li>
-            </ul>
-        </div>
-        <button id="toggle-quick-index"
-            class="w-14 h-14 bg-sky-600 hover:bg-sky-700 text-white rounded-full flex items-center justify-center shadow-lg float-right"
-            title="Mostrar/Ocultar Índice">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24"
-                stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
-            </svg>
-        </button>
-    </div>
-
-    <!-- Optimization Modal -->
-    <div id="optimization-modal" class="fixed inset-0 z-50 hidden items-center justify-center">
-        <div id="optimization-modal-backdrop" class="fixed inset-0 bg-black/70 modal-backdrop opacity-0"></div>
-        <div id="optimization-modal-content"
-            class="modal-content bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl m-4 border border-gray-700 transform scale-95 opacity-0 flex flex-col max-h-[90vh]">
-            <!-- Header -->
-            <div class="p-6 border-b border-gray-700 flex-shrink-0">
-                <div class="flex justify-between items-center">
-                    <h2 id="optimization-modal-title" class="text-2xl font-bold text-white"></h2>
-                    <button id="close-optimization-modal-btn" class="text-gray-400 hover:text-white">&times;</button>
-                </div>
-            </div>
-
-            <!-- Scrollable Content -->
-            <div class="p-6 overflow-y-auto">
-                <p id="optimization-portfolio-name" class="text-sky-300 font-semibold mb-4"></p>
-
-                <div id="optimization-results-container" class="hidden mb-6"></div>
-
-                <!-- NUEVO: Controles de Escalado de Riesgo -->
-                <div class="mb-6 p-4 bg-gray-900/50 rounded-lg border border-gray-600">
-                    <label for="optimization-scale-risk-checkbox" class="flex items-center space-x-2 cursor-pointer">
-                        <input type="checkbox" id="optimization-scale-risk-checkbox"
-                            class="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 rounded text-sky-500 focus:ring-sky-600">
-                        <span class="text-sm font-semibold text-sky-400">Escalar Riesgo a Valor Objetivo</span>
-                    </label>
-                    <div class="hidden mt-3 space-y-3">
-                        <select id="optimization-normalization-metric-select"
-                            class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
-                            <option value="max_dd">Max Drawdown ($)</option>
-                            <option value="ulcer">Ulcer Index ($)</option>
-                        </select>
-                        <label for="optimization-target-max-dd"
-                            class="block text-xs font-semibold text-gray-300 text-center">Valor Objetivo ($)</label>
-                        <input type="range" id="optimization-target-max-dd-slider" min="0" max="20000" step="100"
-                            class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
-                        <input type="number" id="optimization-target-max-dd" value="10000"
-                            class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg w-full p-2 text-center">
-                    </div>
-                </div>
-
-                <div id="optimization-setup-container" class="hidden pt-6 border-t border-gray-600">
-                    <h3 class="text-xl font-bold text-white mb-4">Buscar Pesos Óptimos</h3>
-                    <div class="space-y-4">
-                        <div>
-                            <label for="simulations-count" class="block text-sm font-semibold text-gray-300 mb-1">Número
-                                de Simulaciones</label>
-                            <input type="number" id="simulations-count" value="1000" min="100" max="50000" step="100"
-                                class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5">
                         </div>
                         <div>
-                            <label for="optimization-target-metric"
-                                class="block text-sm font-semibold text-gray-300 mb-1">Métrica Objetivo</label>
-                            <select id="optimization-target-metric"
-                                class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5"></select>
-                        </div>
-                        <div>
-                            <label for="optimization-target-goal"
-                                class="block text-sm font-semibold text-gray-300 mb-1">Objetivo</label>
-                            <select id="optimization-target-goal"
-                                class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block w-full p-2.5">
+                            <label class="block text-xs text-gray-400 mb-1">Objetivo</label>
+                            <select id="optimization-goal-select"
+                                class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-sm text-white">
                                 <option value="maximize">Maximizar</option>
                                 <option value="minimize">Minimizar</option>
                             </select>
                         </div>
-                    </div>
-
-                    <div class="mt-6">
-                        <button id="start-single-optimization-btn"
-                            class="w-full bg-teal-500 hover:bg-teal-600 disabled:bg-teal-800 text-white font-bold py-3 px-4 rounded-lg">
-                            <span id="start-optimization-btn-text">Iniciar Búsqueda</span>
-                            <span id="start-optimization-btn-spinner" class="hidden">
-                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline"
-                                    xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
-                                        stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor"
-                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                                    </path>
-                                </svg>
-                                Buscando...
-                            </span>
-                        </button>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Max Correlación</label>
+                            <input type="number" id="correlation-filter" value="0.3" step="0.1"
+                                class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-sm text-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Min Peso %</label>
+                            <input type="number" id="min-weight-filter" value="10"
+                                class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-sm text-white">
+                        </div>
                     </div>
                 </div>
 
-            </div>
-        </div>
-    </div>
-
-    <!-- View Manager Modal -->
-    <div id="view-manager-modal" class="fixed inset-0 z-50 hidden items-center justify-center">
-        <div id="view-manager-backdrop" class="fixed inset-0 bg-black/70 modal-backdrop opacity-0"></div>
-        <div id="view-manager-content"
-            class="modal-content bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl m-4 border border-gray-700 transform scale-95 opacity-0 flex flex-col max-h-[90vh]">
-            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
-                <h2 class="text-xl font-bold text-white">Gestionar Vistas del DataBank</h2>
-                <button id="close-view-manager-btn" class="text-gray-400 hover:text-white text-2xl">&times;</button>
-            </div>
-            <div class="p-4 grid grid-cols-2 gap-4 overflow-y-auto">
-                <div>
-                    <h3 class="font-semibold mb-2">Columnas Visibles (Arrastra para ordenar)</h3>
-                    <ul id="visible-columns-list"
-                        class="bg-gray-900/50 p-2 rounded-lg border border-gray-600 min-h-[200px] space-y-1">
-                        <!-- JS will populate this -->
-                    </ul>
-                </div>
-                <div>
-                    <h3 class="font-semibold mb-2">Columnas Ocultas</h3>
-                    <ul id="hidden-columns-list"
-                        class="bg-gray-900/50 p-2 rounded-lg border border-gray-600 min-h-[200px] space-y-1">
-                        <!-- JS will populate this -->
-                    </ul>
-                </div>
-            </div>
-            <div class="p-4 border-t border-gray-700 mt-auto">
-                <div class="flex justify-between items-center gap-4">
-                    <div class="flex-grow flex gap-2">
-                        <input type="text" id="view-name-input" placeholder="Nombre de la nueva vista..."
-                            class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2">
-                        <button id="save-view-btn"
-                            class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg text-sm">Guardar
-                            Vista</button>
-                    </div>
-                    <div class="flex gap-2">
-                        <button id="delete-view-btn"
-                            class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg text-sm">Eliminar
-                            Vista</button>
-                        <button id="apply-view-btn"
-                            class="bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg text-sm">Aplicar</button>
-                    </div>
+                <div class="md:col-span-2 border-t border-gray-700 pt-6 flex justify-end gap-4">
+                    <button id="exportBtn"
+                        class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Exportar
+                        Estado</button>
+                    <label for="importFile"
+                        class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded cursor-pointer">Importar
+                        Estado</label>
+                    <input type="file" id="importFile" class="hidden" accept=".json">
+                    <button id="resetBtn"
+                        class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Resetear
+                        Todo</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Chart Click Modal -->
-    <div id="chart-click-modal" class="fixed inset-0 z-50 hidden items-center justify-center">
-        <div id="chart-click-modal-backdrop" class="fixed inset-0 bg-black/70 modal-backdrop opacity-0"></div>
-        <div id="chart-click-modal-content"
-            class="modal-content bg-gray-800 rounded-lg shadow-2xl w-full max-w-lg m-4 border border-gray-700 transform scale-95 opacity-0">
-            <div class="p-6">
-                <h3 id="chart-click-modal-title" class="text-lg font-bold text-white mb-4">Confirmar Acción</h3>
-                <p id="chart-click-modal-body" class="text-gray-300 mb-6">
-                    <!-- El texto se insertará dinámicamente -->
-                </p>
-                <div class="flex justify-end gap-4">
-                    <button id="chart-click-cancel-btn"
-                        class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-sm font-semibold">Cancelar</button>
-                    <button id="chart-click-confirm-btn"
-                        class="px-4 py-2 bg-sky-600 hover:bg-sky-700 rounded-lg text-sm font-semibold">Confirmar</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    </div>
-
-    <!-- Global Loading Overlay -->
+    <!-- Loading Overlay -->
     <div id="loading-overlay"
         class="fixed inset-0 z-[70] hidden items-center justify-center bg-gray-900/90 backdrop-blur-sm transition-opacity duration-300 opacity-0">
         <div class="text-center w-full max-w-md px-4">
@@ -742,19 +414,35 @@
             </div>
             <h3 id="loading-overlay-title" class="text-2xl font-bold text-white mb-2">Procesando...</h3>
             <p id="loading-overlay-message" class="text-gray-300 text-lg animate-pulse mb-4">Por favor espera</p>
-
-            <!-- Progress Bar -->
-            <div id="loading-progress-container" class="w-full bg-gray-700 rounded-full h-2.5 hidden">
-                <div id="loading-progress-bar" class="bg-sky-500 h-2.5 rounded-full transition-all duration-300"
-                    style="width: 0%"></div>
-            </div>
-            <p id="loading-progress-text" class="text-sm text-gray-400 mt-2 hidden">0%</p>
         </div>
     </div>
 
-    <!-- Toast Container (Inserted dynamically by JS, but placeholder here for structure) -->
+    <!-- Toast Container -->
     <div id="toast-container" class="fixed top-4 right-4 z-[60] flex flex-col gap-2 pointer-events-none"></div>
 
+    <!-- Other Modals (Optimization, View Manager, etc.) - Preserved but hidden -->
+    <div id="optimization-modal" class="hidden"></div> <!-- Placeholder to prevent JS errors until refactored -->
+    <div id="view-manager-modal" class="hidden"></div> <!-- Placeholder -->
+    <div id="chart-click-modal" class="hidden"></div> <!-- Placeholder -->
+
+    <!-- Hidden Inputs for JS Compatibility (Temporary) -->
+    <div class="hidden">
+        <select id="analysis-mode-select">
+            <option value="-1">Full</option>
+        </select>
+        <input type="number" id="search-threshold" value="500000">
+        <div id="results"></div> <!-- JS targets this, need to redirect -->
+        <div id="tab-content-area"></div>
+        <button id="redraw-charts-btn"></button>
+        <button id="pause-search-btn"></button>
+        <button id="stop-search-btn"></button>
+        <button id="clear-databank-btn"></button>
+        <div id="databank-status"></div>
+        <select id="view-selector"></select>
+        <button id="manage-views-btn"></button>
+        <select id="saved-view-selector"></select>
+        <button id="saved-manage-views-btn"></button>
+    </div>
 
     <script type="module" src="src/main.js"></script>
 

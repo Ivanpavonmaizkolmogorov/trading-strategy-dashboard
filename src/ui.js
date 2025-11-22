@@ -37,16 +37,19 @@ export const resetUI = () => {
     updateTradesFilesList();
     updateAnalysisModeSelector();
     dom.benchmarkFileNameEl.textContent = '(date, price)';
-    dom.resultsDiv.classList.add('hidden');
-    dom.savedPortfoliosSection.classList.add('hidden');
-    dom.featuredPortfolioSection.classList.add('hidden');
-    dom.portfolioComparisonChartSection.classList.add('hidden');
+
+    // Ocultar secciones obsoletas (con null checks)
+    if (dom.resultsDiv) dom.resultsDiv.classList.add('hidden');
+    if (dom.savedPortfoliosContent) dom.savedPortfoliosContent.classList.remove('hidden'); // Mantener visible
+    if (dom.featuredPortfolioSection) dom.featuredPortfolioSection.classList.add('hidden');
+    // El visor siempre está visible en el nuevo layout
 
     hideError();
     destroyAllCharts();
-    dom.tabNav.innerHTML = '';
-    dom.tabNav.innerHTML = '';
-    dom.tabContentArea.innerHTML = '';
+
+    // Limpiar contenido de tabs obsoletos (con null checks)
+    if (dom.tabNav) dom.tabNav.innerHTML = '';
+    if (dom.tabContentArea) dom.tabContentArea.innerHTML = '';
 
     // Resetear controles de normalización
     if (dom.normalizeRiskCheckbox) {
@@ -101,20 +104,27 @@ export const displayResults = (results) => {
         contentHTML += strategyResult.content;
     });
 
-    dom.tabNav.innerHTML = navHTML;
-    dom.tabContentArea.innerHTML = contentHTML;
+    // En el nuevo layout, las pestañas de estrategias individuales están ocultas
+    // Solo actualizamos si los elementos existen (para compatibilidad con layout antiguo)
+    if (dom.tabNav && dom.tabContentArea) {
+        dom.tabNav.innerHTML = navHTML;
+        dom.tabContentArea.innerHTML = contentHTML;
 
-    const tabToActivate = dom.tabNav.querySelector(`.tab-btn[data-target="${activeTabId}"]`) || dom.tabNav.querySelector('.tab-btn');
-    if (tabToActivate) {
-        tabToActivate.classList.add('active');
-        const activeContent = document.getElementById(tabToActivate.dataset.target);
-        if (activeContent) {
-            activeContent.classList.add('active');
+        const tabToActivate = dom.tabNav.querySelector(`.tab-btn[data-target="${activeTabId}"]`) || dom.tabNav.querySelector('.tab-btn');
+        if (tabToActivate) {
+            tabToActivate.classList.add('active');
+            const activeContent = document.getElementById(tabToActivate.dataset.target);
+            if (activeContent) {
+                activeContent.classList.add('active');
+            }
         }
-    }
 
-    dom.resultsDiv.classList.remove('hidden');
-    renderChartsForTab(tabToActivate?.dataset.target);
+        if (dom.resultsDiv) dom.resultsDiv.classList.remove('hidden');
+        renderChartsForTab(tabToActivate?.dataset.target);
+    } else {
+        // Nuevo layout: No mostramos pestañas individuales de estrategias
+        console.log('[UI] Nuevo layout detectado - omitiendo renderizado de pestañas de estrategias');
+    }
     displaySavedPortfoliosList();
     updateDatabankDisplay(); // <-- NUEVO: Refrescar el DataBank con las métricas actualizadas.
 
@@ -380,13 +390,26 @@ const renderLorenzChart = (canvasId, analysis, color) => {
  */
 export const displaySavedPortfoliosList = () => {
     console.log("DEBUG UI.JS: Entrando a displaySavedPortfoliosList. Estado de 'savedPortfolios':", JSON.parse(JSON.stringify(state.savedPortfolios)));
+    console.log("DEBUG UI.JS: dom.savedPortfoliosContent existe?", !!dom.savedPortfoliosContent);
+    console.log("DEBUG UI.JS: dom.savedPortfoliosBody existe?", !!dom.savedPortfoliosBody);
+    console.log("DEBUG UI.JS: dom.savedPortfoliosCount existe?", !!dom.savedPortfoliosCount);
+
     if (state.savedPortfolios.length === 0) {
-        dom.savedPortfoliosSection.classList.add('hidden');
+        console.log("DEBUG UI.JS: No hay portafolios guardados, ocultando sección");
+        // En el nuevo layout, el contenido siempre está visible, solo vaciamos la tabla
+        if (dom.savedPortfoliosBody) {
+            dom.savedPortfoliosBody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-gray-500">No hay portafolios guardados</td></tr>';
+        }
+        if (dom.savedPortfoliosCount) dom.savedPortfoliosCount.textContent = '0';
         return;
     }
 
-    dom.savedPortfoliosSection.classList.remove('hidden');
-    dom.savedPortfoliosCount.textContent = `${state.savedPortfolios.length} portafolios`;
+    console.log("DEBUG UI.JS: Hay", state.savedPortfolios.length, "portafolios guardados");
+    // En el nuevo layout, la sección siempre está visible
+    if (dom.savedPortfoliosCount) {
+        dom.savedPortfoliosCount.textContent = `${state.savedPortfolios.length}`;
+        console.log("DEBUG UI.JS: Actualizado contador a", state.savedPortfolios.length);
+    }
 
     const activeViewColumns = state.tableViews.saved[state.activeViews.saved]?.columns || state.tableViews.saved['default'].columns;
 
@@ -605,6 +628,14 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
  * Renderiza la sección del portafolio destacado.
  */
 export const renderFeaturedPortfolio = () => {
+    console.log('[UI] renderFeaturedPortfolio llamado, nuevo layout?', !dom.featuredPortfolioSection);
+
+    // En el nuevo layout, no tenemos sección de portafolio destacado
+    if (!dom.featuredPortfolioSection) {
+        console.log('[UI] Nuevo layout - omitiendo renderizado de portafolio destacado');
+        return;
+    }
+
     destroyChart('featured-portfolio-chart');
     if (state.featuredPortfolioIndex === null || !state.savedPortfolios[state.featuredPortfolioIndex]) {
         dom.featuredPortfolioSection.innerHTML = '';
@@ -626,24 +657,30 @@ export const renderFeaturedPortfolio = () => {
         'Meses Pérd. Cons. (Max)': metrics.maxConsecutiveLosingMonths,
     };
 
-    let metricsHtml = Object.entries(metricsToShow).map(([key, value]) => `
-         <div class="bg-gray-800 p-3 rounded-xl text-center">
-             <h4 class="font-semibold text-gray-400 text-xs">${key}</h4>
-             <p class="text-xl font-bold">${formatMetricForDisplay(value, key)}</p>
-         </div>`).join('');
+    let metricsHTML = Object.entries(metricsToShow).map(([key, val]) => {
+        const displayVal = typeof val === 'number' ? val.toFixed(2) : val;
+        return `<div>
+                    <div class="text-xs text-gray-400 uppercase tracking-wide">${key}</div>
+                    <div class="text-lg font-bold text-white">${displayVal}</div>
+                </div>`;
+    }).join('');
 
     const html = `
-        <div class="bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-2xl p-6 border-2 border-amber-400">
-            <h2 class="text-2xl font-bold text-amber-400 mb-4">⭐ Portafolio Destacado: ${portfolio.name}</h2>
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-white">Portafolio Destacado</h2>
+            </div>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-1 space-y-4">
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-2">${metricsHtml}</div>
-                     <div>
-                         <label for="portfolio-comments" class="block text-sm font-semibold text-gray-300 mb-2">Comentarios</label>
-                         <textarea id="portfolio-comments" rows="4" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 text-sm focus:ring-amber-500 focus:border-amber-500">${portfolio.comments || ''}</textarea>
-                         <button id="save-comments-btn" class="mt-2 w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg text-sm">Guardar Comentarios</button>
-                         <span id="save-comments-feedback" class="text-xs text-green-400 h-4 inline-block"></span>
-                     </div>
+                <div class="bg-gray-800 p-6 rounded-xl">
+                    <h3 class="text-xl font-semibold text-sky-400 mb-4">${portfolio.name}</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        ${metricsHTML}
+                    </div>
+                    <div> <label class="block text-sm font-medium text-gray-300 mt-4">Comentarios</label>
+                        <textarea id="portfolio-comments" class="mt-1 w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white" rows="3">${portfolio.comments || ''}</textarea>
+                        <button id="save-comments-btn" class="mt-2 bg-sky-600 hover:bg-sky-700 text-white font-bold py-1 px-3 rounded text-xs">Guardar Comentarios</button>
+                        <span id="save-comments-feedback" class="ml-2 text-xs text-green-400"></span>
+                    </div>
                 </div>
                 <div class="lg:col-span-2 bg-gray-800 p-4 rounded-xl">
                      <div class="h-64"><canvas id="featured-portfolio-chart"></canvas></div>

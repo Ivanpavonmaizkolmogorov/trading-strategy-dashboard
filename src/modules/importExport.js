@@ -5,6 +5,7 @@ import { reAnalyzeAllData } from '../analysis.js';
 import { updateTradesFilesList, resetUI } from '../ui.js';
 import { populateViewSelector } from '../modules/viewManager.js';
 import { updateDatabankDisplay } from '../modules/databank.js';
+import { showToast } from '../modules/notifications.js';
 
 /**
  * Exporta el estado actual de la aplicación a un archivo JSON.
@@ -149,8 +150,15 @@ const restoreState = async (importedState) => {
     await reAnalyzeAllData();
 
     if (state.databankPortfolios.length > 0) {
-        dom.databankSection.classList.remove('hidden');
+        // En el nuevo layout, databankContent siempre está visible
+        if (dom.databankContent) {
+            console.log('[ImportExport] DataBank cargado con', state.databankPortfolios.length, 'portafolios');
+        }
         updateDatabankDisplay();
-        dom.databankStatus.innerHTML = `ℹ️ DataBank cargado (${state.databankPortfolios.length} portafolios).`;
+        // databankStatus ya no existe en el nuevo layout
+        if (dom.databankStatus) {
+            dom.databankStatus.innerHTML = `ℹ️ DataBank cargado (${state.databankPortfolios.length} portafolios).`;
+        }
+        showToast(`DataBank cargado: ${state.databankPortfolios.length} portafolios`, 'success');
     }
 };
