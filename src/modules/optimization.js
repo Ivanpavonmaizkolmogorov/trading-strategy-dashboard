@@ -4,6 +4,14 @@ import { ALL_METRICS } from '../config.js';
 import { toggleLoading, formatMetricForDisplay } from '../utils.js';
 import { reAnalyzeAllData } from '../analysis.js';
 import { showToast } from './notifications.js';
+import { METRIC_CONFIG } from './searchConfig.js';
+
+// Helper function to determine if an increase in a metric value is an improvement
+const isIncreaseGood = (metricKey) => {
+    const config = METRIC_CONFIG[metricKey];
+    if (!config) return true; // Default: higher is better
+    return config.goal === 'maximize';
+};
 
 let optimizationModalElements; // To be initialized on first open
 let optimizationAbortController = null; // Para cancelar requests
@@ -467,8 +475,13 @@ const displayOptimizationResults = (results) => {
         const metricChange = ((metricValue - baseValue) / Math.abs(baseValue)) * 100;
         const balancedChange = ((balancedValue - baseValue) / Math.abs(baseValue)) * 100;
 
-        const formatChange = (change) => {
-            const color = change >= 0 ? 'text-green-400' : 'text-red-400';
+        const formatChange = (change, metricKey) => {
+            // For metrics where lower is better, invert the color logic
+            const isImprovement = isIncreaseGood(metricKey)
+                ? change >= 0  // Normal: positive change is good
+                : change <= 0; // Inverted: negative change is good (DD decrease)
+
+            const color = isImprovement ? 'text-green-400' : 'text-red-400';
             const icon = change >= 0 ? '▲' : '▼';
             return `<span class="${color} text-xs">${icon} ${Math.abs(change).toFixed(1)}%</span>`;
         };
@@ -478,12 +491,10 @@ const displayOptimizationResults = (results) => {
                 <td class="px-2 py-1 text-xs text-gray-300">${metricInfo.label}</td>
                 <td class="px-2 py-1 text-xs text-right text-gray-400">${formatMetricForDisplay(baseValue, metricKey)}</td>
                 <td class="px-2 py-1 text-xs text-right">
-                    <div class="text-purple-300 font-semibold">${formatMetricForDisplay(metricValue, metricKey)}</div>
-                    ${formatChange(metricChange)}
+                    ${formatMetricForDisplay(metricValue, metricKey)} ${formatChange(metricChange, metricKey)}
                 </td>
                 <td class="px-2 py-1 text-xs text-right">
-                    <div class="text-blue-300 font-semibold">${formatMetricForDisplay(balancedValue, metricKey)}</div>
-                    ${formatChange(balancedChange)}
+                    ${formatMetricForDisplay(balancedValue, metricKey)} ${formatChange(balancedChange, metricKey)}
                 </td>
             </tr>
         `;
@@ -531,7 +542,7 @@ const displayOptimizationResults = (results) => {
                         <div>
                             <p class="text-xs text-gray-400">Valor ${targetMetricLabel}</p>
                             <p class="text-2xl font-bold text-white">${formatMetricForDisplay(metricValue, targetMetric)}</p>
-                            <p class="text-sm ${metricImprovement >= 0 ? 'text-green-400' : 'text-red-400'}">
+                            <p class="text-sm ${isIncreaseGood(targetMetric) ? (metricImprovement >= 0 ? 'text-green-400' : 'text-red-400') : (metricImprovement <= 0 ? 'text-green-400' : 'text-red-400')}">
                                 ${metricImprovement >= 0 ? '▲' : '▼'} ${Math.abs(metricImprovement).toFixed(2)}% vs original
                             </p>
                         </div>
@@ -560,7 +571,7 @@ const displayOptimizationResults = (results) => {
                         <div>
                             <p class="text-xs text-gray-400">Valor ${targetMetricLabel}</p>
                             <p class="text-2xl font-bold text-white">${formatMetricForDisplay(balancedValue, targetMetric)}</p>
-                            <p class="text-sm ${balancedImprovement >= 0 ? 'text-green-400' : 'text-red-400'}">
+                            <p class="text-sm ${isIncreaseGood(targetMetric) ? (balancedImprovement >= 0 ? 'text-green-400' : 'text-red-400') : (balancedImprovement <= 0 ? 'text-green-400' : 'text-red-400')}">
                                 ${balancedImprovement >= 0 ? '▲' : '▼'} ${Math.abs(balancedImprovement).toFixed(2)}% vs original
                             </p>
                         </div>
@@ -1072,23 +1083,26 @@ function displayOptimizationResultsInTab(results, portfolio, targetMetric) {
             const metricChange = ((metricValue - baseValue) / Math.abs(baseValue)) * 100;
             const balancedChange = ((balancedValue - baseValue) / Math.abs(baseValue)) * 100;
 
-            const formatChange = (change) => {
-                const color = change >= 0 ? 'text-green-400' : 'text-red-400';
+            const formatChange = (change, metricKey) => {
+                // For metrics where lower is better, invert the color logic
+                const isImprovement = isIncreaseGood(metricKey)
+                    ? change >= 0  // Normal: positive change is good
+                    : change <= 0; // Inverted: negative change is good (DD decrease)
+
+                const color = isImprovement ? 'text-green-400' : 'text-red-400';
                 const icon = change >= 0 ? '▲' : '▼';
                 return `<span class="${color} text-xs">${icon} ${Math.abs(change).toFixed(1)}%</span>`;
             };
 
             rows += `
-                <tr>
+                <tr class="border-b border-gray-700">
                     <td class="px-2 py-1 text-xs text-gray-300">${metricInfo.label}</td>
                     <td class="px-2 py-1 text-xs text-right text-gray-400">${formatMetricForDisplay(baseValue, metricKey)}</td>
                     <td class="px-2 py-1 text-xs text-right">
-                        <div class="text-purple-300 font-semibold">${formatMetricForDisplay(metricValue, metricKey)}</div>
-                        ${formatChange(metricChange)}
+                        ${formatMetricForDisplay(metricValue, metricKey)} ${formatChange(metricChange, metricKey)}
                     </td>
                     <td class="px-2 py-1 text-xs text-right">
-                        <div class="text-blue-300 font-semibold">${formatMetricForDisplay(balancedValue, metricKey)}</div>
-                        ${formatChange(balancedChange)}
+                        ${formatMetricForDisplay(balancedValue, metricKey)} ${formatChange(balancedChange, metricKey)}
                     </td>
                 </tr>
             `;

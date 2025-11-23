@@ -1,29 +1,30 @@
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:383: UserWarning: Valid config keys have changed in V2:
 * 'json_loads' has been removed
   warnings.warn(message, UserWarning)
-INFO:     Started server process [1063405]
+INFO:     Started server process [1065748]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8085 (Press CTRL+C to quit)
-INFO:     127.0.0.1:55612 - "HEAD / HTTP/1.1" 405 Method Not Allowed
-INFO:     127.0.0.1:55620 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55620 - "GET /src/main.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55620 - "GET /src/events.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55636 - "GET /src/modules/viewManager.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55636 - "GET /src/dom.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55620 - "GET /src/state.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55650 - "GET /src/analysis.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55666 - "GET /src/ui.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55676 - "GET /src/modules/databank.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55688 - "GET /src/modules/optimization.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55636 - "GET /src/modules/importExport.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55666 - "GET /src/modules/layout.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55620 - "GET /src/modules/notifications.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55650 - "GET /src/config.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55666 - "GET /src/utils.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55650 - "GET /src/modules/viewer.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55620 - "GET /src/modules/strategiesTable.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55620 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     Uvicorn running on http://0.0.0.0:8087 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55158 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:55166 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55166 - "GET /src/main.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55168 - "GET /src/modules/viewManager.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55166 - "GET /src/events.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55166 - "GET /src/dom.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55168 - "GET /src/state.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55170 - "GET /src/config.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55180 - "GET /src/modules/databank.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55192 - "GET /src/ui.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55166 - "GET /src/modules/optimization.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55204 - "GET /src/analysis.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55168 - "GET /src/modules/importExport.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55170 - "GET /src/modules/notifications.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55180 - "GET /src/modules/layout.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55166 - "GET /src/modules/viewer.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55168 - "GET /src/utils.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55204 - "GET /src/modules/strategiesTable.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55192 - "GET /src/modules/searchConfig.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55192 - "GET /favicon.ico HTTP/1.1" 404 Not Found
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
@@ -629,5 +630,4 @@ Received 60 strategies and benchmark with 92594 rows.
   -> Strategy 60 analysis complete.
 
 [BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 60 objetos de resultados al frontend.
-INFO:     127.0.0.1:57010 - "POST /analysis/full HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55004 - "GET /src/modules/searchConfig.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60880 - "POST /analysis/full HTTP/1.1" 200 OK

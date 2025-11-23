@@ -2,6 +2,31 @@ import { state } from '../state.js';
 import { findDatabankPortfolios } from './databank.js';
 import { dom } from '../dom.js';
 
+// Metric configuration: defines optimization direction for each metric
+const METRIC_CONFIG = {
+    // Higher is better
+    sharpeRatio: { goal: 'maximize', label: 'Sharpe Ratio' },
+    sortinoRatio: { goal: 'maximize', label: 'Sortino Ratio' },
+    totalProfit: { goal: 'maximize', label: 'Total Profit' },
+    profitFactor: { goal: 'maximize', label: 'Profit Factor' },
+    sqn: { goal: 'maximize', label: 'SQN' },
+    upi: { goal: 'maximize', label: 'UPI' },
+    captureRatio: { goal: 'maximize', label: 'Capture Ratio' },
+    winningPercentage: { goal: 'maximize', label: 'Win %' },
+    monthlyAvgProfit: { goal: 'maximize', label: 'Monthly Avg Profit' },
+    profitMaxDD_Ratio: { goal: 'maximize', label: 'Profit/DD Ratio' },
+    monthlyProfitToDollarDD: { goal: 'maximize', label: 'Monthly Profit/DD' },
+
+    // Lower is better
+    maxDrawdown: { goal: 'minimize', label: 'Max Drawdown %' },
+    maxDrawdownInDollars: { goal: 'minimize', label: 'Max Drawdown $' },
+    ulcerIndexInDollars: { goal: 'minimize', label: 'Ulcer Index $' }
+};
+
+// Export for use in other modules
+export { METRIC_CONFIG };
+
+
 /**
  * Opens the unified Search Configuration Modal.
  * @param {Array<number>} selectedIndices - Optional. Array of indices of fixed strategies.
@@ -95,11 +120,10 @@ export const openSearchConfigModal = (selectedIndices = []) => {
                 <div>
                     <label class="block text-sm font-medium text-gray-300 mb-1">Correlation Threshold</label>
                     <div class="flex items-center gap-4">
-                        <input type="range" id="search-correlation-range" min="0.1" max="1.0" step="0.05" value="${dom.correlationFilterInput ? dom.correlationFilterInput.value : 0.5}" 
+                        <input type="range" id="search-correlation-range" min="0.1" max="1.0" step="0.05" value="0.3" 
                             class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500">
-                        <span id="search-correlation-value" class="text-white font-mono bg-gray-700 px-2 py-1 rounded w-12 text-center">
-                            ${dom.correlationFilterInput ? dom.correlationFilterInput.value : 0.5}
-                        </span>
+                        <input type="number" id="search-correlation-input" min="0.1" max="1.0" step="0.05" value="0.3"
+                            class="text-white font-mono bg-gray-700 border border-gray-600 px-2 py-1 rounded w-20 text-center text-sm">
                     </div>
                     <p class="text-xs text-gray-500 mt-1">Lower values mean stricter diversity requirements.</p>
                 </div>
@@ -117,11 +141,18 @@ export const openSearchConfigModal = (selectedIndices = []) => {
                         <select id="search-metric" class="w-full bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
                             <option value="sharpeRatio">Sharpe Ratio</option>
                             <option value="sortinoRatio">Sortino Ratio</option>
-                            <option value="totalProfit">Net Profit</option>
+                            <option value="totalProfit">Total Profit</option>
                             <option value="profitFactor">Profit Factor</option>
                             <option value="sqn">SQN</option>
                             <option value="upi">UPI</option>
                             <option value="maxDrawdown">Max Drawdown %</option>
+                            <option value="maxDrawdownInDollars">Max Drawdown $</option>
+                            <option value="captureRatio">Capture Ratio</option>
+                            <option value="winningPercentage">Win %</option>
+                            <option value="monthlyAvgProfit">Monthly Avg Profit</option>
+                            <option value="profitMaxDD_Ratio">Profit/DD Ratio</option>
+                            <option value="monthlyProfitToDollarDD">Monthly Profit/DD</option>
+                            <option value="ulcerIndexInDollars">Ulcer Index $</option>
                         </select>
                     </div>
                 </div>
@@ -145,12 +176,30 @@ export const openSearchConfigModal = (selectedIndices = []) => {
     const randomCountSpan = modal.querySelector('#random-count');
 
     const correlationRange = modal.querySelector('#search-correlation-range');
-    const correlationValue = modal.querySelector('#search-correlation-value');
+    const correlationInput = modal.querySelector('#search-correlation-input');
 
     const useAllDatesCheckbox = modal.querySelector('#search-use-all-dates');
     const dateInputsDiv = modal.querySelector('#search-date-inputs');
     const startDateInput = modal.querySelector('#search-start-date');
     const endDateInput = modal.querySelector('#search-end-date');
+
+    const metricSelect = modal.querySelector('#search-metric');
+    const goalSelect = modal.querySelector('#search-goal');
+
+    // Auto-update goal when metric changes
+    metricSelect.addEventListener('change', (e) => {
+        const metric = e.target.value;
+        const config = METRIC_CONFIG[metric];
+        if (config) {
+            goalSelect.value = config.goal;
+        }
+    });
+
+    // Set initial goal based on default metric
+    const initialMetric = metricSelect.value;
+    if (METRIC_CONFIG[initialMetric]) {
+        goalSelect.value = METRIC_CONFIG[initialMetric].goal;
+    }
 
     sizeRange.addEventListener('input', (e) => {
         const val = parseInt(e.target.value);
@@ -158,8 +207,17 @@ export const openSearchConfigModal = (selectedIndices = []) => {
         if (randomCountSpan) randomCountSpan.textContent = val - selectedStrategies.length;
     });
 
+    // Sync correlation slider and input
     correlationRange.addEventListener('input', (e) => {
-        correlationValue.textContent = e.target.value;
+        correlationInput.value = e.target.value;
+    });
+
+    correlationInput.addEventListener('input', (e) => {
+        let val = parseFloat(e.target.value);
+        if (val < 0.1) val = 0.1;
+        if (val > 1.0) val = 1.0;
+        correlationInput.value = val;
+        correlationRange.value = val;
     });
 
     useAllDatesCheckbox.addEventListener('change', (e) => {
@@ -179,7 +237,7 @@ export const openSearchConfigModal = (selectedIndices = []) => {
         const config = {
             fixedIndices: selectedIndices,
             maxSize: parseInt(sizeRange.value),
-            correlationThreshold: parseFloat(correlationRange.value),
+            correlationThreshold: parseFloat(correlationInput.value),
             metric: modal.querySelector('#search-metric').value,
             goal: modal.querySelector('#search-goal').value,
             metricName: modal.querySelector('#search-metric').options[modal.querySelector('#search-metric').selectedIndex].text,
