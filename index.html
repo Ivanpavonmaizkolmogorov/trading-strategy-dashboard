@@ -266,7 +266,8 @@
                     <button
                         class="tab-btn active px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
                         data-target="databank-content">
-                        🏦 DataBank
+                        🏦 DataBank <span id="databank-count"
+                            class="ml-1 text-xs bg-gray-700 px-1.5 rounded-full hidden">0</span>
                     </button>
                     <button
                         class="tab-btn px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
@@ -277,7 +278,8 @@
                     <button
                         class="tab-btn px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
                         data-target="strategies-content">
-                        📂 Estrategias
+                        📂 Estrategias <span id="strategies-count"
+                            class="ml-1 text-xs bg-gray-700 px-1.5 rounded-full hidden">0</span>
                     </button>
                     <button
                         class="tab-btn px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
@@ -366,9 +368,26 @@
                         </div>
                     </div>
 
-                    <!-- 3. Strategies Content (Placeholder for now) -->
-                    <div id="strategies-content" class="tab-content h-full p-4 text-gray-400 text-center">
-                        <p>Gestión de estrategias individuales (Próximamente)</p>
+                    <!-- 3. Strategies Content -->
+                    <div id="strategies-content" class="tab-content hidden h-full flex flex-col">
+                        <div class="flex-1 overflow-auto">
+                            <table class="w-full text-sm text-left text-gray-300">
+                                <thead class="bg-gray-800 text-xs uppercase sticky top-0 z-10">
+                                    <tr>
+                                        <th class="px-4 py-3">Strategy Name</th>
+                                        <th class="px-4 py-3 text-right">Trades</th>
+                                        <th class="px-4 py-3 text-right">Net Profit</th>
+                                        <th class="px-4 py-3 text-right">Profit Factor</th>
+                                        <th class="px-4 py-3 text-right">Win %</th>
+                                        <th class="px-4 py-3 text-right">Max DD $</th>
+                                        <th class="px-4 py-3 text-right">Sharpe</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="strategies-table-body" class="divide-y divide-gray-700">
+                                    <!-- JS Generated -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <!-- 4. Optimization Content -->
@@ -568,42 +587,6 @@
                         <span id="benchmarkFileName" class="text-xs text-gray-500 mt-1">(date, price)</span>
                     </label>
                     <input id="benchmarkFile" type="file" class="hidden" accept=".csv">
-                </div>
-
-                <!-- Optimization Settings (Moved here from main view) -->
-                <div class="md:col-span-2 border-t border-gray-700 pt-6">
-                    <h3 class="text-lg font-semibold text-teal-400 mb-4">Parámetros de Optimización</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1">Métrica</label>
-                            <select id="optimization-metric-select"
-                                class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-sm text-white">
-                                <option value="profitFactor">Profit Factor</option>
-                                <option value="sharpeRatio">Sharpe Ratio</option>
-                                <option value="maxDrawdown">Max Drawdown %</option>
-                                <option value="netProfit">Net Profit</option>
-                                <!-- Add others as needed -->
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1">Objetivo</label>
-                            <select id="optimization-goal-select"
-                                class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-sm text-white">
-                                <option value="maximize">Maximizar</option>
-                                <option value="minimize">Minimizar</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1">Max Correlación</label>
-                            <input type="number" id="correlation-filter" value="0.3" step="0.1"
-                                class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-sm text-white">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1">Min Peso %</label>
-                            <input type="number" id="min-weight-filter" value="10"
-                                class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-sm text-white">
-                        </div>
-                    </div>
                 </div>
 
                 <div class="md:col-span-2 border-t border-gray-700 pt-6 flex justify-end gap-4">

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import json
 import asyncio, traceback, os
 import pandas as pd
@@ -22,7 +22,7 @@ class Trade(BaseModel):
     # Pydantic no las toca, eliminando el problema de raíz.
     entry_date: Optional[str] = None
     exit_date: Optional[str] = None
-    pnl: Optional[float] = None
+    pnl: Optional[Union[float, str]] = None # Allow string for "1,20"
 
     class Config:
         extra = 'allow'
@@ -145,7 +145,42 @@ async def get_full_analysis(request: FullAnalysisRequest):
     """
     print("\n--- Endpoint /analysis/full HIT ---")
     try:
-        strategies_data = [[trade.model_dump() for trade in strat if trade.pnl is not None] for strat in request.strategies_data]
+        # Helper para limpiar números
+        def clean_number(val):
+            if val is None: return None
+            if isinstance(val, (int, float)): return val
+            if isinstance(val, str):
+                val = val.strip()
+                if not val: return None
+                try:
+                    # Manejo de formatos: 1.234,56 (EU) vs 1,234.56 (US)
+                    if '.' in val and ',' in val:
+                        if val.rfind(',') > val.rfind('.'): # Último separador es coma (EU)
+                            val = val.replace('.', '').replace(',', '.')
+                        else: # Último separador es punto (US)
+                            val = val.replace(',', '')
+                    elif ',' in val:
+                        # Asumimos coma como decimal si no hay puntos
+                        val = val.replace(',', '.')
+                    return float(val)
+                except ValueError:
+                    return None
+            return None
+
+        # Procesar manualmente para convertir strings
+        strategies_data = []
+        for strat in request.strategies_data:
+            strat_trades = []
+            for trade in strat:
+                t_dict = trade.model_dump()
+                
+                # Limpiar PnL
+                t_dict['pnl'] = clean_number(t_dict.get('pnl'))
+                
+                if t_dict.get('pnl') is not None:
+                    strat_trades.append(t_dict)
+            strategies_data.append(strat_trades)
+
         benchmark_data_df = pd.DataFrame(request.benchmark_data)
         print(f"Received {len(strategies_data)} strategies and benchmark with {len(benchmark_data_df)} rows.")
 
@@ -307,6 +342,36 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
         try:
             strategies_data = [[trade.model_dump() for trade in strat if trade.pnl is not None] for strat in request.strategies_data]
             benchmark_data_df = pd.DataFrame(request.benchmark_data)
+            
+            # --- DATE FILTERING ---
+            use_all_dates = params.use_all_dates if hasattr(params, 'use_all_dates') else True
+            start_date = params.start_date if hasattr(params, 'start_date') else None
+            end_date = params.end_date if hasattr(params, 'end_date') else None
+            
+            if not use_all_dates and (start_date or end_date):
+                date_msg = f'Aplicando filtro de fechas: {start_date or "inicio"} - {end_date or "fin"}'
+                yield f"data: {json.dumps({'status': 'info', 'message': date_msg})}\n\n"
+                
+                # Filter each strategy's trades by date
+                filtered_strategies_data = []
+                for strat_trades in strategies_data:
+                    if not strat_trades:
+                        filtered_strategies_data.append([])
+                        continue
+                    
+                    df = pd.DataFrame(strat_trades)
+                    # Ensure we have a date column (exit_date is our standard)
+                    if 'exit_date' in df.columns:
+                        df['exit_date'] = pd.to_datetime(df['exit_date'], errors='coerce')
+                        
+                        if start_date:
+                            df = df[df['exit_date'] >= pd.to_datetime(start_date)]
+                        if end_date:
+                            df = df[df['exit_date'] <= pd.to_datetime(end_date)]
+                    
+                    filtered_strategies_data.append(df.to_dict('records'))
+                
+                strategies_data = filtered_strategies_data
 
             individual_analyses = []
             for i, strat_trades in enumerate(strategies_data):
@@ -333,7 +398,25 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
             min_combo_size = 2
 
             # --- LÓGICA HÍBRIDA: Exhaustiva vs. Monte Carlo ---
-            total_exhaustive_combinations = count_combinations(num_strategies, min_combo_size, max_combo_size)
+            # Si hay base_indices, reducimos el espacio de búsqueda
+            base_indices = set(params.base_indices) if params.base_indices else set()
+            available_indices = [i for i in indices if i not in base_indices]
+            
+            # Ajustar tamaños de combinación
+            # El tamaño total del portafolio será len(base_indices) + k_random
+            # Por tanto, k_random debe ser al menos max(0, min_combo_size - len(base_indices))
+            # Y como máximo max_combo_size - len(base_indices)
+            
+            effective_min_k = max(0, min_combo_size - len(base_indices))
+            effective_max_k = max(0, max_combo_size - len(base_indices))
+            
+            # Si effective_max_k es 0, significa que solo podemos formar el portafolio base (si cumple min_combo_size)
+            
+            if not available_indices and effective_max_k > 0:
+                 # Caso borde: No hay más estrategias para añadir, pero se pide añadir más
+                 effective_max_k = 0
+
+            total_exhaustive_combinations = count_combinations(len(available_indices), effective_min_k, effective_max_k)
             use_monte_carlo = total_exhaustive_combinations > params.search_threshold
 
             total_iterations = 0
@@ -367,19 +450,32 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                     await asyncio.sleep(0.01)
 
                 # Generar una combinación
+                combo_indices = []
                 if use_monte_carlo:
-                    k = random.randint(min_combo_size, max_combo_size)
-                    if k > len(indices): continue
-                    combo = tuple(random.sample(indices, k))
+                    # Elegir tamaño aleatorio para la parte variable
+                    # Si effective_max_k es 0, k será 0
+                    if effective_max_k > 0:
+                        k = random.randint(effective_min_k, effective_max_k)
+                        if k > len(available_indices): continue
+                        combo_indices = random.sample(available_indices, k)
+                    else:
+                        combo_indices = []
                 else:
                     # Para la búsqueda exhaustiva, necesitamos un generador
                     if 'combinations_generator' not in locals():
-                        combinations_generator = get_combinations(indices, min_combo_size, max_combo_size)
+                        combinations_generator = get_combinations(available_indices, effective_min_k, effective_max_k)
                     try:
-                        combo = next(combinations_generator)
+                        combo_indices = list(next(combinations_generator))
                     except StopIteration:
                         # Búsqueda exhaustiva completada
                         break # Salir del bucle while
+                
+                # Combinar fijos + variables
+                combo = tuple(sorted(list(base_indices) + combo_indices))
+                
+                # Si el combo resultante es menor que el mínimo global requerido (por si acaso)
+                if len(combo) < min_combo_size:
+                    continue
 
                 is_valid = True
                 for i1_idx, i1 in enumerate(combo):

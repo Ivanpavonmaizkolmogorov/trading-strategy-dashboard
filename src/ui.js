@@ -1,10 +1,11 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
-import { updateDatabankDisplay, savePortfolioFromDatabank } from './modules/databank.js';
+import { updateDatabankDisplay, savePortfolioFromDatabank, updateDatabankCount } from './modules/databank.js';
 import { renderViewerForActiveTab } from './modules/viewer.js'; // NUEVO
 import { openOptimizationModal } from './modules/optimization.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
+import { renderStrategiesTable as renderStrategiesTableModule } from './modules/strategiesTable.js';
 
 /**
  * Actualiza la lista de archivos de estrategia cargados en la UI.
@@ -715,4 +716,12 @@ export const closeChartClickModal = () => {
             modal.classList.add('hidden');
         }, 300); // Coincide con la duración de la transición
     }
+};
+
+/**
+ * Renderiza la tabla de estrategias individuales.
+ */
+export const renderStrategiesTable = () => {
+    const tableBody = document.getElementById('strategies-table-body');
+    renderStrategiesTableModule();
 };

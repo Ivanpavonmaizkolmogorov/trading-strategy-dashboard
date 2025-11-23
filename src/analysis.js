@@ -246,13 +246,26 @@ export const reAnalyzeAllData = async () => {
     }
 
     // Ahora, procesamos las estrategias individuales en orden.
-    // Esto asegura que el 'originalIndex' sea correcto.
-    strategyAnalyses.forEach((analysis, index) => {
-        if (index < state.loadedStrategyFiles.length) {
+    // El backend devuelve las estrategias en el mismo orden que se enviaron,
+    // pero filtradas si fallaron. Sin embargo, 'strategyAnalyses' solo contiene las que tuvieron éxito.
+    // Debemos tener cuidado de no desalinear los índices.
+
+    // MEJORA: Asumimos que el backend devuelve las estrategias en orden secuencial
+    // correspondiente a state.loadedStrategyFiles.
+    // Si el backend devuelve menos resultados que estrategias, significa que algunas fallaron.
+    // Lo ideal sería que el backend devolviera el índice original, pero por ahora
+    // haremos un mapeo directo asumiendo orden, y si faltan, se quedarán sin métricas.
+
+    strategyAnalyses.forEach((analysis, i) => {
+        // Si el backend devuelve 'original_index' o similar, usarlo.
+        // Si no, asumimos orden secuencial 0, 1, 2...
+        const targetIndex = i;
+
+        if (state.loadedStrategyFiles[targetIndex]) {
             allAnalysisResults.push({
-                name: state.loadedStrategyFiles[index].name.replace('.csv', ''),
-                analysis: analysis,
-                originalIndex: index
+                name: state.loadedStrategyFiles[targetIndex].name,
+                analysis: analysis.metrics || analysis, // Support both structures
+                originalIndex: targetIndex
             });
         }
     });

@@ -37,10 +37,18 @@ const setDatabankStatus = (status, message = '') => {
     }
 };
 
+export const updateDatabankCount = () => {
+    const countBadge = document.getElementById('databank-count');
+    if (countBadge) {
+        countBadge.textContent = state.databankPortfolios.length;
+        countBadge.classList.remove('hidden');
+    }
+};
+
 /**
  * Inicia la búsqueda de portafolios en el DataBank.
  */
-export const findDatabankPortfolios = async () => {
+export const findDatabankPortfolios = async (customConfig = {}) => {
     if (state.rawStrategiesData.length < 2) {
         displayError("Necesitas al menos 2 estrategias cargadas para buscar portafolios.");
         return;
@@ -75,13 +83,18 @@ export const findDatabankPortfolios = async () => {
         strategies_data: state.rawStrategiesData,
         benchmark_data: state.rawBenchmarkData,
         params: {
-            metric_to_optimize_key: dom.optimizationMetricSelect.value,
-            optimization_goal: dom.optimizationGoalSelect.value,
-            correlation_threshold: parseFloat(dom.correlationFilterInput.value),
-            max_size: dom.databankSizeInput ? parseInt(dom.databankSizeInput.value, 10) : 20, // Default: 20
-            base_indices: Array.from(state.selectedPortfolioIndices),
-            metric_name: dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text,
+            metric_to_optimize_key: customConfig.metric || dom.optimizationMetricSelect.value,
+            optimization_goal: customConfig.goal || dom.optimizationGoalSelect.value,
+            correlation_threshold: customConfig.correlationThreshold !== undefined
+                ? customConfig.correlationThreshold
+                : parseFloat(dom.correlationFilterInput.value),
+            max_size: customConfig.maxSize || (dom.databankSizeInput ? parseInt(dom.databankSizeInput.value, 10) : 20),
+            base_indices: customConfig.fixedIndices || Array.from(state.selectedPortfolioIndices),
+            metric_name: customConfig.metricName || dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text,
             search_threshold: dom.searchThresholdInput ? parseInt(dom.searchThresholdInput.value, 10) : 500000, // Default: 500000
+            use_all_dates: customConfig.useAllDates !== undefined ? customConfig.useAllDates : true,
+            start_date: customConfig.startDate || null,
+            end_date: customConfig.endDate || null
         }
     };
 
@@ -243,6 +256,7 @@ const addToDatabankIfBetter = (portfolioData, maxSize) => {
  * Actualiza la tabla del DataBank en la UI.
  */
 export const updateDatabankDisplay = () => {
+    updateDatabankCount();
     if (state.databankPortfolios.length === 0) {
         dom.databankEmptyRow.classList.remove('hidden');
         dom.databankTableBody.innerHTML = '';

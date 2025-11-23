@@ -66,7 +66,12 @@ export const parseCsv = (file) => {
             header: true, skipEmptyLines: true, dynamicTyping: true,
             transformHeader: h => {
                 const header = h.trim().toLowerCase();
-                const map = { 'open time': 'entry_date', 'close time': 'exit_date', 'profit/loss': 'pnl', 'time': 'date', 'fecha': 'date', 'gmt time': 'date', 'timestamp': 'date', 'datetime': 'date', 'close': 'price', 'precio': 'price', 'cierre': 'price', 'last': 'price', 'value': 'price', 'open price': 'price', 'close price': 'price' };
+                const map = {
+                    'open time': 'entry_date', 'close time': 'exit_date',
+                    'profit/loss': 'pnl', 'profit': 'pnl', 'net profit': 'pnl', 'gain': 'pnl', 'p/l': 'pnl',
+                    'time': 'date', 'fecha': 'date', 'gmt time': 'date', 'timestamp': 'date', 'datetime': 'date',
+                    'close': 'price', 'precio': 'price', 'cierre': 'price', 'last': 'price', 'value': 'price', 'open price': 'price', 'close price': 'price'
+                };
                 return map[header] || header;
             },
             complete: (results) => {
@@ -99,12 +104,16 @@ export const destroyAllCharts = () => {
 };
 
 export const formatMetricForDisplay = (value, metricName) => {
-    const isPercent = ['maxDrawdown', 'winningPercentage', 'upsideCapture', 'downsideCapture'].includes(metricName) || (metricName && metricName.toLowerCase().includes('%'));
-    // MEJORA: Comprobación más robusta para valores nulos, indefinidos o no finitos.
-    if (value === null || typeof value === 'undefined' || !isFinite(value)) return '∞';
+    if (value === null || typeof value === 'undefined') return '-';
+    if (Number.isNaN(value)) return 'N/A';
+    if (!Number.isFinite(value)) return '∞';
 
-    if (!isFinite(value)) return '∞';
+    const isPercent = ['maxDrawdown', 'winningPercentage', 'upsideCapture', 'downsideCapture'].includes(metricName) || (metricName && metricName.toLowerCase().includes('%'));
+
     if (isPercent) return `${value.toFixed(2)}%`;
-    if (value > 1000) return value.toFixed(0);
-    return value.toFixed(2);
+
+    // Format with space as thousands separator
+    // If > 1000, no decimals. Else 2 decimals.
+    const decimals = Math.abs(value) > 1000 ? 0 : 2;
+    return value.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 };

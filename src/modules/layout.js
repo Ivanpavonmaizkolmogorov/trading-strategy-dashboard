@@ -1,5 +1,7 @@
 import { dom } from '../dom.js';
 import { renderViewerForActiveTab } from './viewer.js';
+import { renderStrategiesTable } from '../ui.js';
+import { initStrategiesTable } from './strategiesTable.js';
 
 /**
  * Inicializa la lógica del layout: Sidebar, Tabs y Resizer.
@@ -63,6 +65,12 @@ const initBottomPanelTabs = () => {
             if (targetContent) {
                 targetContent.classList.remove('hidden');
                 targetContent.classList.add('active', 'flex');
+
+                // Render specific content if needed
+                if (targetId === 'strategies-content') {
+                    initStrategiesTable(); // Ensure controls are injected and config loaded
+                    renderStrategiesTable();
+                }
             }
 
             // 5. Update viewer chart based on active tab
@@ -124,12 +132,20 @@ const initPanelResizer = () => {
     const resetBtn = document.getElementById('resize-reset');
     const maxBottomBtn = document.getElementById('resize-max-bottom');
 
+    // Helper to trigger window resize for Chart.js update
+    const triggerResize = () => {
+        setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+        }, 50); // Small delay to allow transition
+    };
+
     if (maxChartBtn) {
         maxChartBtn.addEventListener('mousedown', (e) => e.stopPropagation()); // Prevent drag start
         maxChartBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             // Maximize Chart = Minimize Bottom Panel
             sourcePanel.style.height = '40px'; // Min height for tabs
+            triggerResize();
         });
     }
 
@@ -139,6 +155,7 @@ const initPanelResizer = () => {
             e.stopPropagation();
             // Reset to default (approx 40% or 320px)
             sourcePanel.style.height = '320px';
+            triggerResize();
         });
     }
 
@@ -149,6 +166,7 @@ const initPanelResizer = () => {
             // Maximize Bottom Panel = Max height
             const containerHeight = document.querySelector('main').clientHeight;
             sourcePanel.style.height = `${containerHeight - 100}px`; // Leave space for header/chart
+            triggerResize();
         });
     }
 };

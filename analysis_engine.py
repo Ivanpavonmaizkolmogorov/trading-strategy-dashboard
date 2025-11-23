@@ -13,12 +13,49 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     # Asegurarse de que las fechas son datetime objects y están en el índice
     # --- CORRECCIÓN: Convertir AMBAS columnas de fecha a datetime, pero solo si no lo son ya ---
     # El backend a veces recibe fechas como strings y otras como Timestamps. Esta línea unifica el tipo.
-    # --- CORRECCIÓN FINALÍSIMA: Especificar el formato de fecha exacto ---
-    # El formato 'YYYY.MM.DD HH:MM:SS' no es estándar. Debemos indicárselo a pandas.
-    date_format = '%Y.%m.%d %H:%M:%S'
-    trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date'], format=date_format, errors='coerce') 
-    trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date'], format=date_format, errors='coerce')
+    
+    # DEBUG LOGS
+    print(f"--- [DEBUG ENGINE] Processing strategy. Rows: {len(trades_df)}")
+    if not trades_df.empty:
+        print(f"--- [DEBUG ENGINE] Sample Entry Date (Raw): {trades_df['entry_date'].iloc[0]}")
+        print(f"--- [DEBUG ENGINE] Sample PnL (Raw): {trades_df['pnl'].iloc[0]} (Type: {type(trades_df['pnl'].iloc[0])})")
+
+    # 1. Ensure PnL is numeric (handle commas for European format)
+    if trades_df['pnl'].dtype == object:
+        trades_df['pnl'] = trades_df['pnl'].astype(str).str.replace(',', '.', regex=False)
+    trades_df['pnl'] = pd.to_numeric(trades_df['pnl'], errors='coerce')
+
+    # 2. Robust Date Parsing
+    for col in ['entry_date', 'exit_date']:
+        # Try standard format first
+        try:
+            trades_df[col] = pd.to_datetime(trades_df[col], format='%Y.%m.%d %H:%M:%S', errors='raise')
+        except (ValueError, TypeError):
+            # Try auto-inference with dayfirst=False (default)
+            try:
+                trades_df[col] = pd.to_datetime(trades_df[col], errors='raise')
+            except (ValueError, TypeError):
+                # Try with dayfirst=True (common in EU)
+                trades_df[col] = pd.to_datetime(trades_df[col], dayfirst=True, errors='coerce')
+
+    # Check how many valid dates we have
+    valid_dates = trades_df['entry_date'].notna().sum()
+    print(f"--- [DEBUG ENGINE] Valid Entry Dates after parsing: {valid_dates}/{len(trades_df)}")
+    
+    # DEBUG: Check PnL validity
+    valid_pnl = trades_df['pnl'].notna().sum()
+    print(f"--- [DEBUG ENGINE] Valid PnL after parsing: {valid_pnl}/{len(trades_df)}")
+
+    before_drop = len(trades_df)
     trades_df = trades_df.dropna(subset=['entry_date', 'exit_date', 'pnl'])
+    after_drop = len(trades_df)
+    
+    print(f"--- [DEBUG ENGINE] Rows before drop: {before_drop}, After drop: {after_drop}")
+    if after_drop == 0 and before_drop > 0:
+        print("--- [DEBUG ENGINE] ⚠️ ALL ROWS DROPPED! Checking why...")
+        temp_df = trades_df_original.copy() if 'trades_df_original' in locals() else trades_df # We don't have original here easily, but let's check what failed
+        # Re-check logic
+        pass # Just a marker
     
     # --- CORRECCIÓN: Volvemos a un capital inicial fijo, como debe ser. ---
     initial_capital = 10000
@@ -263,6 +300,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "totalTrades": total_trades,
         "maxStagnationDays": max_stagnation_days,
         "sqn": sqn,
+        "totalProfit": total_profit, # <-- Added missing metric
         # Datos para gráficos
         "lorenzData": lorenz_data,
         "chartData": {

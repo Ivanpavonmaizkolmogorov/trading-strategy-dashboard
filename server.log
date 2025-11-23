@@ -1,147 +1,58 @@
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:383: UserWarning: Valid config keys have changed in V2:
 * 'json_loads' has been removed
   warnings.warn(message, UserWarning)
-INFO:     Started server process [1043625]
+INFO:     Started server process [1063405]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8059 (Press CTRL+C to quit)
-INFO:     127.0.0.1:47580 - "HEAD / HTTP/1.1" 405 Method Not Allowed
-INFO:     127.0.0.1:47584 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47584 - "GET /src/main.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47584 - "GET /src/events.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47600 - "GET /src/modules/viewManager.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47600 - "GET /src/dom.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47584 - "GET /src/state.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47612 - "GET /src/config.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47620 - "GET /src/modules/databank.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47634 - "GET /src/ui.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47648 - "GET /src/analysis.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47600 - "GET /src/modules/optimization.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47634 - "GET /src/modules/notifications.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47612 - "GET /src/modules/layout.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47584 - "GET /src/modules/importExport.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47600 - "GET /src/modules/viewer.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47648 - "GET /src/utils.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:47648 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+INFO:     Uvicorn running on http://0.0.0.0:8085 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55612 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:55620 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55620 - "GET /src/main.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55620 - "GET /src/events.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55636 - "GET /src/modules/viewManager.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55636 - "GET /src/dom.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55620 - "GET /src/state.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55650 - "GET /src/analysis.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55666 - "GET /src/ui.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55676 - "GET /src/modules/databank.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55688 - "GET /src/modules/optimization.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55636 - "GET /src/modules/importExport.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55666 - "GET /src/modules/layout.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55620 - "GET /src/modules/notifications.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55650 - "GET /src/config.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55666 - "GET /src/utils.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55650 - "GET /src/modules/viewer.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55620 - "GET /src/modules/strategiesTable.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55620 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
 
 --- Endpoint /analysis/full HIT ---
@@ -206,160 +117,517 @@ Received 60 strategies and benchmark with 92594 rows.
   Processing strategy 58/60...
   Processing strategy 59/60...
   Processing strategy 60/60...
+--- [DEBUG ENGINE] Processing strategy. Rows: 1199
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 75.86 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1199/1199
+--- [DEBUG ENGINE] Valid PnL after parsing: 1199/1199
+--- [DEBUG ENGINE] Rows before drop: 1199, After drop: 1199
   -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1182
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 211.83 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1182/1182
+--- [DEBUG ENGINE] Valid PnL after parsing: 1182/1182
+--- [DEBUG ENGINE] Rows before drop: 1182, After drop: 1182
   -> Strategy 2 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 809
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 65.98 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 809/809
+--- [DEBUG ENGINE] Valid PnL after parsing: 809/809
+--- [DEBUG ENGINE] Rows before drop: 809, After drop: 809
   -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 805
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 84.86 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 805/805
+--- [DEBUG ENGINE] Valid PnL after parsing: 805/805
+--- [DEBUG ENGINE] Rows before drop: 805, After drop: 805
   -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 637
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.7 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 637/637
+--- [DEBUG ENGINE] Valid PnL after parsing: 637/637
+--- [DEBUG ENGINE] Rows before drop: 637, After drop: 637
   -> Strategy 5 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1016
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 199.07 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1016/1016
+--- [DEBUG ENGINE] Valid PnL after parsing: 1016/1016
+--- [DEBUG ENGINE] Rows before drop: 1016, After drop: 1016
   -> Strategy 6 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1004
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 112.0 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1004/1004
+--- [DEBUG ENGINE] Valid PnL after parsing: 1004/1004
+--- [DEBUG ENGINE] Rows before drop: 1004, After drop: 1004
   -> Strategy 7 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 905
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 131.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 905/905
+--- [DEBUG ENGINE] Valid PnL after parsing: 905/905
+--- [DEBUG ENGINE] Rows before drop: 905, After drop: 905
   -> Strategy 8 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 868
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 136.17 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 868/868
+--- [DEBUG ENGINE] Valid PnL after parsing: 868/868
+--- [DEBUG ENGINE] Rows before drop: 868, After drop: 868
   -> Strategy 9 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1473
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 49.1 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1473/1473
+--- [DEBUG ENGINE] Valid PnL after parsing: 1473/1473
+--- [DEBUG ENGINE] Rows before drop: 1473, After drop: 1473
   -> Strategy 10 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1368
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 27.62 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1368/1368
+--- [DEBUG ENGINE] Valid PnL after parsing: 1368/1368
+--- [DEBUG ENGINE] Rows before drop: 1368, After drop: 1368
   -> Strategy 11 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
   -> Strategy 12 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
   -> Strategy 13 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1298
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.07 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1298/1298
+--- [DEBUG ENGINE] Valid PnL after parsing: 1298/1298
+--- [DEBUG ENGINE] Rows before drop: 1298, After drop: 1298
   -> Strategy 14 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1282
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -99.27 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1282/1282
+--- [DEBUG ENGINE] Valid PnL after parsing: 1282/1282
+--- [DEBUG ENGINE] Rows before drop: 1282, After drop: 1282
   -> Strategy 15 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1305
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.92 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1305/1305
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Valid PnL after parsing: 1305/1305
+--- [DEBUG ENGINE] Rows before drop: 1305, After drop: 1305
   -> Strategy 16 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1290
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -36.2 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1290/1290
+--- [DEBUG ENGINE] Valid PnL after parsing: 1290/1290
+--- [DEBUG ENGINE] Rows before drop: 1290, After drop: 1290
   -> Strategy 17 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1603
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 168.53 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1603/1603
+--- [DEBUG ENGINE] Valid PnL after parsing: 1603/1603
+--- [DEBUG ENGINE] Rows before drop: 1603, After drop: 1603
   -> Strategy 18 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 2100
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.83 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 2100/2100
+--- [DEBUG ENGINE] Valid PnL after parsing: 2100/2100
+--- [DEBUG ENGINE] Rows before drop: 2100, After drop: 2100
   -> Strategy 19 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 882
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 00:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -102.71 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 882/882
+--- [DEBUG ENGINE] Valid PnL after parsing: 882/882
+--- [DEBUG ENGINE] Rows before drop: 882, After drop: 882
   -> Strategy 20 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1974
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -36.91 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1974/1974
+--- [DEBUG ENGINE] Valid PnL after parsing: 1974/1974
+--- [DEBUG ENGINE] Rows before drop: 1974, After drop: 1974
   -> Strategy 21 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 921
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 56.03 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 921/921
+--- [DEBUG ENGINE] Valid PnL after parsing: 921/921
+--- [DEBUG ENGINE] Rows before drop: 921, After drop: 921
   -> Strategy 22 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 931
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 101.21 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 931/931
+--- [DEBUG ENGINE] Valid PnL after parsing: 931/931
+--- [DEBUG ENGINE] Rows before drop: 931, After drop: 931
   -> Strategy 23 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 598
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 36.11 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 598/598
+--- [DEBUG ENGINE] Valid PnL after parsing: 598/598
+--- [DEBUG ENGINE] Rows before drop: 598, After drop: 598
   -> Strategy 24 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 601
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 50.33 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 601/601
+--- [DEBUG ENGINE] Valid PnL after parsing: 601/601
+--- [DEBUG ENGINE] Rows before drop: 601, After drop: 601
   -> Strategy 25 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1113
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.15 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 70.98 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1113/1113
+--- [DEBUG ENGINE] Valid PnL after parsing: 1113/1113
+--- [DEBUG ENGINE] Rows before drop: 1113, After drop: 1113
   -> Strategy 26 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1119
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.15 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.39 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1119/1119
+--- [DEBUG ENGINE] Valid PnL after parsing: 1119/1119
+--- [DEBUG ENGINE] Rows before drop: 1119, After drop: 1119
   -> Strategy 27 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1573
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -99.14 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1573/1573
+--- [DEBUG ENGINE] Valid PnL after parsing: 1573/1573
+--- [DEBUG ENGINE] Rows before drop: 1573, After drop: 1573
   -> Strategy 28 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 2344
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 20:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.27 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 2344/2344
+--- [DEBUG ENGINE] Valid PnL after parsing: 2344/2344
+--- [DEBUG ENGINE] Rows before drop: 2344, After drop: 2344
   -> Strategy 29 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1883
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -102.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1883/1883
+--- [DEBUG ENGINE] Valid PnL after parsing: 1883/1883
+--- [DEBUG ENGINE] Rows before drop: 1883, After drop: 1883
   -> Strategy 30 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1387
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.27 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1387/1387
+--- [DEBUG ENGINE] Valid PnL after parsing: 1387/1387
+--- [DEBUG ENGINE] Rows before drop: 1387, After drop: 1387
   -> Strategy 31 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1412
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.46 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1412/1412
+--- [DEBUG ENGINE] Valid PnL after parsing: 1412/1412
+--- [DEBUG ENGINE] Rows before drop: 1412, After drop: 1412
   -> Strategy 32 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1394
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -99.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1394/1394
+--- [DEBUG ENGINE] Valid PnL after parsing: 1394/1394
+--- [DEBUG ENGINE] Rows before drop: 1394, After drop: 1394
   -> Strategy 33 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1418
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.86 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1418/1418
+--- [DEBUG ENGINE] Valid PnL after parsing: 1418/1418
+--- [DEBUG ENGINE] Rows before drop: 1418, After drop: 1418
   -> Strategy 34 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 989
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 00:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 35.49 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 989/989
+--- [DEBUG ENGINE] Valid PnL after parsing: 989/989
+--- [DEBUG ENGINE] Rows before drop: 989, After drop: 989
   -> Strategy 35 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 709
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 121.24 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 709/709
+--- [DEBUG ENGINE] Valid PnL after parsing: 709/709
+--- [DEBUG ENGINE] Rows before drop: 709, After drop: 709
   -> Strategy 36 analysis complete.
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Processing strategy. Rows: 1469
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -25.37 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1469/1469
+--- [DEBUG ENGINE] Valid PnL after parsing: 1469/1469
+--- [DEBUG ENGINE] Rows before drop: 1469, After drop: 1469
   -> Strategy 37 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1278
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 68.56 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1278/1278
+--- [DEBUG ENGINE] Valid PnL after parsing: 1278/1278
+--- [DEBUG ENGINE] Rows before drop: 1278, After drop: 1278
   -> Strategy 38 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1289
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 41.57 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1289/1289
+--- [DEBUG ENGINE] Valid PnL after parsing: 1289/1289
+--- [DEBUG ENGINE] Rows before drop: 1289, After drop: 1289
   -> Strategy 39 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1278
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 45.18 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1278/1278
+--- [DEBUG ENGINE] Valid PnL after parsing: 1278/1278
+--- [DEBUG ENGINE] Rows before drop: 1278, After drop: 1278
   -> Strategy 40 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1315
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 79.52 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1315/1315
+--- [DEBUG ENGINE] Valid PnL after parsing: 1315/1315
+--- [DEBUG ENGINE] Rows before drop: 1315, After drop: 1315
   -> Strategy 41 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1539
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.51 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1539/1539
+--- [DEBUG ENGINE] Valid PnL after parsing: 1539/1539
+--- [DEBUG ENGINE] Rows before drop: 1539, After drop: 1539
   -> Strategy 42 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1337
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
+--- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
+--- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
   -> Strategy 43 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 724
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 20:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 207.52 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 724/724
+--- [DEBUG ENGINE] Valid PnL after parsing: 724/724
+--- [DEBUG ENGINE] Rows before drop: 724, After drop: 724
   -> Strategy 44 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1382
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 00:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 63.14 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1382/1382
+--- [DEBUG ENGINE] Valid PnL after parsing: 1382/1382
+--- [DEBUG ENGINE] Rows before drop: 1382, After drop: 1382
   -> Strategy 45 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1402
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 00:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 67.65 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1402/1402
+--- [DEBUG ENGINE] Valid PnL after parsing: 1402/1402
+--- [DEBUG ENGINE] Rows before drop: 1402, After drop: 1402
   -> Strategy 46 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 504
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 19.52 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 504/504
+--- [DEBUG ENGINE] Valid PnL after parsing: 504/504
+--- [DEBUG ENGINE] Rows before drop: 504, After drop: 504
   -> Strategy 47 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1906
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -96.55 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1906/1906
+--- [DEBUG ENGINE] Valid PnL after parsing: 1906/1906
+--- [DEBUG ENGINE] Rows before drop: 1906, After drop: 1906
   -> Strategy 48 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1306
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -74.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1306/1306
+--- [DEBUG ENGINE] Valid PnL after parsing: 1306/1306
+--- [DEBUG ENGINE] Rows before drop: 1306, After drop: 1306
   -> Strategy 49 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1047
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -36.2 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1047/1047
+--- [DEBUG ENGINE] Valid PnL after parsing: 1047/1047
+--- [DEBUG ENGINE] Rows before drop: 1047, After drop: 1047
   -> Strategy 50 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1038
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.01 10:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -43.72 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1038/1038
+--- [DEBUG ENGINE] Valid PnL after parsing: 1038/1038
+--- [DEBUG ENGINE] Rows before drop: 1038, After drop: 1038
   -> Strategy 51 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 538
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.99 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 538/538
+--- [DEBUG ENGINE] Valid PnL after parsing: 538/538
+--- [DEBUG ENGINE] Rows before drop: 538, After drop: 538
   -> Strategy 52 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
   -> Strategy 53 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 523
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 17:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 139.23 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 523/523
+--- [DEBUG ENGINE] Valid PnL after parsing: 523/523
+--- [DEBUG ENGINE] Rows before drop: 523, After drop: 523
   -> Strategy 54 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 635
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.05 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 99.8 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 635/635
+--- [DEBUG ENGINE] Valid PnL after parsing: 635/635
+--- [DEBUG ENGINE] Rows before drop: 635, After drop: 635
   -> Strategy 55 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 592
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.05 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 107.01 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 592/592
+--- [DEBUG ENGINE] Valid PnL after parsing: 592/592
+--- [DEBUG ENGINE] Rows before drop: 592, After drop: 592
   -> Strategy 56 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 740
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:174: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Sample PnL (Raw): 218.22 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 740/740
+--- [DEBUG ENGINE] Valid PnL after parsing: 740/740
+--- [DEBUG ENGINE] Rows before drop: 740, After drop: 740
   -> Strategy 57 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 727
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 210.79 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 727/727
+--- [DEBUG ENGINE] Valid PnL after parsing: 727/727
+--- [DEBUG ENGINE] Rows before drop: 727, After drop: 727
   -> Strategy 58 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 742
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
+--- [DEBUG ENGINE] Valid PnL after parsing: 742/742
+--- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
   -> Strategy 59 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 634
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.05 14:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 62.13 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 634/634
+--- [DEBUG ENGINE] Valid PnL after parsing: 634/634
+--- [DEBUG ENGINE] Rows before drop: 634, After drop: 634
   -> Strategy 60 analysis complete.
 
 [BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 60 objetos de resultados al frontend.
-INFO:     127.0.0.1:36682 - "POST /analysis/full HTTP/1.1" 200 OK
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:137: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-
---- Endpoint /analysis/optimize-portfolio HIT ---
---- [OPTIMIZE-LOG] 1. Análisis base completado. ¿Métricas obtenidas?: True
---- [OPTIMIZE-LOG] 1.1. Métricas base: Ret/DD=33.29649086181733, MaxDD$=658.6374999999935
---- [OPTIMIZE-LOG] 2. Número de simulaciones a ejecutar: 100
---- [OPTIMIZE-LOG] 3. Optimización finalizada. Preparando respuesta final.
---- [OPTIMIZE-LOG] 4. Respuesta enviada al frontend.
-INFO:     127.0.0.1:46264 - "POST /analysis/optimize-portfolio HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57010 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55004 - "GET /src/modules/searchConfig.js HTTP/1.1" 200 OK
