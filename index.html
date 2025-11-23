@@ -81,6 +81,21 @@
             font-size: 0.7em;
         }
 
+        /* Slow Spin Animation for Gear Icon */
+        @keyframes spin-slow {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .animate-spin-slow {
+            animation: spin-slow 3s linear infinite;
+        }
+
         /* Sidebar Tooltip */
         .sidebar-tooltip {
             position: absolute;
@@ -228,8 +243,20 @@
 
             <!-- RESIZER HANDLE -->
             <div id="panel-resizer"
-                class="h-1.5 bg-gray-800 border-y border-gray-700 cursor-row-resize flex items-center justify-center z-20 flex-shrink-0">
-                <div class="w-8 h-0.5 bg-gray-500 rounded-full"></div>
+                class="h-1.5 bg-gray-800 border-y border-gray-700 cursor-row-resize flex items-center justify-center z-20 flex-shrink-0 relative group">
+                <!-- Control Pill (Visible on hover or always small) -->
+                <div class="absolute flex items-center gap-2 bg-gray-800 border border-gray-600 rounded-full px-2 py-0.5 shadow-sm transition-all opacity-50 group-hover:opacity-100 hover:!opacity-100"
+                    style="height: 20px;">
+                    <button id="resize-max-chart"
+                        class="text-[10px] leading-none text-gray-400 hover:text-purple-400 transition-colors p-0.5"
+                        title="Maximize Chart">▲</button>
+                    <button id="resize-reset"
+                        class="text-[10px] leading-none text-gray-400 hover:text-blue-400 transition-colors p-0.5"
+                        title="Reset View">●</button>
+                    <button id="resize-max-bottom"
+                        class="text-[10px] leading-none text-gray-400 hover:text-purple-400 transition-colors p-0.5"
+                        title="Maximize Bottom">▼</button>
+                </div>
             </div>
 
             <!-- SOURCE PANEL (Bottom Panel - Dockable) -->
@@ -252,6 +279,11 @@
                         data-target="strategies-content">
                         📂 Estrategias
                     </button>
+                    <button
+                        class="tab-btn px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
+                        data-target="optimization-content">
+                        ⚙️ Optimization
+                    </button>
 
                     <div class="flex-1"></div>
 
@@ -263,9 +295,23 @@
                                 class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold py-1 px-2 rounded">
                                 🔍 Buscar
                             </button>
+                            <button id="pause-search-btn"
+                                class="bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-bold py-1 px-2 rounded"
+                                disabled>
+                                ⏸️ Pausar
+                            </button>
+                            <button id="stop-search-btn"
+                                class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-1 px-2 rounded"
+                                disabled>
+                                ⏹️ Detener
+                            </button>
+                            <button id="clear-databank-btn"
+                                class="bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1 px-2 rounded">
+                                🗑️ Limpiar
+                            </button>
                             <button id="databank-save-selected-btn"
                                 class="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold py-1 px-2 rounded">
-                                Guardar Sel.
+                                💾 Guardar Sel.
                             </button>
                         </div>
                     </div>
@@ -276,6 +322,19 @@
 
                     <!-- 1. DataBank Content -->
                     <div id="databank-content" class="tab-content active h-full flex flex-col">
+
+                        <!-- Status Indicator (visible durante búsquedas) -->
+                        <div id="databank-status-bar" class="hidden bg-gray-800/90 border-b border-gray-700 px-4 py-2">
+                            <div class="flex items-center gap-3">
+                                <!-- Icon Area -->
+                                <div id="databank-status-icon" class="w-5 h-5 flex items-center justify-center">
+                                    <!-- Icons will be injected here -->
+                                </div>
+                                <!-- Message -->
+                                <span id="databank-status-text" class="text-sm text-gray-300"></span>
+                            </div>
+                        </div>
+
                         <div class="flex-1 overflow-auto">
                             <table class="w-full text-sm text-left text-gray-300">
                                 <thead class="bg-gray-800 text-xs uppercase sticky top-0 z-10"
@@ -310,6 +369,167 @@
                     <!-- 3. Strategies Content (Placeholder for now) -->
                     <div id="strategies-content" class="tab-content h-full p-4 text-gray-400 text-center">
                         <p>Gestión de estrategias individuales (Próximamente)</p>
+                    </div>
+
+                    <!-- 4. Optimization Content -->
+                    <div id="optimization-content" class="tab-content hidden h-full overflow-y-auto bg-gray-850">
+                        <div class="p-4 space-y-4">
+                            <!-- Portfolio Info -->
+                            <div id="opt-portfolio-info" class="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                                <h3 class="text-sm font-semibold text-purple-400 mb-2 flex items-center gap-2">
+                                    <span class="text-lg">⚙️</span>
+                                    <span id="opt-portfolio-name">Portfolio Optimizer</span>
+                                </h3>
+
+                                <!-- Portfolio Selector (for direct tab access) -->
+                                <div id="opt-portfolio-selector" class="mb-2">
+                                    <label class="block text-xs text-gray-400 mb-1">Select Portfolio:</label>
+                                    <select id="opt-portfolio-dropdown"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white">
+                                        <option value="">-- Choose a portfolio --</option>
+                                        <!-- Populated dynamically -->
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">💡 Tip: Or click "Optimizar" button in Saved
+                                        Portfolios table</p>
+                                </div>
+
+                                <div id="opt-portfolio-strategies" class="text-xs text-gray-400">
+                                    <!-- Populated dynamically -->
+                                </div>
+                            </div>
+
+                            <!-- Configuration -->
+                            <div id="opt-config-section" class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                                <h4 class="text-sm font-semibold text-white mb-3">Configuration</h4>
+
+                                <div class="grid grid-cols-2 gap-3">
+                                    <!-- Target Metric -->
+                                    <div>
+                                        <label class="block text-xs text-gray-400 mb-1">Target Metric</label>
+                                        <select id="opt-target-metric"
+                                            class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white">
+                                            <option value="sortinoRatio">Sortino Ratio</option>
+                                            <option value="sharpeRatio">Sharpe Ratio</option>
+                                            <option value="upi">UPI</option>
+                                            <option value="profitMaxDD_Ratio">Ret/DD</option>
+                                            <option value="sqn">SQN</option>
+                                            <option value="profitFactor">Profit Factor</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Goal -->
+                                    <div>
+                                        <label class="block text-xs text-gray-400 mb-1">Goal</label>
+                                        <select id="opt-goal"
+                                            class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white">
+                                            <option value="maximize">Maximize</option>
+                                            <option value="minimize">Minimize</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Simulations Slider -->
+                                <div class="mt-3">
+                                    <label class="block text-xs text-gray-400 mb-1">
+                                        Simulations: <span id="opt-simulations-display"
+                                            class="text-purple-400 font-semibold">1000</span>
+                                    </label>
+                                    <input type="range" id="opt-simulations-slider" min="100" max="10000" step="100"
+                                        value="1000"
+                                        class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                                </div>
+
+                                <!-- Action Buttons -->
+                                <div class="mt-4 flex gap-2">
+                                    <button id="opt-start-btn"
+                                        class="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-2 px-4 rounded flex items-center justify-center gap-2">
+                                        <span>🚀</span>
+                                        <span>Start Optimization</span>
+                                    </button>
+                                    <button id="opt-cancel-btn"
+                                        class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2">
+                                        <span>⏹️</span>
+                                        <span>Cancel</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Progress Section -->
+                            <div id="opt-progress-section"
+                                class="hidden bg-gray-800 rounded-lg p-4 border border-purple-500">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <span class="text-2xl animate-bounce">⛏️</span>
+                                    <p id="opt-progress-text" class="text-sm text-gray-300 font-medium">Optimizing
+                                        weights...</p>
+                                </div>
+                                <div class="bg-gray-600 rounded-full h-2 overflow-hidden">
+                                    <div id="opt-progress-bar"
+                                        class="bg-gradient-to-r from-purple-500 to-pink-500 h-full transition-all duration-300"
+                                        style="width: 0%"></div>
+                                </div>
+                                <p id="opt-progress-percentage" class="text-xs text-gray-400 text-right mt-1">0%</p>
+                            </div>
+
+                            <!-- Results Section -->
+                            <div id="opt-results-section" class="hidden space-y-3">
+                                <!-- KPI Comparison Table -->
+                                <div class="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                                    <h4 class="text-sm font-semibold text-gray-300 mb-2">📊 KPI Comparison</h4>
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-xs">
+                                            <thead class="bg-gray-700">
+                                                <tr>
+                                                    <th class="px-2 py-1 text-left text-gray-400">Metric</th>
+                                                    <th class="px-2 py-1 text-right text-gray-400">Original</th>
+                                                    <th class="px-2 py-1 text-right text-purple-400">Optimized</th>
+                                                    <th class="px-2 py-1 text-right text-blue-400">Balanced</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="opt-kpi-table-body" class="divide-y divide-gray-700">
+                                                <!-- Populated dynamically -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- Action Cards -->
+                                <div class="grid grid-cols-2 gap-2">
+                                    <!-- Optimized Card -->
+                                    <div
+                                        class="bg-gradient-to-br from-purple-900/30 to-purple-700/20 rounded-lg p-3 border border-purple-500">
+                                        <h5 class="text-xs font-bold text-purple-300 mb-2">🎯 Optimized</h5>
+                                        <div id="opt-metric-summary" class="text-xs text-gray-300 mb-2">
+                                            <!-- Summary -->
+                                        </div>
+                                        <button id="opt-apply-metric-btn" data-mode="overwrite"
+                                            class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-1.5 px-2 rounded mb-1">
+                                            💾 Apply
+                                        </button>
+                                        <button id="opt-save-metric-btn" data-mode="new"
+                                            class="w-full bg-purple-800 hover:bg-purple-900 text-white text-xs py-1 px-2 rounded">
+                                            ➕ Save as New
+                                        </button>
+                                    </div>
+
+                                    <!-- Balanced Card -->
+                                    <div
+                                        class="bg-gradient-to-br from-blue-900/30 to-blue-700/20 rounded-lg p-3 border border-blue-500">
+                                        <h5 class="text-xs font-bold text-blue-300 mb-2">⚖️ Balanced</h5>
+                                        <div id="opt-balanced-summary" class="text-xs text-gray-300 mb-2">
+                                            <!-- Summary -->
+                                        </div>
+                                        <button id="opt-apply-balanced-btn" data-mode="overwrite"
+                                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-1.5 px-2 rounded mb-1">
+                                            💾 Apply
+                                        </button>
+                                        <button id="opt-save-balanced-btn" data-mode="new"
+                                            class="w-full bg-blue-800 hover:bg-blue-900 text-white text-xs py-1 px-2 rounded">
+                                            ➕ Save as New
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -419,6 +639,127 @@
 
     <!-- Toast Container -->
     <div id="toast-container" class="fixed top-4 right-4 z-[60] flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Optimization Modal (Slide-in from Right) -->
+    <div id="optimization-modal" class="fixed inset-0 z-[100] hidden">
+        <!-- Backdrop -->
+        <div id="optimization-modal-backdrop"
+            class="absolute inset-0 bg-gray-900/80 backdrop-blur-sm transition-opacity duration-300 opacity-0"></div>
+
+        <!-- Panel -->
+        <div id="optimization-panel"
+            class="absolute top-0 right-0 h-full w-full md:w-[600px] bg-gray-800 shadow-2xl transform translate-x-full transition-transform duration-300 ease-out flex flex-col">
+
+            <!-- Header -->
+            <div
+                class="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl animate-spin-slow">⚙️</span>
+                    <h2 id="optimization-modal-title" class="text-xl font-bold text-white">Optimizar Portafolio</h2>
+                </div>
+                <button id="close-optimization-modal-btn"
+                    class="text-white hover:text-gray-200 text-2xl leading-none">&times;</button>
+            </div>
+
+            <!-- Content (Scrollable) -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                <!-- Portfolio Info with Strategy Risk Table -->
+                <div id="optimization-portfolio-info" class="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                    <h3 class="text-lg font-semibold text-sky-300 mb-3" id="optimization-portfolio-name">Portafolio</h3>
+
+                    <!-- Strategy Risk Table -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead class="bg-gray-800">
+                                <tr>
+                                    <th class="px-2 py-1 text-left text-gray-400">Estrategia</th>
+                                    <th class="px-2 py-1 text-right text-gray-400">Peso Actual</th>
+                                    <th class="px-2 py-1 text-right text-gray-400">$/Op Actual</th>
+                                    <th class="px-2 py-1 text-right text-gray-400">Nuevo Peso</th>
+                                    <th class="px-2 py-1 text-right text-gray-400">$/Op Nuevo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="optimization-strategy-table-body" class="divide-y divide-gray-700">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Configuration -->
+                <div id="optimization-setup-container" class="space-y-4">
+                    <h3 class="text-lg font-bold text-white border-b border-gray-600 pb-2">Configuración</h3>
+
+                    <!-- Target Metric -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Métrica a optimizar</label>
+                        <select id="optimization-target-metric"
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
+                            <!-- Options populated dynamically -->
+                        </select>
+                    </div>
+
+                    <!-- Goal -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Objetivo</label>
+                        <select id="optimization-target-goal"
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
+                            <option value="maximize">Maximizar</option>
+                            <option value="minimize">Minimizar</option>
+                        </select>
+                    </div>
+
+                    <!-- Simulations -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">
+                            Número de simulaciones: <span id="simulations-display"
+                                class="text-purple-400 font-bold">1000</span>
+                        </label>
+                        <input type="range" id="simulations-count" min="100" max="10000" step="100" value="1000"
+                            class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Start Button -->
+                    <button id="start-single-optimization-btn"
+                        class="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-200 shadow-lg">
+                        <span class="text-xl">🚀</span>
+                        <span id="start-optimization-btn-text">Iniciar Optimización</span>
+                        <span id="start-optimization-btn-spinner" class="hidden">
+                            <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin">
+                            </div>
+                        </span>
+                    </button>
+
+                    <!-- Cancel Button (hidden initially) -->
+                    <button id="cancel-optimization-btn"
+                        class="hidden w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-200">
+                        <span class="text-xl">⏹️</span>
+                        <span>Cancelar Optimización</span>
+                    </button>
+
+                    <!-- Progress Bar (hidden initially) -->
+                    <div id="optimization-progress-container"
+                        class="hidden bg-gray-700/50 rounded-lg p-4 border border-purple-500">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-2xl animate-bounce">⛏️</span>
+                            <p id="optimization-progress-text" class="text-sm text-gray-300 font-medium">Optimizando
+                                pesos...</p>
+                        </div>
+                        <div class="bg-gray-600 rounded-full h-2 overflow-hidden">
+                            <div id="optimization-progress-bar"
+                                class="bg-gradient-to-r from-purple-500 to-pink-500 h-full transition-all duration-300"
+                                style="width: 0%"></div>
+                        </div>
+                        <p id="optimization-progress-percentage" class="text-xs text-gray-400 text-right mt-1">0%</p>
+                    </div>
+                </div>
+
+                <!-- Results Area -->
+                <div id="optimization-results-container" class="hidden space-y-4">
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Other Modals (Optimization, View Manager, etc.) - Preserved but hidden -->
     <div id="optimization-modal" class="hidden"></div> <!-- Placeholder to prevent JS errors until refactored -->

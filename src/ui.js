@@ -1,6 +1,7 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
-import { updateDatabankDisplay, sortDatabank } from './modules/databank.js';
+import { updateDatabankDisplay, savePortfolioFromDatabank } from './modules/databank.js';
+import { renderViewerForActiveTab } from './modules/viewer.js'; // NUEVO
 import { openOptimizationModal } from './modules/optimization.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
@@ -14,7 +15,7 @@ export const updateTradesFilesList = () => {
         state.loadedStrategyFiles.forEach((file, index) => {
             const fileEl = document.createElement('div');
             fileEl.className = 'flex justify-between items-center bg-gray-700/50 p-1 rounded text-gray-300';
-            fileEl.innerHTML = `<span class="truncate pr-2">${file.name}</span><button data-index="${index}" class="remove-file-btn text-red-500 hover:text-red-400 font-bold text-lg px-2" title="Eliminar archivo">&times;</button>`;
+            fileEl.innerHTML = `< span class="truncate pr-2" > ${file.name}</span > <button data-index="${index}" class="remove-file-btn text-red-500 hover:text-red-400 font-bold text-lg px-2" title="Eliminar archivo">&times;</button>`;
             dom.tradesFilesListEl.appendChild(fileEl);
         });
     }
@@ -69,15 +70,15 @@ export const updateAnalysisModeSelector = () => {
 
     state.rawStrategiesData.forEach((_, i) => {
         const fileName = state.loadedStrategyFiles[i].name.replace('.csv', '');
-        dom.analysisModeSelect.innerHTML += `<option value="${i}">Filtrar por ${fileName}</option>`;
+        dom.analysisModeSelect.innerHTML += `< option value = "${i}" > Filtrar por ${fileName}</option > `;
     });
 
     if (state.selectedPortfolioIndices.size > 0) {
-        dom.analysisModeSelect.innerHTML += `<option value="portfolio">Filtrar por Portafolio</option>`;
+        dom.analysisModeSelect.innerHTML += `< option value = "portfolio" > Filtrar por Portafolio</option > `;
     }
 
     dom.analysisModeSelect.value = selectedValue;
-    if (!dom.analysisModeSelect.querySelector(`option[value="${selectedValue}"]`)) {
+    if (!dom.analysisModeSelect.querySelector(`option[value = "${selectedValue}"]`)) {
         dom.analysisModeSelect.value = '-1';
     }
 };
@@ -110,7 +111,7 @@ export const displayResults = (results) => {
         dom.tabNav.innerHTML = navHTML;
         dom.tabContentArea.innerHTML = contentHTML;
 
-        const tabToActivate = dom.tabNav.querySelector(`.tab-btn[data-target="${activeTabId}"]`) || dom.tabNav.querySelector('.tab-btn');
+        const tabToActivate = dom.tabNav.querySelector(`.tab - btn[data - target="${activeTabId}"]`) || dom.tabNav.querySelector('.tab-btn');
         if (tabToActivate) {
             tabToActivate.classList.add('active');
             const activeContent = document.getElementById(tabToActivate.dataset.target);
@@ -133,6 +134,9 @@ export const displayResults = (results) => {
         renderPortfolioComparisonCharts(savedPortfolioAnalyses);
     }
     renderFeaturedPortfolio();
+
+    // NUEVO: Renderizar el viewer principal según el tab activo
+    setTimeout(() => renderViewerForActiveTab(), 150);
 };
 
 /**
@@ -142,7 +146,7 @@ export const displayResults = (results) => {
  */
 const createSummaryTab = (results) => {
     const tabId = 'summary';
-    const nav = `<button class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data-target="${tabId}">Resumen Comparativo</button>`;
+    const nav = `< button class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data - target="${tabId}" > Resumen Comparativo</button > `;
 
     // Ordenar los resultados antes de mostrarlos
     sortArrayByConfig(results, state.summarySortConfig, r => r.analysis);
@@ -152,43 +156,43 @@ const createSummaryTab = (results) => {
         const metrics = result.analysis;
         const isChecked = state.selectedPortfolioIndices.has(result.originalIndex) ? 'checked' : '';
 
-        tableBodyRows += `<tr class="border-b border-gray-700 hover:bg-gray-800">
+        tableBodyRows += `< tr class="border-b border-gray-700 hover:bg-gray-800" >
             <td class="p-3 w-8"><input type="checkbox" data-index="${result.originalIndex}" class="portfolio-checkbox form-checkbox h-5 w-5 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600" ${isChecked}></td>
             <td class="p-3 font-semibold"><span class="inline-block w-3 h-3 rounded-full mr-2" style="background-color:${STRATEGY_COLORS[result.originalIndex % STRATEGY_COLORS.length]}"></span>${result.name}</td>
             ${state.defaultMetricColumns.map(key => `<td class="p-3 text-right">${formatMetricForDisplay(metrics[key], key)}</td>`).join('')}
-        </tr>`;
+        </tr > `;
     });
 
     let tableFoot = '';
     const portfolioResult = results.find(r => r.isCurrentPortfolio);
     if (portfolioResult) {
         const metrics = portfolioResult.analysis;
-        tableFoot = `<tfoot><tr class="border-t-2 border-sky-500 bg-gray-800/50">
-            <td class="p-3 w-8 text-center font-bold text-amber-400">P</td>
-            <td class="p-3 font-semibold text-amber-400"><span class="inline-block w-3 h-3 rounded-full mr-2" style="background-color:#f59e0b"></span>${portfolioResult.name}</td>
-            ${state.defaultMetricColumns.map(key => `<td class="p-3 text-right font-semibold text-amber-400">${formatMetricForDisplay(metrics[key], key)}</td>`).join('')}
-        </tr></tfoot>`;
+        tableFoot = `< tfoot > <tr class="border-t-2 border-sky-500 bg-gray-800/50">
+        <td class="p-3 w-8 text-center font-bold text-amber-400">P</td>
+        <td class="p-3 font-semibold text-amber-400"><span class="inline-block w-3 h-3 rounded-full mr-2" style="background-color:#f59e0b"></span>${portfolioResult.name}</td>
+        ${state.defaultMetricColumns.map(key => `<td class="p-3 text-right font-semibold text-amber-400">${formatMetricForDisplay(metrics[key], key)}</td>`).join('')}
+    </tr></tfoot > `;
     }
 
     const tableHeaders = state.defaultMetricColumns.map(key => {
         const colInfo = ALL_METRICS[key];
-        const orderIndicator = state.summarySortConfig.key === key ? `data-order="${state.summarySortConfig.order}"` : '';
-        return `<th class="p-3 text-right sortable" data-column="${key}" data-type="numeric" ${orderIndicator}>${colInfo.label}</th>`;
+        const orderIndicator = state.summarySortConfig.key === key ? `data - order="${state.summarySortConfig.order}"` : '';
+        return `< th class="p-3 text-right sortable" data - column="${key}" data - type="numeric" ${orderIndicator}> ${colInfo.label}</th > `;
     }).join('');
 
-    const comparativeTableHTML = `<div class="overflow-x-auto bg-gray-800 rounded-lg border border-gray-700">
-        <table id="summary-table" class="w-full text-sm text-left">
-            <thead class="bg-gray-700 text-xs text-gray-400 uppercase">
-                <tr><th class="p-3"></th><th class="p-3 sortable" data-column="name" ${state.summarySortConfig.key === 'name' ? `data-order="${state.summarySortConfig.order}"` : ''}>Estrategia</th>
+    const comparativeTableHTML = `< div class="overflow-x-auto bg-gray-800 rounded-lg border border-gray-700" >
+    <table id="summary-table" class="w-full text-sm text-left">
+        <thead class="bg-gray-700 text-xs text-gray-400 uppercase">
+            <tr><th class="p-3"></th><th class="p-3 sortable" data-column="name" ${state.summarySortConfig.key === 'name' ? `data-order="${state.summarySortConfig.order}"` : ''}>Estrategia</th>
                 ${tableHeaders}
-                </tr>
-            </thead>
-            <tbody>${tableBodyRows}</tbody>
-            ${tableFoot}
-        </table>
-    </div>`;
+            </tr>
+        </thead>
+        <tbody>${tableBodyRows}</tbody>
+        ${tableFoot}
+    </table>
+    </div > `;
 
-    const content = `<div id="${tabId}" class="tab-content space-y-8">${comparativeTableHTML}</div>`;
+    const content = `< div id = "${tabId}" class="tab-content space-y-8" > ${comparativeTableHTML}</div > `;
     return { nav, content };
 };
 
@@ -239,11 +243,11 @@ const sortArrayByConfig = (array, sortConfig, metricAccessor) => {
 const createStrategyTab = (result) => {
     if (result.isPortfolio || result.isSavedPortfolio) return { nav: '', content: '' };
 
-    const tabId = `strategy-${result.originalIndex}`;
-    const nav = `<button id="${tabId}-btn" class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data-target="${tabId}">${result.name}</button>`;
+    const tabId = `strategy - ${result.originalIndex} `;
+    const nav = `< button id = "${tabId}-btn" class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data - target="${tabId}" > ${result.name}</button > `;
     const metrics = result.analysis;
 
-    const metricsHTML = `<div><h2 class="text-2xl font-bold text-white mb-4">Métricas Clave: ${result.name}</h2>
+    const metricsHTML = `< div ><h2 class="text-2xl font-bold text-white mb-4">Métricas Clave: ${result.name}</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
             ${Object.entries({
         'Profit Factor': metrics.profitFactor, 'Coef. Sharpe': metrics.sharpeRatio, 'Max DD (%)': `${metrics.maxDrawdown.toFixed(2)}%`, 'Profit/Mes': metrics.monthlyAvgProfit,
@@ -256,15 +260,15 @@ const createStrategyTab = (result) => {
                     <p class="text-3xl font-bold">${formatMetricForDisplay(value, label)}</p>
                 </div>`).join('')}
         </div>
-    </div>`;
+    </div > `;
 
-    const chartsHTML = `<div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+    const chartsHTML = `< div class="grid grid-cols-1 xl:grid-cols-2 gap-8" >
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 xl:col-span-2"><h2 class="text-xl font-bold">Equity vs. Benchmark</h2><div class="h-96"><canvas id="equityChart-${tabId}"></canvas></div></div>
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-xl font-bold">Dispersión de Rendimientos</h2><div class="h-80"><canvas id="scatterChart-${tabId}"></canvas></div></div>
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-xl font-bold">Curva de Lorenz</h2><div class="h-80"><canvas id="lorenzChart-${tabId}"></canvas></div></div>
-    </div>`;
+    </div > `;
 
-    const content = `<div id="${tabId}" class="tab-content space-y-8">${metricsHTML}${chartsHTML}</div>`;
+    const content = `< div id = "${tabId}" class="tab-content space-y-8" > ${metricsHTML}${chartsHTML}</div > `;
     return { nav, content };
 };
 
@@ -284,10 +288,10 @@ export const renderChartsForTab = (tabId) => {
         const analysis = result.analysis;
         const color = STRATEGY_COLORS[result.originalIndex % STRATEGY_COLORS.length];
 
-        if (document.getElementById(`equityChart-${tabId}`)) {
-            renderEquityChart(`equityChart-${tabId}`, analysis, result.name, color);
-            renderScatterChart(`scatterChart-${tabId}`, analysis, color);
-            renderLorenzChart(`lorenzChart-${tabId}`, analysis, color);
+        if (document.getElementById(`equityChart - ${tabId} `)) {
+            renderEquityChart(`equityChart - ${tabId} `, analysis, result.name, color);
+            renderScatterChart(`scatterChart - ${tabId} `, analysis, color);
+            renderLorenzChart(`lorenzChart - ${tabId} `, analysis, color);
         }
     }
 };
@@ -323,7 +327,7 @@ const renderEquityChart = (canvasId, analysis, name, color) => {
         type: 'line',
         data: {
             datasets: [
-                { label: name, data: analysis.chartData.equityCurve, borderColor: color, backgroundColor: `${color}1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true },
+                { label: name, data: analysis.chartData.equityCurve, borderColor: color, backgroundColor: `${color} 1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true },
                 { label: 'Benchmark', data: analysis.chartData.benchmarkCurve, borderColor: '#f87171', backgroundColor: '#f871711a', borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true }
             ]
         },
@@ -345,7 +349,7 @@ const renderScatterChart = (canvasId, analysis, color) => {
             datasets: [{
                 label: 'Rendimiento Diario',
                 data: analysis.chartData.scatterData,
-                backgroundColor: `${color}99`
+                backgroundColor: `${color} 99`
             }]
         },
         options: {
@@ -370,7 +374,7 @@ const renderLorenzChart = (canvasId, analysis, color) => {
         type: 'line',
         data: {
             datasets: [{
-                label: 'Curva de Beneficios', data: analysis.lorenzData, showLine: true, borderColor: color, backgroundColor: `${color}1a`, tension: .1, pointRadius: 0, fill: true
+                label: 'Curva de Beneficios', data: analysis.lorenzData, showLine: true, borderColor: color, backgroundColor: `${color} 1a`, tension: .1, pointRadius: 0, fill: true
             }, {
                 label: 'Consistencia Perfecta', data: [{ x: 0, y: 0 }, { x: 100, y: 100 }], borderColor: '#4ade80', borderWidth: 2, pointRadius: 0, borderDash: [5, 5], fill: false
             }]
@@ -407,7 +411,7 @@ export const displaySavedPortfoliosList = () => {
     console.log("DEBUG UI.JS: Hay", state.savedPortfolios.length, "portafolios guardados");
     // En el nuevo layout, la sección siempre está visible
     if (dom.savedPortfoliosCount) {
-        dom.savedPortfoliosCount.textContent = `${state.savedPortfolios.length}`;
+        dom.savedPortfoliosCount.textContent = `${state.savedPortfolios.length} `;
         console.log("DEBUG UI.JS: Actualizado contador a", state.savedPortfolios.length);
     }
 
@@ -470,7 +474,10 @@ export const displaySavedPortfoliosList = () => {
         rowHTML += `<td class="p-2 text-center whitespace-nowrap">
             <button data-index="${originalIndex}" class="feature-portfolio-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isFeatured ? 'featured' : ''}" title="Destacar/Acciones">&#9733;</button>
             ${p.weights ? `<button data-index="${originalIndex}" class="compare-original-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isCompared ? 'active' : ''}" title="Comparar con Original">🔄</button>` : ''}
-            <button data-index="${originalIndex}" class="view-edit-portfolio-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-1 px-2 rounded text-xs">Editar</button>
+            <button data-index="${originalIndex}" class="view-edit-portfolio-btn bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-3 rounded-lg text-xs inline-flex items-center gap-1 transition-all">
+                <span class="text-sm">⚙️</span>
+                <span>Optimizar</span>
+            </button>
             <button data-index="${originalIndex}" class="delete-portfolio-btn text-red-500 hover:text-red-400 font-bold text-lg px-1">&times;</button>
         </td></tr>`;
         bodyHTML += rowHTML;
@@ -552,13 +559,13 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         onClick: (evt, elements, chart) => {
             console.log('%c[CHART CLICK] 1. Evento onClick del gráfico disparado.', 'color: #f0abfc');
             const points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
-            console.log(`%c[CHART CLICK] 2. Puntos detectados bajo el cursor: ${points.length}`, 'color: #f0abfc');
+            console.log(`% c[CHART CLICK]2. Puntos detectados bajo el cursor: ${points.length} `, 'color: #f0abfc');
 
             if (points.length) {
                 const firstPoint = points[0];
                 const dataset = chart.data.datasets[firstPoint.datasetIndex];
                 const clickedPortfolioIndex = dataset.savedIndex;
-                console.log(`%c[CHART CLICK] 3. Índice de portafolio detectado: ${clickedPortfolioIndex}`, 'color: #f0abfc');
+                console.log(`% c[CHART CLICK]3. Índice de portafolio detectado: ${clickedPortfolioIndex} `, 'color: #f0abfc');
 
                 if (clickedPortfolioIndex === undefined) {
                     console.log('%c[CHART CLICK] 3.1. Clic en Benchmark. Abortando.', 'color: #f0abfc');
@@ -566,13 +573,13 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 }
 
                 const activeAction = document.querySelector('#chart-actions-group .chart-action-item.active')?.dataset.action;
-                console.log(`%c[CHART CLICK] 4. Acción activa: '${activeAction}'`, 'color: #f0abfc');
+                console.log(`% c[CHART CLICK]4. Acción activa: '${activeAction}'`, 'color: #f0abfc');
 
                 if (activeAction === 'destacar') {
                     console.log('%c[CHART CLICK] 5. Entrando en la lógica de "destacar".', 'color: #f0abfc; font-weight: bold;');
                     const portfolio = state.savedPortfolios[clickedPortfolioIndex];
                     if (!portfolio) {
-                        console.error(`[CHART CLICK] ERROR: No se encontró el portafolio con índice ${clickedPortfolioIndex}`);
+                        console.error(`[CHART CLICK]ERROR: No se encontró el portafolio con índice ${clickedPortfolioIndex} `);
                         return;
                     }
 
@@ -582,10 +589,10 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     const confirmBtn = document.getElementById('chart-click-confirm-btn');
 
                     modalTitle.textContent = 'Confirmar Destacado';
-                    modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado?`;
+                    modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado ? `;
 
                     confirmBtn.onclick = () => {
-                        console.log(`%c[CHART CLICK] 6. Confirmado. Estableciendo portafolio destacado a índice ${clickedPortfolioIndex}`, 'color: #f0abfc; font-weight: bold;');
+                        console.log(`% c[CHART CLICK]6. Confirmado.Estableciendo portafolio destacado a índice ${clickedPortfolioIndex} `, 'color: #f0abfc; font-weight: bold;');
                         state.featuredPortfolioIndex = clickedPortfolioIndex;
                         renderFeaturedPortfolio();
                         renderPortfolioComparisonCharts(portfolioAnalyses); // Re-render para actualizar el estilo
@@ -610,7 +617,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     // El índice del portafolio ya lo tenemos en 'clickedPortfolioIndex'
                     openOptimizationModal(clickedPortfolioIndex);
                 } else {
-                    console.log(`%c[CHART CLICK] 5.1. La acción activa ('${activeAction}') no tiene una función de clic definida. No se hace nada.`, 'color: #f0abfc');
+                    console.log(`% c[CHART CLICK]5.1.La acción activa('${activeAction}') no tiene una función de clic definida.No se hace nada.`, 'color: #f0abfc');
                 }
             }
         }
@@ -651,22 +658,22 @@ export const renderFeaturedPortfolio = () => {
     const metrics = analysis;
 
     const metricsToShow = {
-        'Sortino': metrics.sortinoRatio, 'Max DD ($)': `$${metrics.maxDrawdownInDollars.toFixed(0)}`, 'Ulcer Index $': `$${metrics.ulcerIndexInDollars.toFixed(0)}`,
-        'Profit Factor': metrics.profitFactor, 'Profit/Mes': `$${metrics.monthlyAvgProfit.toFixed(0)}`, 'Coef. Sharpe': metrics.sharpeRatio, 'Ret/DD': metrics.profitMaxDD_Ratio,
+        'Sortino': metrics.sortinoRatio, 'Max DD ($)': `$${metrics.maxDrawdownInDollars.toFixed(0)} `, 'Ulcer Index $': `$${metrics.ulcerIndexInDollars.toFixed(0)} `,
+        'Profit Factor': metrics.profitFactor, 'Profit/Mes': `$${metrics.monthlyAvgProfit.toFixed(0)} `, 'Coef. Sharpe': metrics.sharpeRatio, 'Ret/DD': metrics.profitMaxDD_Ratio,
         'UPI': metrics.upi, 'SQN': metrics.sqn,
         'Meses Pérd. Cons. (Max)': metrics.maxConsecutiveLosingMonths,
     };
 
     let metricsHTML = Object.entries(metricsToShow).map(([key, val]) => {
         const displayVal = typeof val === 'number' ? val.toFixed(2) : val;
-        return `<div>
+        return `< div >
                     <div class="text-xs text-gray-400 uppercase tracking-wide">${key}</div>
                     <div class="text-lg font-bold text-white">${displayVal}</div>
-                </div>`;
+                </div > `;
     }).join('');
 
     const html = `
-        <div class="p-6">
+    < div class="p-6" >
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-bold text-white">Portafolio Destacado</h2>
             </div>
@@ -686,7 +693,7 @@ export const renderFeaturedPortfolio = () => {
                      <div class="h-64"><canvas id="featured-portfolio-chart"></canvas></div>
                 </div>
             </div>
-        </div>`;
+        </div > `;
 
     dom.featuredPortfolioSection.innerHTML = html;
     dom.featuredPortfolioSection.classList.remove('hidden');

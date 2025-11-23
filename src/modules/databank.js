@@ -4,6 +4,40 @@ import { ALL_METRICS, SELECTION_COLORS } from '../config.js'; // ALL_METRICS y S
 import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '../utils.js'; // Estas utilidades se siguen usando
 
 /**
+ * Actualiza el indicador visual de estado del DataBank.
+ * @param {string} status - 'connecting' | 'searching' | 'paused' | 'stopped' | 'completed' | 'error' | 'hidden'
+ * @param {string} message - Mensaje a mostrar
+ */
+const setDatabankStatus = (status, message = '') => {
+    const statusBar = document.getElementById('databank-status-bar');
+    const statusIcon = document.getElementById('databank-status-icon');
+    const statusText = document.getElementById('databank-status-text');
+
+    if (!statusBar || !statusIcon || !statusText) return;
+
+    const statusConfig = {
+        hidden: { icon: '', class: 'hidden' },
+        connecting: { icon: '📡', class: 'animate-pulse', color: 'text-blue-400' },
+        searching: { icon: '⛏️', class: 'animate-bounce', color: 'text-yellow-400' },
+        paused: { icon: '⏸️', class: '', color: 'text-orange-400' },
+        stopped: { icon: '⏹️', class: '', color: 'text-red-400' },
+        completed: { icon: '✅', class: '', color: 'text-green-400' },
+        error: { icon: '❌', class: '', color: 'text-red-500' }
+    };
+
+    const config = statusConfig[status] || statusConfig.hidden;
+
+    if (status === 'hidden') {
+        statusBar.classList.add('hidden');
+    } else {
+        statusBar.classList.remove('hidden');
+        statusIcon.innerHTML = `<span class="${config.class} ${config.color} text-xl">${config.icon}</span>`;
+        statusText.textContent = message;
+        statusText.className = `text-sm ${config.color}`;
+    }
+};
+
+/**
  * Inicia la búsqueda de portafolios en el DataBank.
  */
 export const findDatabankPortfolios = async () => {
@@ -13,20 +47,27 @@ export const findDatabankPortfolios = async () => {
     }
 
     hideError();
-    
+
     // Resetear el estado de la UI y los botones
-    dom.databankSection.classList.remove('hidden');
-    dom.pauseSearchBtn.disabled = false;
-    dom.stopSearchBtn.disabled = false;
-    dom.pauseSearchBtn.textContent = 'Pausar';
-    toggleLoading(true, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-    dom.clearDatabankBtn.disabled = true;
+    // En el nuevo layout, databankContent siempre está visible, no necesitamos mostrarlo
+    if (dom.pauseSearchBtn) {
+        dom.pauseSearchBtn.disabled = false;
+        dom.pauseSearchBtn.textContent = 'Pausar';
+    }
+    if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = false;
+
+    // NO usamos toggleLoading porque bloquea toda la UI
+    // En su lugar, solo deshabilitamos el botón de búsqueda
+    if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = true;
+    if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = true;
     if (dom.databankSizeInput) dom.databankSizeInput.disabled = true;
 
     state.databankPortfolios = [];
     updateDatabankDisplay(); // Limpia la tabla
-    
-    dom.databankStatus.innerHTML = `📡 Conectando con el backend de Python...`;
+
+    // Mostrar estado visual: Conectando
+    setDatabankStatus('connecting', 'Conectando con el backend de Python...');
+    console.log('📡 Conectando con el backend de Python...');
 
     // 1. Empaquetar los datos para la petición inicial
     const requestBody = {
@@ -37,10 +78,10 @@ export const findDatabankPortfolios = async () => {
             metric_to_optimize_key: dom.optimizationMetricSelect.value,
             optimization_goal: dom.optimizationGoalSelect.value,
             correlation_threshold: parseFloat(dom.correlationFilterInput.value),
-            max_size: parseInt(dom.databankSizeInput.value, 10),
+            max_size: dom.databankSizeInput ? parseInt(dom.databankSizeInput.value, 10) : 20, // Default: 20
             base_indices: Array.from(state.selectedPortfolioIndices),
             metric_name: dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text,
-            search_threshold: parseInt(dom.searchThresholdInput.value, 10),
+            search_threshold: dom.searchThresholdInput ? parseInt(dom.searchThresholdInput.value, 10) : 500000, // Default: 500000
         }
     };
 
@@ -58,28 +99,29 @@ export const findDatabankPortfolios = async () => {
         }
 
         console.log("Conexión de streaming establecida. Escuchando resultados...");
-        dom.databankStatus.innerHTML = `⏳ Escuchando resultados del backend...`;
-        
+        setDatabankStatus('searching', 'Escuchando resultados del backend...');
+
         let searchMode = ''; // Variable para almacenar el modo de búsqueda
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = ''; // Buffer para acumular datos del stream
-        
+
         // Usamos un bucle 'while' en lugar de recursión para evitar el desbordamiento de la pila (stack overflow)
         async function processStream() {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
-                    dom.databankStatus.innerHTML = `✅ Búsqueda completada por el backend.`;
-                    toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-                    dom.clearDatabankBtn.disabled = false;
+                    setDatabankStatus('completed', 'Búsqueda completada');
+                    // Re-habilitar botones
+                    if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+                    if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
                     if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-                    dom.pauseSearchBtn.disabled = true;
-                    dom.stopSearchBtn.disabled = true;
+                    if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+                    if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
                     break; // Salir del bucle
                 }
-                
+
                 // Añadir el nuevo trozo de datos al buffer
                 buffer += decoder.decode(value, { stream: true });
 
@@ -101,32 +143,41 @@ export const findDatabankPortfolios = async () => {
                                     if (data.message.toLowerCase().includes('monte carlo')) searchMode = '[Monte Carlo]';
                                     else if (data.message.toLowerCase().includes('exhaustiva')) searchMode = '[Exhaustiva]';
                                 }
-                                dom.databankStatus.innerHTML = `${searchMode} 🔍 ${data.message}`;
+                                setDatabankStatus('searching', data.message);
                             } else if (data.status === 'paused') {
                                 dom.pauseSearchBtn.textContent = 'Reanudar';
-                                dom.databankStatus.innerHTML = `${searchMode} ⏸️ ${data.message}`;
+                                // Mantener Stop habilitado durante la pausa
+                                setDatabankStatus('paused', data.message);
                             } else if (data.status === 'resumed') {
                                 dom.pauseSearchBtn.textContent = 'Pausar';
-                                dom.databankStatus.innerHTML = `${searchMode} ▶️ ${data.message}`;
+                                setDatabankStatus('searching', data.message);
                             } else if (data.status === 'stopped') {
                                 dom.stopSearchBtn.disabled = true;
                                 dom.pauseSearchBtn.disabled = true;
                                 dom.pauseSearchBtn.textContent = 'Pausar';
-                                dom.databankStatus.innerHTML = `${searchMode} ⏹️ ${data.message}`;
+                                setDatabankStatus('stopped', data.message);
                             } else if (data.status === 'error') {
                                 displayError(data.message);
-                                dom.databankStatus.innerHTML = `❌ Error en la búsqueda.`;
-                                toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-                                dom.clearDatabankBtn.disabled = false;
+                                setDatabankStatus('error', 'Error en la búsqueda');
+                                // Re-habilitar botones
+                                if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+                                if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
                                 if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-                                dom.pauseSearchBtn.disabled = true;
-                                dom.stopSearchBtn.disabled = true;
+                                if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+                                if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
                                 reader.cancel(); // Detener la lectura del stream
                             } else {
                                 const newPortfolio = data;
-                                if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i+1}`).join(', ');
-                                addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput.value, 10));
-                                updateDatabankDisplay();
+                                if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i + 1}`).join(', ');
+                                addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput?.value || 20, 10));
+                                // Throttle: Solo actualizar la UI cada 500ms para mantenerla responsive
+                                if (!window.databankUpdateScheduled) {
+                                    window.databankUpdateScheduled = true;
+                                    setTimeout(() => {
+                                        updateDatabankDisplay();
+                                        window.databankUpdateScheduled = false;
+                                    }, 500);
+                                }
                             }
                         } catch (e) {
                             console.error("Error al parsear JSON del stream:", e, "Datos recibidos:", jsonData);
@@ -140,12 +191,13 @@ export const findDatabankPortfolios = async () => {
     } catch (error) {
         console.error("Error iniciando la búsqueda en DataBank:", error);
         displayError(error.message || "Ocurrió un error al conectar con el backend.");
-        dom.databankStatus.innerHTML = `❌ Error de conexión.`;
-        toggleLoading(false, 'findDatabankPortfoliosBtn', 'findBestBtnText', 'findBestBtnSpinner');
-        dom.clearDatabankBtn.disabled = false;
+        setDatabankStatus('error', 'Error de conexión con el backend');
+        // Re-habilitar botones
+        if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+        if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
         if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-        dom.pauseSearchBtn.disabled = true;
-        dom.stopSearchBtn.disabled = true;
+        if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+        if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
     }
 };
 
@@ -166,7 +218,7 @@ const addToDatabankIfBetter = (portfolioData, maxSize) => {
         const isNewBetter = (optimizationGoal === 'maximize')
             ? metricValue > existingPortfolio.metricValue
             : metricValue < existingPortfolio.metricValue;
-        
+
         if (isNewBetter) {
             state.databankPortfolios[existingIndex] = { ...portfolioData, key };
         } else {
@@ -205,7 +257,7 @@ export const updateDatabankDisplay = () => {
     let headerHTML = '<tr>';
     headerHTML += `<th class="p-1.5 w-8 align-bottom"><input type="checkbox" id="databank-select-all" class="form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600"></th>`;
     headerHTML += `<th class="p-2 w-12 sortable align-bottom" data-sort-key="metricValue" ${state.databankSortConfig.key === 'metricValue' ? `data-order="${state.databankSortConfig.order}"` : ''}>Rank</th>`;
-    
+
     activeViewColumns.forEach(key => {
         const colInfo = ALL_METRICS[key];
         if (colInfo) {
@@ -221,19 +273,19 @@ export const updateDatabankDisplay = () => {
     headerHTML += `<th class="p-2 text-center sticky right-0 bg-gray-700 z-20 align-bottom">Acción</th>`;
     headerHTML += '</tr>';
     dom.databankTableHeader.innerHTML = headerHTML;
-    
+
     const metricHeader = document.getElementById('databank-metric-header');
 
     let html = '';
     const rankColors = ['bg-amber-400', 'bg-slate-300', 'bg-yellow-600'];
-    
+
     state.databankPortfolios.forEach((p, index) => {
         let rowClass = (index < 3 && state.databankSortConfig.key === 'metricValue') ? 'databank-top3' : '';
         const selectionIndex = state.selectedRows.databank.indexOf(index);
         if (selectionIndex !== -1) {
             rowClass = SELECTION_COLORS[selectionIndex % SELECTION_COLORS.length];
         }
-        
+
         let rankBadge = `<span class="font-bold">${index + 1}</span>`;
         if (index < 3 && state.databankSortConfig.key === 'metricValue') {
             rankBadge = `<span class="inline-block text-xs py-0.5 px-2 ${rankColors[index]} text-gray-900 rounded-full font-bold">#${index + 1}</span>`;
@@ -247,7 +299,7 @@ export const updateDatabankDisplay = () => {
             if (key === 'name') {
                 let constructedName = p.name;
                 if (!constructedName && p.indices) {
-                    constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i+1}`).join(', ');
+                    constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i + 1}`).join(', ');
                 }
                 const names = (constructedName || '').split(', ').map(name => `<div class="copyable-strategy p-0.5 rounded-sm" title="Copiar '${name.replace('.csv', '')}'">${name.replace('.csv', '')}</div>`).join('');
                 html += `<td class="p-2 text-gray-300 max-w-xs">${names}</td>`;
@@ -284,7 +336,7 @@ export const sortDatabank = (headerEl) => {
         const metricsToMinimize = ['maxDrawdown', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxConsecutiveLosses', 'avgLoss', 'downsideCapture', 'maxConsecutiveLosingMonths'];
         newOrder = metricsToMinimize.includes(sortKey) ? 'asc' : 'desc';
     }
-    
+
     if (sortKey === 'metricValue') {
         const optimizationGoal = state.databankPortfolios[0]?.optimizationGoal || dom.optimizationGoalSelect.value;
         if (state.databankSortConfig.key !== 'metricValue') {
@@ -314,7 +366,7 @@ export const sortDatabank = (headerEl) => {
         if (valA > valB) return state.databankSortConfig.order === 'asc' ? 1 : -1;
         return 0;
     });
-    
+
     updateDatabankDisplay();
 };
 
@@ -325,9 +377,9 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
     const portfolio = state.databankPortfolios[portfolioIndex];
     if (!portfolio) return false;
 
-    const isDuplicate = state.savedPortfolios.some(p => 
-        p.indices.length === portfolio.indices.length && 
-        p.indices.every(i => portfolio.indices.includes(i)) && 
+    const isDuplicate = state.savedPortfolios.some(p =>
+        p.indices.length === portfolio.indices.length &&
+        p.indices.every(i => portfolio.indices.includes(i)) &&
         !p.weights
     );
 
@@ -337,7 +389,7 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
     }
 
     const names = portfolio.indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '').substring(0, 5)).join('+');
-    
+
     state.savedPortfolios.push({
         name: `P-DB (${names}) ${portfolio.metricName}`,
         indices: portfolio.indices, // El ID se asigna aquí
@@ -356,9 +408,10 @@ export const clearDatabank = () => {
     state.databankPortfolios = [];
     state.isSearchPaused = false;
     state.isSearchStopped = false;
-    dom.databankStatus.innerHTML = 'DataBank limpiado.';
+    setDatabankStatus('hidden');
     updateDatabankDisplay();
-    dom.databankSection.classList.add('hidden');
+    // databankSection ya no existe en el nuevo layout
+    if (dom.databankSection) dom.databankSection.classList.add('hidden');
 };
 
 // Eliminamos las importaciones de analysis.js que ya no se usan aquí

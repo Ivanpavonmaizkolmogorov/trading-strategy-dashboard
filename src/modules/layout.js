@@ -1,4 +1,5 @@
 import { dom } from '../dom.js';
+import { renderViewerForActiveTab } from './viewer.js';
 
 /**
  * Inicializa la lógica del layout: Sidebar, Tabs y Resizer.
@@ -63,6 +64,9 @@ const initBottomPanelTabs = () => {
                 targetContent.classList.remove('hidden');
                 targetContent.classList.add('active', 'flex');
             }
+
+            // 5. Update viewer chart based on active tab
+            setTimeout(() => renderViewerForActiveTab(), 100); // Small delay to ensure DOM is ready
         });
     });
 };
@@ -114,4 +118,37 @@ const initPanelResizer = () => {
             document.body.style.userSelect = '';
         }
     });
+
+    // --- Resize Control Buttons ---
+    const maxChartBtn = document.getElementById('resize-max-chart');
+    const resetBtn = document.getElementById('resize-reset');
+    const maxBottomBtn = document.getElementById('resize-max-bottom');
+
+    if (maxChartBtn) {
+        maxChartBtn.addEventListener('mousedown', (e) => e.stopPropagation()); // Prevent drag start
+        maxChartBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Maximize Chart = Minimize Bottom Panel
+            sourcePanel.style.height = '40px'; // Min height for tabs
+        });
+    }
+
+    if (resetBtn) {
+        resetBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        resetBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Reset to default (approx 40% or 320px)
+            sourcePanel.style.height = '320px';
+        });
+    }
+
+    if (maxBottomBtn) {
+        maxBottomBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        maxBottomBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Maximize Bottom Panel = Max height
+            const containerHeight = document.querySelector('main').clientHeight;
+            sourcePanel.style.height = `${containerHeight - 100}px`; // Leave space for header/chart
+        });
+    }
 };

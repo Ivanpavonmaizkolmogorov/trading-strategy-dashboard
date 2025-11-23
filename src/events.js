@@ -196,9 +196,20 @@ export function initializeEventListeners() {
                 showToast('Portafolio eliminado correctamente', 'success');
                 // await reAnalyzeAllData(); // <-- ELIMINADO: Innecesario
             }
-            if (e.target.classList.contains('view-edit-portfolio-btn')) {
-                const index = parseInt(e.target.dataset.index, 10);
-                openOptimizationModal(index);
+
+            // Optimize button - check target or parent
+            const optimizeBtn = e.target.classList.contains('view-edit-portfolio-btn')
+                ? e.target
+                : e.target.closest('.view-edit-portfolio-btn');
+
+            if (optimizeBtn) {
+                console.log('[Events] Click en botón Optimizar detectado');
+                const index = parseInt(optimizeBtn.dataset.index, 10);
+                console.log('[Events] Índice del portafolio:', index);
+                // Use new tab workflow instead of modal
+                import('./modules/optimization.js').then(module => {
+                    module.startOptimizationWorkflow(index);
+                });
             }
             // --- CORRECCIÓN: Añadir el listener para el botón de destacar (estrella) ---
             if (e.target.classList.contains('feature-portfolio-btn')) {
