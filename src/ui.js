@@ -6,6 +6,8 @@ import { openOptimizationModal } from './modules/optimization.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
 import { renderStrategiesTable as renderStrategiesTableModule } from './modules/strategiesTable.js';
+import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig } from './modules/savedPortfoliosTable.js';
+
 
 /**
  * Actualiza la lista de archivos de estrategia cargados en la UI.
@@ -399,6 +401,9 @@ export const displaySavedPortfoliosList = () => {
     console.log("DEBUG UI.JS: dom.savedPortfoliosBody existe?", !!dom.savedPortfoliosBody);
     console.log("DEBUG UI.JS: dom.savedPortfoliosCount existe?", !!dom.savedPortfoliosCount);
 
+    // Initialize table if needed
+    initSavedPortfoliosTable();
+
     if (state.savedPortfolios.length === 0) {
         console.log("DEBUG UI.JS: No hay portafolios guardados, ocultando sección");
         // En el nuevo layout, el contenido siempre está visible, solo vaciamos la tabla
@@ -416,7 +421,9 @@ export const displaySavedPortfoliosList = () => {
         console.log("DEBUG UI.JS: Actualizado contador a", state.savedPortfolios.length);
     }
 
-    const activeViewColumns = state.tableViews.saved[state.activeViews.saved]?.columns || state.tableViews.saved['default'].columns;
+    // Get custom column configuration
+    const tableConfig = getSavedPortfoliosTableConfig();
+    const visibleColumns = tableConfig.visibleColumns || [];
 
     // Ordenar los portafolios antes de mostrarlos
     state.savedPortfolios.sort((a, b) => {
@@ -436,14 +443,14 @@ export const displaySavedPortfoliosList = () => {
     });
 
     let headerHTML = '<tr>';
-    activeViewColumns.forEach(key => {
+    visibleColumns.forEach(key => {
         const colInfo = ALL_METRICS[key];
         if (colInfo) {
             const orderIndicator = state.savedPortfoliosSortConfig.key === key ? `data-order="${state.savedPortfoliosSortConfig.order}"` : '';
             headerHTML += `<th class="${colInfo.class} sortable" data-sort-key="${key}" ${orderIndicator}>${colInfo.label}</th>`;
         }
     });
-    headerHTML += `<th class="p-2 text-center align-bottom">Acciones</th></tr>`;
+    headerHTML += `<th class="px-4 py-3 text-center align-bottom">Acciones</th></tr>`;
     dom.savedPortfoliosHeader.innerHTML = headerHTML;
 
     let bodyHTML = '';
@@ -462,17 +469,17 @@ export const displaySavedPortfoliosList = () => {
         const isFeatured = originalIndex === state.featuredPortfolioIndex;
         const isCompared = originalIndex === state.comparisonPortfolioIndex;
 
-        let rowHTML = `<tr class="text-xs cursor-pointer" data-row-type="saved" data-row-index="${originalIndex}">`;
-        activeViewColumns.forEach(key => {
+        let rowHTML = `<tr class="hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0" data-row-type="saved" data-row-index="${originalIndex}">`;
+        visibleColumns.forEach(key => {
             if (key === 'name') {
-                rowHTML += `<td class="p-2"><p class="font-semibold text-sky-300">${p.name}</p><p class="text-gray-400 text-xs">${weightsText}</p></td>`;
+                rowHTML += `<td class="px-4 py-3"><p class="font-semibold text-sky-300">${p.name}</p><p class="text-gray-400 text-xs">${weightsText}</p></td>`;
             } else {
                 const value = p.metrics[key];
-                rowHTML += `<td class="p-2 text-right">${formatMetricForDisplay(value, key)}</td>`;
+                rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;
             }
         });
 
-        rowHTML += `<td class="p-2 text-center whitespace-nowrap">
+        rowHTML += `<td class="px-4 py-3 text-center whitespace-nowrap">
             <button data-index="${originalIndex}" class="feature-portfolio-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isFeatured ? 'featured' : ''}" title="Destacar/Acciones">&#9733;</button>
             ${p.weights ? `<button data-index="${originalIndex}" class="compare-original-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isCompared ? 'active' : ''}" title="Comparar con Original">🔄</button>` : ''}
             <button data-index="${originalIndex}" class="view-edit-portfolio-btn bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-3 rounded-lg text-xs inline-flex items-center gap-1 transition-all">
@@ -485,6 +492,10 @@ export const displaySavedPortfoliosList = () => {
     });
     dom.savedPortfoliosBody.innerHTML = bodyHTML;
 };
+
+// Make globally accessible for savedPortfoliosTable modal
+window.displaySavedPortfoliosList = displaySavedPortfoliosList;
+
 
 /**
  * Ordena la tabla de portafolios guardados.

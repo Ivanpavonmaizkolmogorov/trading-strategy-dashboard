@@ -2,6 +2,7 @@ import { state } from '../state.js';
 import { dom } from '../dom.js';
 import { ALL_METRICS, SELECTION_COLORS } from '../config.js'; // ALL_METRICS y SELECTION_COLORS se siguen usando
 import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '../utils.js'; // Estas utilidades se siguen usando
+import { initDatabankTable, getDatabankTableConfig } from './databankTable.js';
 
 /**
  * Actualiza el indicador visual de estado del DataBank.
@@ -257,6 +258,10 @@ const addToDatabankIfBetter = (portfolioData, maxSize) => {
  */
 export const updateDatabankDisplay = () => {
     updateDatabankCount();
+
+    // Initialize table if needed
+    initDatabankTable();
+
     if (state.databankPortfolios.length === 0) {
         dom.databankEmptyRow.classList.remove('hidden');
         dom.databankTableBody.innerHTML = '';
@@ -267,12 +272,15 @@ export const updateDatabankDisplay = () => {
 
     dom.databankEmptyRow.classList.add('hidden');
 
-    const activeViewColumns = state.tableViews.databank[state.activeViews.databank]?.columns || state.tableViews.databank['default'].columns;
-    let headerHTML = '<tr>';
-    headerHTML += `<th class="p-1.5 w-8 align-bottom"><input type="checkbox" id="databank-select-all" class="form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600"></th>`;
-    headerHTML += `<th class="p-2 w-12 sortable align-bottom" data-sort-key="metricValue" ${state.databankSortConfig.key === 'metricValue' ? `data-order="${state.databankSortConfig.order}"` : ''}>Rank</th>`;
+    // Get custom column configuration
+    const tableConfig = getDatabankTableConfig();
+    const visibleColumns = tableConfig.visibleColumns || [];
 
-    activeViewColumns.forEach(key => {
+    let headerHTML = '<tr>';
+    headerHTML += `<th class="px-4 py-3 w-8 align-bottom"><input type="checkbox" id="databank-select-all" class="form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600"></th>`;
+    headerHTML += `<th class="px-4 py-3 w-12 sortable align-bottom" data-sort-key="metricValue" ${state.databankSortConfig.key === 'metricValue' ? `data-order="${state.databankSortConfig.order}"` : ''}>Rank</th>`;
+
+    visibleColumns.forEach(key => {
         const colInfo = ALL_METRICS[key];
         if (colInfo) {
             const orderIndicator = state.databankSortConfig.key === key ? `data-order="${state.databankSortConfig.order}"` : '';
@@ -284,7 +292,7 @@ export const updateDatabankDisplay = () => {
             }
         }
     });
-    headerHTML += `<th class="p-2 text-center sticky right-0 bg-gray-700 z-20 align-bottom">Acción</th>`;
+    headerHTML += `<th class="px-4 py-3 text-center sticky right-0 bg-gray-700 z-20 align-bottom">Acción</th>`;
     headerHTML += '</tr>';
     dom.databankTableHeader.innerHTML = headerHTML;
 
@@ -305,25 +313,25 @@ export const updateDatabankDisplay = () => {
             rankBadge = `<span class="inline-block text-xs py-0.5 px-2 ${rankColors[index]} text-gray-900 rounded-full font-bold">#${index + 1}</span>`;
         }
 
-        html += `<tr class="${rowClass} hover:bg-gray-700/50 text-xs cursor-pointer" data-row-type="databank" data-row-index="${index}">
-                <td class="p-2"><input type="checkbox" data-index="${index}" class="databank-row-checkbox form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600"></td>
-                <td class="p-2 text-center">${rankBadge}</td>`;
+        html += `<tr class="${rowClass} hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0" data-row-type="databank" data-row-index="${index}">
+                <td class="px-4 py-3"><input type="checkbox" data-index="${index}" class="databank-row-checkbox form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600"></td>
+                <td class="px-4 py-3 text-center">${rankBadge}</td>`;
 
-        activeViewColumns.forEach(key => {
+        visibleColumns.forEach(key => {
             if (key === 'name') {
                 let constructedName = p.name;
                 if (!constructedName && p.indices) {
                     constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i + 1}`).join(', ');
                 }
                 const names = (constructedName || '').split(', ').map(name => `<div class="copyable-strategy p-0.5 rounded-sm" title="Copiar '${name.replace('.csv', '')}'">${name.replace('.csv', '')}</div>`).join('');
-                html += `<td class="p-2 text-gray-300 max-w-xs">${names}</td>`;
+                html += `<td class="px-4 py-3 text-gray-300 max-w-xs">${names}</td>`;
             } else {
                 const value = key === 'metricValue' ? p.metricValue : p.metrics[key];
-                html += `<td class="p-2 text-right">${formatMetricForDisplay(value, key)}</td>`;
+                html += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;
             }
         });
 
-        html += `<td class="p-2 text-center sticky right-0 bg-gray-800 z-10"><button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button></td></tr>`;
+        html += `<td class="px-4 py-3 text-center sticky right-0 bg-gray-800 z-10"><button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button></td></tr>`;
     });
     dom.databankTableBody.innerHTML = html;
 
@@ -332,6 +340,10 @@ export const updateDatabankDisplay = () => {
         metricHeader.textContent = firstPortfolio.metricName;
     }
 };
+
+// Make globally accessible for databankTable modal
+window.updateDatabankDisplay = updateDatabankDisplay;
+
 
 /**
  * Ordena la tabla del DataBank.
