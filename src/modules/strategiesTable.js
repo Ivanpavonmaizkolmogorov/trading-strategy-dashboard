@@ -1,13 +1,9 @@
 import { state } from '../state.js';
 import { formatMetricForDisplay } from '../utils.js';
+import { CustomizableTable } from './tableEngine.js';
+import { openSearchConfigModal } from './searchConfig.js';
 
-// Default configuration
-const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'profitFactor', 'winningPercentage', 'maxDrawdownInDollars', 'sharpeRatio'],
-    columnWidths: {}
-};
-
-// Available columns definition
+// Column definitions
 const AVAILABLE_COLUMNS = [
     { id: 'name', label: 'Strategy Name', minWidth: 200 },
     { id: 'totalTrades', label: 'Trades', minWidth: 80 },
@@ -24,70 +20,46 @@ const AVAILABLE_COLUMNS = [
     { id: 'returnDD', label: 'Ret/DD', minWidth: 80 }
 ];
 
-let currentConfig = { ...DEFAULT_CONFIG };
-
-export const initStrategiesTable = () => {
-    // Load config from localStorage
-    const savedConfig = localStorage.getItem('strategiesTableConfig');
-    if (savedConfig) {
-        try {
-            currentConfig = { ...DEFAULT_CONFIG, ...JSON.parse(savedConfig) };
-        } catch (e) {
-            console.error('Error parsing saved table config', e);
-        }
-    }
-
-    // Inject "Columns" button if not present
-    injectControls();
+// Default configuration
+const DEFAULT_CONFIG = {
+    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'profitFactor', 'winningPercentage', 'maxDrawdownInDollars', 'sharpeRatio'],
+    columnWidths: {}
 };
 
-const injectControls = () => {
-    const header = document.querySelector('#strategies-content h2'); // Assuming there's a header
-    // If we can't find a good place, we might need to modify index.html directly.
-    // For now, let's assume we can append to the container above the table.
-    const container = document.getElementById('strategies-content');
-    if (!container) return;
-
-    // Check if controls already exist
-    if (document.getElementById('strategies-table-controls')) return;
-
-    const controlsDiv = document.createElement('div');
-    controlsDiv.id = 'strategies-table-controls';
-    controlsDiv.className = 'flex justify-end mb-2';
-    controlsDiv.innerHTML = `
-        <button id="btn-configure-columns" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Columns
-        </button>
-    `;
-
-    // Insert before the table container (which usually has overflow-auto)
-    const tableContainer = container.querySelector('.overflow-x-auto') || container.querySelector('table')?.parentElement;
-    if (tableContainer) {
-        container.insertBefore(controlsDiv, tableContainer);
-    } else {
-        container.prepend(controlsDiv);
-    }
-
-    document.getElementById('btn-configure-columns').addEventListener('click', openColumnConfigModal);
-};
+// Create table instance
+const strategiesTable = new CustomizableTable({
+    id: 'strategies',
+    storageKey: 'strategiesTableConfig',
+    columns: AVAILABLE_COLUMNS,
+    defaultConfig: DEFAULT_CONFIG,
+    containerId: 'strategies-content',
+    buttonLabel: 'Columns',
+    modalTitle: 'Configure Strategies Columns',
+    onConfigChange: () => renderStrategiesTable()
+});
 
 // Sorting state
 let sortConfig = {
     column: null,
-    direction: 'asc' // or 'desc'
+    direction: 'asc'
 };
 
 // Selection state
-const selectedStrategies = new Set();
+export const selectedStrategies = new Set();
+
+// Floating action bar state
+let floatingActionBar = null;
+
+export const initStrategiesTable = () => {
+    strategiesTable.init();
+};
 
 export const renderStrategiesTable = () => {
     const tableHead = document.querySelector('#strategies-content thead tr');
     const tableBody = document.getElementById('strategies-table-body');
     if (!tableBody || !tableHead) return;
+
+    const config = strategiesTable.getConfig();
 
     // 1. Render Headers
     tableHead.innerHTML = '';
@@ -98,7 +70,7 @@ export const renderStrategiesTable = () => {
     thCheckbox.innerHTML = '<span class="sr-only">Select</span>';
     tableHead.appendChild(thCheckbox);
 
-    currentConfig.visibleColumns.forEach(colId => {
+    config.visibleColumns.forEach(colId => {
         const colDef = AVAILABLE_COLUMNS.find(c => c.id === colId);
         if (!colDef) return;
 
@@ -116,28 +88,34 @@ export const renderStrategiesTable = () => {
 
         // Click to sort
         th.addEventListener('click', (e) => {
-            // Ignore if clicking resizer
             if (e.target.classList.contains('cursor-col-resize')) return;
 
             if (sortConfig.column === colId) {
                 sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
             } else {
                 sortConfig.column = colId;
-                sortConfig.direction = 'desc'; // Default to desc for metrics usually
+                sortConfig.direction = 'desc';
             }
             renderStrategiesTable();
         });
 
-        // Apply saved width
-        if (currentConfig.columnWidths[colId]) {
-            th.style.width = currentConfig.columnWidths[colId];
-            th.style.minWidth = currentConfig.columnWidths[colId]; // Enforce
+        // Apply saved width OR auto-fit if first time
+        if (config.columnWidths[colId]) {
+            th.style.width = config.columnWidths[colId];
+            th.style.minWidth = config.columnWidths[colId];
+        } else {
+            // First time: auto-fit after table is rendered
+            setTimeout(() => autoFitColumn(th, colId), 0);
         }
 
         // Resizer handle
         const resizer = document.createElement('div');
-        resizer.className = 'absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity';
+        resizer.className = 'absolute right-0 top-0 bottom-0 w-1 cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors';
         resizer.addEventListener('mousedown', initResize);
+        resizer.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            autoFitColumn(th, colId);
+        });
         th.appendChild(resizer);
 
         tableHead.appendChild(th);
@@ -147,7 +125,7 @@ export const renderStrategiesTable = () => {
     tableBody.innerHTML = '';
 
     if (!window.analysisResults || window.analysisResults.length === 0) {
-        const colSpan = currentConfig.visibleColumns.length + 1;
+        const colSpan = config.visibleColumns.length + 1;
         tableBody.innerHTML = `<tr><td colspan="${colSpan}" class="p-4 text-center text-gray-500">No hay resultados de análisis disponibles.</td></tr>`;
         return;
     }
@@ -164,7 +142,7 @@ export const renderStrategiesTable = () => {
     }
 
     if (strategies.length === 0) {
-        const colSpan = currentConfig.visibleColumns.length + 1;
+        const colSpan = config.visibleColumns.length + 1;
         tableBody.innerHTML = `<tr><td colspan="${colSpan}" class="p-4 text-center text-gray-500">No se encontraron estrategias individuales.</td></tr>`;
         return;
     }
@@ -182,14 +160,7 @@ export const renderStrategiesTable = () => {
     }
 
     strategies.forEach((strategy, index) => {
-        // We need the original index to identify the strategy correctly
-        // Assuming strategies array order matches window.analysisResults filtered order
-        // But for robustness, let's use the strategy object reference or a unique ID if available.
-        // For now, we'll use the index in the filtered array as a proxy, but ideally we need a stable ID.
-        // Let's assume strategy.name is unique enough for now, or add an ID.
-        // Actually, let's find the index in window.analysisResults to be safe.
         const originalIndex = window.analysisResults.indexOf(strategy);
-
         const metrics = strategy.analysis?.metrics || strategy.analysis || strategy.metrics || {};
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0';
@@ -202,7 +173,7 @@ export const renderStrategiesTable = () => {
                 ${selectedStrategies.has(originalIndex) ? 'checked' : ''}>
         `;
         tdCheckbox.querySelector('input').addEventListener('change', (e) => {
-            e.stopPropagation(); // Prevent row click
+            e.stopPropagation();
             if (e.target.checked) {
                 selectedStrategies.add(originalIndex);
             } else {
@@ -210,10 +181,8 @@ export const renderStrategiesTable = () => {
             }
             updateFloatingActionBar();
         });
-        // Also toggle on cell click
         tdCheckbox.addEventListener('click', (e) => {
             if (e.target.tagName !== 'INPUT') {
-                e.stopPropagation();
                 const checkbox = tdCheckbox.querySelector('input');
                 checkbox.checked = !checkbox.checked;
                 checkbox.dispatchEvent(new Event('change'));
@@ -221,237 +190,169 @@ export const renderStrategiesTable = () => {
         });
         row.appendChild(tdCheckbox);
 
-        currentConfig.visibleColumns.forEach(colId => {
+        // Data Cells
+        config.visibleColumns.forEach(colId => {
             const td = document.createElement('td');
             td.className = 'px-4 py-3 text-gray-300 truncate';
 
-            // Apply saved width to cells too for consistency
-            if (currentConfig.columnWidths[colId]) {
-                td.style.width = currentConfig.columnWidths[colId];
-                td.style.maxWidth = currentConfig.columnWidths[colId]; // Truncate if too small
-            }
-
             if (colId === 'name') {
+                const fileName = strategy.fileName || strategy.name || 'Unknown';
                 td.className += ' font-medium text-white';
-                td.textContent = strategy.name || 'Unknown';
-                td.title = strategy.name;
+                td.textContent = fileName;
+                td.title = fileName;
             } else {
+                const value = getMetricValue(strategy, colId);
                 td.className += ' text-right';
-                const val = metrics[colId];
-                // Color coding for Profit
-                if (colId === 'totalProfit' || colId === 'netProfit') {
-                    td.className += val >= 0 ? ' text-green-400' : ' text-red-400';
+                td.textContent = formatMetricForDisplay(value, colId);
+
+                // Color positive/negative
+                if (typeof value === 'number' && !['totalTrades', 'maxStagnationTrades', 'maxStagnationDays', 'maxConsecutiveLosingMonths'].includes(colId)) {
+                    td.className += value >= 0 ? ' text-green-400' : ' text-red-400';
                 }
-                td.textContent = formatMetricForDisplay(val, colId);
             }
             row.appendChild(td);
+        });
+
+        // Row click handler
+        row.addEventListener('click', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.closest('td').classList.contains('w-10')) {
+                return;
+            }
+            console.log('Strategy clicked:', strategy);
         });
 
         tableBody.appendChild(row);
     });
 
+    // Update floating action bar visibility
     updateFloatingActionBar();
 };
 
-const updateFloatingActionBar = () => {
-    let bar = document.getElementById('squad-builder-bar');
-
-    if (selectedStrategies.size === 0) {
-        if (bar) bar.remove();
-        return;
-    }
-
-    if (!bar) {
-        bar = document.createElement('div');
-        bar.id = 'squad-builder-bar';
-        bar.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-4 z-50 animate-bounce-in';
-        document.body.appendChild(bar);
-    }
-
-    bar.innerHTML = `
-        <span class="font-medium">${selectedStrategies.size} Strategy${selectedStrategies.size > 1 ? 's' : ''} Selected</span>
-        <div class="h-4 w-px bg-blue-400"></div>
-        <button id="btn-find-team" class="font-bold hover:text-blue-200 flex items-center gap-2">
-            <span>⚽</span> Find Team
-        </button>
-        <button id="btn-clear-selection" class="ml-2 text-blue-300 hover:text-white text-sm">
-            &times;
-        </button>
-    `;
-
-    // Re-attach listeners (since innerHTML wipes them)
-    bar.querySelector('#btn-find-team').onclick = () => {
-        import('./searchConfig.js').then(module => {
-            module.openSearchConfigModal(Array.from(selectedStrategies));
-        });
-    };
-
-    bar.querySelector('#btn-clear-selection').onclick = () => {
-        selectedStrategies.clear();
-        renderStrategiesTable();
-    };
-};
-
-const getMetricValue = (strategy, colId) => {
-    if (colId === 'name') return strategy.name || '';
+// Helper: Get metric value from strategy object
+const getMetricValue = (strategy, metricKey) => {
     const metrics = strategy.analysis?.metrics || strategy.analysis || strategy.metrics || {};
-    return metrics[colId] || 0;
+    return metrics[metricKey] ?? (metricKey === 'name' ? strategy.fileName : 0);
 };
 
-// --- Column Configuration Modal ---
-const openColumnConfigModal = () => {
-    // Determine current order: Visible columns first, then the rest (hidden ones)
-    let orderedColumns = [];
+// Auto-fit column to content
+function autoFitColumn(th, colId) {
+    const tableBody = document.getElementById('strategies-table-body');
+    if (!tableBody) return;
 
-    // 1. Add visible columns in their current order
-    currentConfig.visibleColumns.forEach(colId => {
-        const col = AVAILABLE_COLUMNS.find(c => c.id === colId);
-        if (col) orderedColumns.push({ ...col, visible: true });
-    });
+    const rows = tableBody.querySelectorAll('tr');
+    let maxWidth = 50; // Minimum width
 
-    // 2. Add remaining columns (hidden)
-    AVAILABLE_COLUMNS.forEach(col => {
-        if (!currentConfig.visibleColumns.includes(col.id)) {
-            orderedColumns.push({ ...col, visible: false });
+    // Create temporary element to measure text
+    const tempSpan = document.createElement('span');
+    tempSpan.style.visibility = 'hidden';
+    tempSpan.style.position = 'absolute';
+    tempSpan.style.whiteSpace = 'nowrap';
+    tempSpan.className = 'px-4 py-3 text-xs'; // Same padding as cells
+    document.body.appendChild(tempSpan);
+
+    // Measure header
+    tempSpan.textContent = th.textContent;
+    maxWidth = Math.max(maxWidth, tempSpan.offsetWidth + 20); // +20 for resizer
+
+    // Measure all cells in this column
+    const config = strategiesTable.getConfig();
+    const colIndex = config.visibleColumns.indexOf(colId) + 1; // +1 for checkbox column
+
+    rows.forEach(row => {
+        const cell = row.children[colIndex];
+        if (cell) {
+            tempSpan.textContent = cell.textContent;
+            maxWidth = Math.max(maxWidth, tempSpan.offsetWidth);
         }
     });
 
-    // Create modal HTML
-    const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-50';
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 w-96 max-w-full shadow-xl">
-            <h3 class="text-xl font-bold text-white mb-4">Configure Columns</h3>
-            <p class="text-xs text-gray-400 mb-2">Check to show. Use arrows to reorder.</p>
-            <div id="columns-list" class="space-y-2 max-h-96 overflow-y-auto mb-6">
-                <!-- Items will be injected here -->
-            </div>
-            <div class="flex justify-end gap-3">
-                <button id="btn-cancel-cols" class="px-4 py-2 text-gray-400 hover:text-white transition-colors">Cancel</button>
-                <button id="btn-save-cols" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium transition-colors">Save</button>
-            </div>
-        </div>
-    `;
+    document.body.removeChild(tempSpan);
 
-    document.body.appendChild(modal);
+    // Apply the width
+    const newWidth = maxWidth + 'px';
+    th.style.width = newWidth;
+    th.style.minWidth = newWidth;
 
-    const listContainer = modal.querySelector('#columns-list');
+    // Save to config
+    const tableConfig = strategiesTable.getConfig();
+    tableConfig.columnWidths[colId] = newWidth;
+    localStorage.setItem('strategiesTableConfig', JSON.stringify(tableConfig));
+}
 
-    // Function to render the list items
-    const renderList = () => {
-        listContainer.innerHTML = orderedColumns.map((col, index) => `
-            <div class="flex items-center justify-between bg-gray-700/50 p-2 rounded hover:bg-gray-700 group" data-id="${col.id}">
-                <label class="flex items-center space-x-3 cursor-pointer flex-1">
-                    <input type="checkbox" value="${col.id}" 
-                        ${col.visible ? 'checked' : ''}
-                        class="form-checkbox h-5 w-5 text-blue-500 rounded border-gray-600 bg-gray-700 focus:ring-offset-gray-800">
-                    <span class="text-gray-300 select-none">${col.label}</span>
-                </label>
-                <div class="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                    <button class="btn-move-up p-1 hover:text-white text-gray-400" data-index="${index}" title="Move Up">
-                        ▲
-                    </button>
-                    <button class="btn-move-down p-1 hover:text-white text-gray-400" data-index="${index}" title="Move Down">
-                        ▼
-                    </button>
-                </div>
-            </div>
-        `).join('');
+// Resizer functionality
+let resizeData = null;
 
-        // Re-attach listeners
-        listContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-            cb.addEventListener('change', (e) => {
-                const col = orderedColumns.find(c => c.id === e.target.value);
-                if (col) col.visible = e.target.checked;
-            });
-        });
-
-        listContainer.querySelectorAll('.btn-move-up').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const index = parseInt(e.currentTarget.dataset.index);
-                if (index > 0) {
-                    // Swap
-                    [orderedColumns[index], orderedColumns[index - 1]] = [orderedColumns[index - 1], orderedColumns[index]];
-                    renderList();
-                }
-            });
-        });
-
-        listContainer.querySelectorAll('.btn-move-down').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const index = parseInt(e.currentTarget.dataset.index);
-                if (index < orderedColumns.length - 1) {
-                    // Swap
-                    [orderedColumns[index], orderedColumns[index + 1]] = [orderedColumns[index + 1], orderedColumns[index]];
-                    renderList();
-                }
-            });
-        });
+function initResize(e) {
+    resizeData = {
+        th: e.target.parentElement,
+        startX: e.pageX,
+        startWidth: e.target.parentElement.offsetWidth
     };
-
-    renderList();
-
-    // Event Listeners for Modal Buttons
-    modal.querySelector('#btn-cancel-cols').onclick = () => modal.remove();
-    modal.querySelector('#btn-save-cols').onclick = () => {
-        // Construct new visibleColumns array based on the ordered list and visibility status
-        const newVisibleColumns = orderedColumns
-            .filter(col => col.visible)
-            .map(col => col.id);
-
-        currentConfig.visibleColumns = newVisibleColumns;
-
-        saveConfig();
-        renderStrategiesTable();
-        modal.remove();
-    };
-};
-
-// --- Resizing Logic ---
-let activeResizer = null;
-let startX = 0;
-let startWidth = 0;
-let activeColId = null;
-
-const initResize = (e) => {
+    document.addEventListener('mousemove', doResize);
+    document.addEventListener('mouseup', stopResize);
     e.preventDefault();
-    e.stopPropagation();
+}
 
-    const th = e.target.parentElement;
-    activeColId = th.dataset.colId;
-    activeResizer = th;
-    startX = e.pageX;
-    startWidth = th.offsetWidth;
+function doResize(e) {
+    if (!resizeData) return;
+    const delta = e.pageX - resizeData.startX;
+    const newWidth = Math.max(50, resizeData.startWidth + delta);
+    resizeData.th.style.width = newWidth + 'px';
+    resizeData.th.style.minWidth = newWidth + 'px';
+}
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-    document.body.style.cursor = 'col-resize';
-};
+function stopResize() {
+    if (resizeData) {
+        const colId = resizeData.th.dataset.colId;
+        const newWidth = resizeData.th.style.width;
 
-const onMouseMove = (e) => {
-    if (!activeResizer) return;
-    const diff = e.pageX - startX;
-    const newWidth = Math.max(50, startWidth + diff); // Min 50px
-    activeResizer.style.width = `${newWidth}px`;
-    activeResizer.style.minWidth = `${newWidth}px`;
-};
+        const config = strategiesTable.getConfig();
+        config.columnWidths[colId] = newWidth;
+        localStorage.setItem('strategiesTableConfig', JSON.stringify(config));
 
-const onMouseUp = (e) => {
-    if (activeResizer && activeColId) {
-        currentConfig.columnWidths[activeColId] = activeResizer.style.width;
-        saveConfig();
+        resizeData = null;
+    }
+    document.removeEventListener('mousemove', doResize);
+    document.removeEventListener('mouseup', stopResize);
+}
 
-        // Re-render to apply width to all cells (not just header)
-        renderStrategiesTable();
+// Floating Action Bar
+export const updateFloatingActionBar = () => {
+    const count = selectedStrategies.size;
+
+    if (count === 0) {
+        if (floatingActionBar) {
+            floatingActionBar.remove();
+            floatingActionBar = null;
+        }
+        return;
     }
 
-    activeResizer = null;
-    activeColId = null;
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-    document.body.style.cursor = '';
-};
+    if (!floatingActionBar) {
+        floatingActionBar = document.createElement('div');
+        floatingActionBar.id = 'strategies-floating-action-bar';
+        floatingActionBar.className = 'fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 z-50 animate-slide-up';
+        document.body.appendChild(floatingActionBar);
+    }
 
-const saveConfig = () => {
-    localStorage.setItem('strategiesTableConfig', JSON.stringify(currentConfig));
+    floatingActionBar.innerHTML = `
+        <span class="font-bold text-lg">${count} ${count === 1 ? 'strategy' : 'strategies'} selected</span>
+        <button id="fab-find-team-btn" class="bg-white text-purple-600 px-4 py-2 rounded-full font-bold hover:bg-gray-100 transition-all flex items-center gap-2">
+            <span>⚡</span>
+            <span>Find Team</span>
+        </button>
+        <button id="fab-deselect-all-btn" class="bg-red-500 hover:bg-red-600 px-3 py-2 rounded-full font-bold transition-all">
+            Clear
+        </button>
+    `;
+
+    document.getElementById('fab-find-team-btn').addEventListener('click', () => {
+        const selectedIndices = Array.from(selectedStrategies);
+        openSearchConfigModal(selectedIndices);
+    });
+
+    document.getElementById('fab-deselect-all-btn').addEventListener('click', () => {
+        selectedStrategies.clear();
+        renderStrategiesTable();
+    });
 };

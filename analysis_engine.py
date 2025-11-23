@@ -282,6 +282,11 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     # 4. Etiquetas para los gráficos (eje X)
     chart_labels = [idx.strftime('%Y-%m-%d') for idx in equity_curve.index]
 
+    # Validate totalProfit before including
+    # Ensure it's a finite number, not NaN or Inf
+    if not np.isfinite(total_profit):
+        total_profit = 0.0  # Default to 0 if invalid
+    
     metrics_dict = {
         "profitFactor": profit_factor,
         "sortinoRatio": sortino_ratio,

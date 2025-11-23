@@ -1,6 +1,7 @@
 export const ALL_METRICS = {
     name: { label: 'Portafolio', class: 'p-2 text-left align-bottom' },
     metricValue: { label: 'Métrica Optimizada', class: 'p-2 text-center' },
+    totalProfit: { label: 'Net Profit', class: 'p-2 text-center' },
     profitFactor: { label: 'Profit Factor', class: 'p-2 text-center' },
     sortinoRatio: { label: 'Ratio Sortino', class: 'p-2 text-center' },
     upi: { label: 'UPI', class: 'p-2 text-center' },

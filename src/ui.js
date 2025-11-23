@@ -442,16 +442,61 @@ export const displaySavedPortfoliosList = () => {
         return 0;
     });
 
-    let headerHTML = '<tr>';
+    // Clear and rebuild header using DOM (like Strategies)
+    dom.savedPortfoliosHeader.innerHTML = '';
+    const headerRow = document.createElement('tr');
+
     visibleColumns.forEach(key => {
         const colInfo = ALL_METRICS[key];
-        if (colInfo) {
-            const orderIndicator = state.savedPortfoliosSortConfig.key === key ? `data-order="${state.savedPortfoliosSortConfig.order}"` : '';
-            headerHTML += `<th class="${colInfo.class} sortable" data-sort-key="${key}" ${orderIndicator}>${colInfo.label}</th>`;
+        if (!colInfo) return;
+
+        const th = document.createElement('th');
+        th.className = 'px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10 relative group select-none cursor-pointer hover:text-white transition-colors';
+
+        const isSorting = state.savedPortfoliosSortConfig.key === key;
+        if (isSorting) {
+            th.className += ' text-blue-400';
         }
+
+        const label = colInfo.label + (isSorting ? (state.savedPortfoliosSortConfig.order === 'asc' ? ' ▲' : ' ▼') : '');
+        th.textContent = label;
+        th.dataset.sortKey = key;
+        th.dataset.colId = key;
+
+        // Apply saved width OR auto-fit if first time
+        if (tableConfig.columnWidths && tableConfig.columnWidths[key]) {
+            th.style.width = tableConfig.columnWidths[key];
+            th.style.minWidth = tableConfig.columnWidths[key];
+        } else {
+            // First time: auto-fit after table is rendered
+            setTimeout(() => autoFitSavedPortfoliosColumn(th, key), 0);
+        }
+
+        // Click to sort
+        th.addEventListener('click', (e) => {
+            if (e.target.classList.contains('cursor-col-resize')) return;
+            sortSavedPortfoliosTable(th);
+        });
+
+        // Resizer
+        const resizer = document.createElement('div');
+        resizer.className = 'absolute right-0 top-0 bottom-0 w-1 cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors';
+        resizer.addEventListener('mousedown', initSavedPortfoliosResize);
+        resizer.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            autoFitSavedPortfoliosColumn(th, key);
+        });
+        th.appendChild(resizer);
+        headerRow.appendChild(th);
     });
-    headerHTML += `<th class="px-4 py-3 text-center align-bottom">Acciones</th></tr>`;
-    dom.savedPortfoliosHeader.innerHTML = headerHTML;
+
+    // Action header
+    const thAction = document.createElement('th');
+    thAction.className = 'px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
+    thAction.textContent = 'Acciones';
+    headerRow.appendChild(thAction);
+
+    dom.savedPortfoliosHeader.appendChild(headerRow);
 
     let bodyHTML = '';
     state.savedPortfolios.forEach((p, i) => {
@@ -495,6 +540,87 @@ export const displaySavedPortfoliosList = () => {
 
 // Make globally accessible for savedPortfoliosTable modal
 window.displaySavedPortfoliosList = displaySavedPortfoliosList;
+
+// Auto-fit column to content
+function autoFitSavedPortfoliosColumn(th, colId) {
+    const tableBody = dom.savedPortfoliosBody;
+    if (!tableBody) return;
+
+    const rows = tableBody.querySelectorAll('tr');
+    let maxWidth = 50;
+
+    const tempSpan = document.createElement('span');
+    tempSpan.style.visibility = 'hidden';
+    tempSpan.style.position = 'absolute';
+    tempSpan.style.whiteSpace = 'nowrap';
+    tempSpan.className = 'px-4 py-3 text-xs';
+    document.body.appendChild(tempSpan);
+
+    // Measure header
+    tempSpan.textContent = th.textContent;
+    maxWidth = Math.max(maxWidth, tempSpan.offsetWidth + 20);
+
+    // Measure cells
+    const config = getSavedPortfoliosTableConfig();
+    const colIndex = config.visibleColumns.indexOf(colId);
+
+    rows.forEach(row => {
+        const cell = row.children[colIndex];
+        if (cell) {
+            tempSpan.textContent = cell.textContent;
+            maxWidth = Math.max(maxWidth, tempSpan.offsetWidth);
+        }
+    });
+
+    document.body.removeChild(tempSpan);
+
+    const newWidth = maxWidth + 'px';
+    th.style.width = newWidth;
+    th.style.minWidth = newWidth;
+
+    const tableConfig = getSavedPortfoliosTableConfig();
+    if (!tableConfig.columnWidths) tableConfig.columnWidths = {};
+    tableConfig.columnWidths[colId] = newWidth;
+    localStorage.setItem('savedPortfoliosTableConfig', JSON.stringify(tableConfig));
+}
+
+// Resizer functionality for Saved Portfolios (copied from Strategies)
+let savedPortfoliosResizeData = null;
+
+function initSavedPortfoliosResize(e) {
+    savedPortfoliosResizeData = {
+        th: e.target.parentElement,
+        startX: e.pageX,
+        startWidth: e.target.parentElement.offsetWidth
+    };
+    document.addEventListener('mousemove', doSavedPortfoliosResize);
+    document.addEventListener('mouseup', stopSavedPortfoliosResize);
+    e.preventDefault();
+}
+
+function doSavedPortfoliosResize(e) {
+    if (!savedPortfoliosResizeData) return;
+    const delta = e.pageX - savedPortfoliosResizeData.startX;
+    const newWidth = Math.max(50, savedPortfoliosResizeData.startWidth + delta);
+    savedPortfoliosResizeData.th.style.width = newWidth + 'px';
+    savedPortfoliosResizeData.th.style.minWidth = newWidth + 'px';
+}
+
+function stopSavedPortfoliosResize() {
+    if (savedPortfoliosResizeData) {
+        const colId = savedPortfoliosResizeData.th.dataset.colId || savedPortfoliosResizeData.th.dataset.sortKey;
+        const newWidth = savedPortfoliosResizeData.th.style.width;
+
+        const config = getSavedPortfoliosTableConfig();
+        if (!config.columnWidths) config.columnWidths = {};
+        config.columnWidths[colId] = newWidth;
+        localStorage.setItem('savedPortfoliosTableConfig', JSON.stringify(config));
+
+        savedPortfoliosResizeData = null;
+    }
+    document.removeEventListener('mousemove', doSavedPortfoliosResize);
+    document.removeEventListener('mouseup', stopSavedPortfoliosResize);
+}
 
 
 /**

@@ -276,25 +276,99 @@ export const updateDatabankDisplay = () => {
     const tableConfig = getDatabankTableConfig();
     const visibleColumns = tableConfig.visibleColumns || [];
 
-    let headerHTML = '<tr>';
-    headerHTML += `<th class="px-4 py-3 w-8 align-bottom"><input type="checkbox" id="databank-select-all" class="form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600"></th>`;
-    headerHTML += `<th class="px-4 py-3 w-12 sortable align-bottom" data-sort-key="metricValue" ${state.databankSortConfig.key === 'metricValue' ? `data-order="${state.databankSortConfig.order}"` : ''}>Rank</th>`;
+    // Clear and rebuild header using DOM (like Strategies)
+    dom.databankTableHeader.innerHTML = '';
+    const headerRow = document.createElement('tr');
 
+    // Checkbox header
+    const thCheckbox = document.createElement('th');
+    thCheckbox.className = 'px-4 py-3 w-8 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
+    thCheckbox.innerHTML = '<input type="checkbox" id="databank-select-all" class="form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600">';
+    headerRow.appendChild(thCheckbox);
+
+    // Rank header
+    const thRank = document.createElement('th');
+    thRank.className = 'px-4 py-3 w-12 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10 relative group select-none cursor-pointer hover:text-white transition-colors';
+    if (state.databankSortConfig.key === 'metricValue') {
+        thRank.className += ' text-blue-400';
+    }
+    const rankLabel = 'Rank' + (state.databankSortConfig.key === 'metricValue' ? (state.databankSortConfig.order === 'asc' ? ' ▲' : ' ▼') : '');
+    thRank.textContent = rankLabel;
+    thRank.dataset.sortKey = 'metricValue';
+
+    // Resizer
+    const rankResizer = document.createElement('div');
+    rankResizer.className = 'absolute right-0 top-0 bottom-0 w-1 cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors';
+    rankResizer.addEventListener('mousedown', initDatabankResize);
+    thRank.appendChild(rankResizer);
+    headerRow.appendChild(thRank);
+
+    // Data columns
     visibleColumns.forEach(key => {
         const colInfo = ALL_METRICS[key];
-        if (colInfo) {
-            const orderIndicator = state.databankSortConfig.key === key ? `data-order="${state.databankSortConfig.order}"` : '';
-            const id = key === 'metricValue' ? 'id="databank-metric-header"' : '';
+        if (!colInfo) return;
+
+        const th = document.createElement('th');
+        th.className = 'px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10 relative group select-none cursor-pointer hover:text-white transition-colors';
+
+        const isSorting = state.databankSortConfig.key === key;
+        if (isSorting) {
+            th.className += ' text-blue-400';
+        }
+
+        const label = colInfo.label + (isSorting ? (state.databankSortConfig.order === 'asc' ? ' ▲' : ' ▼') : '');
+        th.textContent = label;
+        th.dataset.sortKey = key;
+        th.dataset.colId = key;
+        if (key === 'metricValue') {
+            th.id = 'databank-metric-header';
+        }
+
+        // Apply saved width OR auto-fit if first time
+        if (tableConfig.columnWidths && tableConfig.columnWidths[key]) {
+            th.style.width = tableConfig.columnWidths[key];
+            th.style.minWidth = tableConfig.columnWidths[key];
+        } else {
+            // First time: auto-fit after table is rendered
+            // Special case: name column has max-width limit (contains multiple strategy names)
             if (key === 'name') {
-                headerHTML += `<th class="${colInfo.class} sortable" ${id} data-sort-key="${key}" ${orderIndicator}>${colInfo.label}</th>`;
+                th.style.maxWidth = '300px';
+                th.style.width = '300px';
+                th.style.minWidth = '200px';
+                // Save this default width
+                if (!tableConfig.columnWidths) tableConfig.columnWidths = {};
+                tableConfig.columnWidths[key] = '300px';
+                localStorage.setItem('databankTableConfig', JSON.stringify(tableConfig));
             } else {
-                headerHTML += `<th class="${colInfo.class.replace('text-right', 'text-center')} sortable" ${id} data-sort-key="${key}" ${orderIndicator}><div class="corr-header">${colInfo.label}</div></th>`;
+                setTimeout(() => autoFitDatabankColumn(th, key), 0);
             }
         }
+
+        // Click to sort
+        th.addEventListener('click', (e) => {
+            if (e.target.classList.contains('cursor-col-resize')) return;
+            sortDatabank(th);
+        });
+
+        // Resizer
+        const resizer = document.createElement('div');
+        resizer.className = 'absolute right-0 top-0 bottom-0 w-1 cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors';
+        resizer.addEventListener('mousedown', initDatabankResize);
+        resizer.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            autoFitDatabankColumn(th, key);
+        });
+        th.appendChild(resizer);
+        headerRow.appendChild(th);
     });
-    headerHTML += `<th class="px-4 py-3 text-center sticky right-0 bg-gray-700 z-20 align-bottom">Acción</th>`;
-    headerHTML += '</tr>';
-    dom.databankTableHeader.innerHTML = headerHTML;
+
+    // Action header
+    const thAction = document.createElement('th');
+    thAction.className = 'px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
+    thAction.textContent = 'Acción';
+    headerRow.appendChild(thAction);
+
+    dom.databankTableHeader.appendChild(headerRow);
 
     const metricHeader = document.getElementById('databank-metric-header');
 
@@ -326,7 +400,14 @@ export const updateDatabankDisplay = () => {
                 const names = (constructedName || '').split(', ').map(name => `<div class="copyable-strategy p-0.5 rounded-sm" title="Copiar '${name.replace('.csv', '')}'">${name.replace('.csv', '')}</div>`).join('');
                 html += `<td class="px-4 py-3 text-gray-300 max-w-xs">${names}</td>`;
             } else {
-                const value = key === 'metricValue' ? p.metricValue : p.metrics[key];
+                // Get value from metrics or analysis.metrics
+                let value;
+                if (key === 'metricValue') {
+                    value = p.metricValue;
+                } else {
+                    value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.analysis?.[key];
+                }
+
                 html += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;
             }
         });
@@ -343,6 +424,88 @@ export const updateDatabankDisplay = () => {
 
 // Make globally accessible for databankTable modal
 window.updateDatabankDisplay = updateDatabankDisplay;
+
+// Auto-fit column to content
+function autoFitDatabankColumn(th, colId) {
+    const tableBody = dom.databankTableBody;
+    if (!tableBody) return;
+
+    const rows = tableBody.querySelectorAll('tr');
+    let maxWidth = 50;
+
+    const tempSpan = document.createElement('span');
+    tempSpan.style.visibility = 'hidden';
+    tempSpan.style.position = 'absolute';
+    tempSpan.style.whiteSpace = 'nowrap';
+    tempSpan.className = 'px-4 py-3 text-xs';
+    document.body.appendChild(tempSpan);
+
+    // Measure header
+    tempSpan.textContent = th.textContent;
+    maxWidth = Math.max(maxWidth, tempSpan.offsetWidth + 20);
+
+    // Measure cells
+    const config = getDatabankTableConfig();
+    const colIndex = config.visibleColumns.indexOf(colId) + 2; // +2 for checkbox and rank
+
+    rows.forEach(row => {
+        const cell = row.children[colIndex];
+        if (cell) {
+            tempSpan.textContent = cell.textContent;
+            maxWidth = Math.max(maxWidth, tempSpan.offsetWidth);
+        }
+    });
+
+    document.body.removeChild(tempSpan);
+
+    const newWidth = maxWidth + 'px';
+    th.style.width = newWidth;
+    th.style.minWidth = newWidth;
+
+    const tableConfig = getDatabankTableConfig();
+    if (!tableConfig.columnWidths) tableConfig.columnWidths = {};
+    tableConfig.columnWidths[colId] = newWidth;
+    localStorage.setItem('databankTableConfig', JSON.stringify(tableConfig));
+}
+
+// Resizer functionality (copied from Strategies)
+let databankResizeData = null;
+
+function initDatabankResize(e) {
+    databankResizeData = {
+        th: e.target.parentElement,
+        startX: e.pageX,
+        startWidth: e.target.parentElement.offsetWidth
+    };
+    document.addEventListener('mousemove', doDatabankResize);
+    document.addEventListener('mouseup', stopDatabankResize);
+    e.preventDefault();
+}
+
+function doDatabankResize(e) {
+    if (!databankResizeData) return;
+    const delta = e.pageX - databankResizeData.startX;
+    const newWidth = Math.max(50, databankResizeData.startWidth + delta);
+    databankResizeData.th.style.width = newWidth + 'px';
+    databankResizeData.th.style.minWidth = newWidth + 'px';
+}
+
+function stopDatabankResize() {
+    if (databankResizeData) {
+        const colId = databankResizeData.th.dataset.colId || databankResizeData.th.dataset.sortKey;
+        const newWidth = databankResizeData.th.style.width;
+
+        const config = getDatabankTableConfig();
+        if (!config.columnWidths) config.columnWidths = {};
+        config.columnWidths[colId] = newWidth;
+        localStorage.setItem('databankTableConfig', JSON.stringify(config));
+
+        databankResizeData = null;
+    }
+    document.removeEventListener('mousemove', doDatabankResize);
+    document.removeEventListener('mouseup', stopDatabankResize);
+}
+
 
 
 /**
