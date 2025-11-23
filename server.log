@@ -631,3 +631,4 @@ Received 60 strategies and benchmark with 92594 rows.
 
 [BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 60 objetos de resultados al frontend.
 INFO:     127.0.0.1:60880 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38922 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
