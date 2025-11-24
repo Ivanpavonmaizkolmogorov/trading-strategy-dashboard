@@ -108,6 +108,9 @@ const renderDatabankViewer = () => {
  * Renderiza los portafolios guardados en el viewer.
  */
 const renderSavedPortfoliosViewer = () => {
+    console.log('[Viewer] renderSavedPortfoliosViewer called - DISABLED for clean slate');
+    return; // PERFORMANCE OVERHAUL: Disabled auto-rendering
+
     const canvasId = 'portfolioEquityChart';
     destroyChart(canvasId);
     const ctx = document.getElementById(canvasId)?.getContext('2d');
@@ -175,6 +178,9 @@ const renderSavedPortfoliosViewer = () => {
  * Renderiza todas las estrategias individuales en el viewer.
  */
 const renderStrategiesViewer = () => {
+    console.log('[Viewer] renderStrategiesViewer called - DISABLED for clean slate');
+    return; // PERFORMANCE OVERHAUL: Disabled auto-rendering
+
     const canvasId = 'portfolioEquityChart';
     destroyChart(canvasId);
     const ctx = document.getElementById(canvasId)?.getContext('2d');

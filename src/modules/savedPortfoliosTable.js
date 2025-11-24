@@ -2,6 +2,7 @@ import { state } from '../state.js';
 import { ALL_METRICS } from '../config.js';
 import { formatMetricForDisplay } from '../utils.js';
 import { CustomizableTable } from './tableEngine.js';
+import { initSavedPortfoliosFocus } from '../ui.js';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -44,6 +45,7 @@ const savedPortfoliosTable = new CustomizableTable({
 
 export const initSavedPortfoliosTable = () => {
     savedPortfoliosTable.init();
+    initSavedPortfoliosFocus();
 };
 
 export const getSavedPortfoliosTableConfig = () => {

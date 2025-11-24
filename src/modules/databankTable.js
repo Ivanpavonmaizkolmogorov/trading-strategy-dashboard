@@ -3,6 +3,7 @@ import { dom } from '../dom.js';
 import { ALL_METRICS } from '../config.js';
 import { formatMetricForDisplay } from '../utils.js';
 import { CustomizableTable } from './tableEngine.js';
+import { initDatabankFocus } from './databank.js';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -44,6 +45,7 @@ const databankTable = new CustomizableTable({
 
 export const initDatabankTable = () => {
     databankTable.init();
+    initDatabankFocus();
 };
 
 export const getDatabankTableConfig = () => {

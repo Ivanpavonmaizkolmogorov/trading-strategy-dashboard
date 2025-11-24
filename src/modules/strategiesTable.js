@@ -1,5 +1,6 @@
 import { state } from '../state.js';
 import { formatMetricForDisplay } from '../utils.js';
+import { focusMode } from './focusMode.js';
 import { CustomizableTable } from './tableEngine.js';
 import { openSearchConfigModal } from './searchConfig.js';
 
@@ -164,6 +165,7 @@ export const renderStrategiesTable = () => {
         const metrics = strategy.analysis?.metrics || strategy.analysis || strategy.metrics || {};
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0';
+        row.dataset.originalIndex = originalIndex; // ADD THIS for selectAll() to work
 
         // Checkbox Cell
         const tdCheckbox = document.createElement('td');
@@ -219,6 +221,14 @@ export const renderStrategiesTable = () => {
                 return;
             }
             console.log('Strategy clicked:', strategy);
+        });
+
+        // Focus Mode Click
+        row.addEventListener('click', (e) => {
+            // Ignore if clicking on checkbox or actions (if any)
+            if (e.target.closest('input[type="checkbox"]') || e.target.closest('button') || e.target.closest('.cursor-col-resize')) return;
+
+            focusMode.enable(strategy, 'strategy', row);
         });
 
         tableBody.appendChild(row);

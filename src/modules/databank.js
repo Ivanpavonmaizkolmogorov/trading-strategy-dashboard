@@ -3,6 +3,7 @@ import { dom } from '../dom.js';
 import { ALL_METRICS, SELECTION_COLORS } from '../config.js'; // ALL_METRICS y SELECTION_COLORS se siguen usando
 import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '../utils.js'; // Estas utilidades se siguen usando
 import { initDatabankTable, getDatabankTableConfig } from './databankTable.js';
+import { focusMode } from './focusMode.js';
 
 /**
  * Actualiza el indicador visual de estado del DataBank.
@@ -426,6 +427,7 @@ export const updateDatabankDisplay = () => {
 window.updateDatabankDisplay = updateDatabankDisplay;
 
 // Auto-fit column to content
+// Auto-fit column to content
 function autoFitDatabankColumn(th, colId) {
     const tableBody = dom.databankTableBody;
     if (!tableBody) return;
@@ -467,6 +469,29 @@ function autoFitDatabankColumn(th, colId) {
     tableConfig.columnWidths[colId] = newWidth;
     localStorage.setItem('databankTableConfig', JSON.stringify(tableConfig));
 }
+
+/**
+ * Initialize Focus Mode listeners for DataBank
+ */
+export const initDatabankFocus = () => {
+    if (!dom.databankTableBody) return;
+
+    dom.databankTableBody.addEventListener('click', (e) => {
+        const row = e.target.closest('tr');
+        if (!row) return;
+
+        // Ignore if clicking on checkbox or buttons
+        if (e.target.closest('input[type="checkbox"]') || e.target.closest('button')) return;
+
+        const index = row.dataset.rowIndex;
+        if (index !== undefined) {
+            const portfolio = state.databankPortfolios[index];
+            if (portfolio) {
+                focusMode.enable(portfolio, 'databank', row);
+            }
+        }
+    });
+};
 
 // Resizer functionality (copied from Strategies)
 let databankResizeData = null;

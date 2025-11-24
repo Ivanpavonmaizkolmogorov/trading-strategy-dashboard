@@ -192,7 +192,8 @@ export function initializeEventListeners() {
                 state.savedPortfolios.splice(indexToRemove, 1);
                 // --- OPTIMIZACIÓN: Actualizar UI localmente sin llamar al backend ---
                 displaySavedPortfoliosList();
-                renderPortfolioComparisonCharts(window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal));
+                // PERFORMANCE OVERHAUL: Disabled auto-rendering
+                // renderPortfolioComparisonCharts(window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal));
                 showToast('Portafolio eliminado correctamente', 'success');
                 // await reAnalyzeAllData(); // <-- ELIMINADO: Innecesario
             }
@@ -220,7 +221,8 @@ export function initializeEventListeners() {
                 // --- OPTIMIZACIÓN: Actualizar UI localmente sin llamar al backend ---
                 renderFeaturedPortfolio();
                 displaySavedPortfoliosList(); // Actualiza la estrella en la lista
-                renderPortfolioComparisonCharts(window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal));
+                // PERFORMANCE OVERHAUL: Disabled auto-rendering
+                // renderPortfolioComparisonCharts(window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal));
 
                 if (state.featuredPortfolioIndex !== null) {
                     showToast('Portafolio destacado actualizado', 'success');

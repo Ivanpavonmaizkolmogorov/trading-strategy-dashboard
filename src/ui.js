@@ -5,6 +5,7 @@ import { renderViewerForActiveTab } from './modules/viewer.js'; // NUEVO
 import { openOptimizationModal } from './modules/optimization.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
+import { focusMode } from './modules/focusMode.js';
 import { renderStrategiesTable as renderStrategiesTableModule } from './modules/strategiesTable.js';
 import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig } from './modules/savedPortfoliosTable.js';
 
@@ -132,10 +133,14 @@ export const displayResults = (results) => {
     displaySavedPortfoliosList();
     updateDatabankDisplay(); // <-- NUEVO: Refrescar el DataBank con las métricas actualizadas.
 
+    // PERFORMANCE OVERHAUL: Disabled auto-rendering
+    // Charts now only render via Focus Mode (user selection)
+    /*
     const savedPortfolioAnalyses = window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal);
     if (savedPortfolioAnalyses.length > 0 || state.comparisonPortfolioIndex !== null) {
         renderPortfolioComparisonCharts(savedPortfolioAnalyses);
     }
+    */
     renderFeaturedPortfolio();
 
     // NUEVO: Renderizar el viewer principal según el tab activo
@@ -279,24 +284,33 @@ const createStrategyTab = (result) => {
  * Renderiza los gráficos para una pestaña específica.
  * @param {string} tabId - El ID de la pestaña a renderizar.
  */
+/**
+ * Renderiza los gráficos para una pestaña específica.
+ * @param {string} tabId - El ID de la pestaña a renderizar.
+ */
 export const renderChartsForTab = (tabId) => {
+    // PERFORMANCE OVERHAUL: Disable auto-rendering.
+    // Charts are now only rendered via Focus Mode (user selection).
+    // We only render the empty benchmark view if needed.
+
+    // If it's the main viewer, ensure it's clear or shows benchmark
+    if (tabId === 'strategies-content' || tabId === 'databank-content' || tabId === 'saved-portfolios-content') {
+        // Only clear if we are NOT in focus mode (to avoid clearing user selection on tab switch)
+        // But actually, we want to persist selection across tabs if possible, or clear it?
+        // For now, let's just NOT render anything automatically.
+        return;
+    }
+
     const results = window.analysisResults;
     if (!results || !tabId) return;
 
+    // ... rest of the function is effectively disabled for auto-render
+    // We keep the code below just in case we need to revert or use it for specific cases
+    /*
     if (tabId.startsWith('strategy-')) {
-        const index = parseInt(tabId.replace('strategy-', ''), 10);
-        const result = results.find(r => r.originalIndex === index && !r.isPortfolio && !r.isSavedPortfolio);
-        if (!result) return;
-
-        const analysis = result.analysis;
-        const color = STRATEGY_COLORS[result.originalIndex % STRATEGY_COLORS.length];
-
-        if (document.getElementById(`equityChart - ${tabId} `)) {
-            renderEquityChart(`equityChart - ${tabId} `, analysis, result.name, color);
-            renderScatterChart(`scatterChart - ${tabId} `, analysis, color);
-            renderLorenzChart(`lorenzChart - ${tabId} `, analysis, color);
-        }
+        // ...
     }
+    */
 };
 
 /**
@@ -321,7 +335,7 @@ export const renderAllCharts = (forceRedraw = false) => {
  * @param {string} name - Nombre de la estrategia.
  * @param {string} color - Color para la línea del gráfico.
  */
-const renderEquityChart = (canvasId, analysis, name, color) => {
+export const renderEquityChart = (canvasId, analysis, name, color) => {
     const ctx = document.getElementById(canvasId)?.getContext('2d');
     if (!ctx) return;
     destroyChart(canvasId);
@@ -341,7 +355,7 @@ const renderEquityChart = (canvasId, analysis, name, color) => {
 /**
  * Renderiza un gráfico de dispersión de rendimientos.
  */
-const renderScatterChart = (canvasId, analysis, color) => {
+export const renderScatterChart = (canvasId, analysis, color) => {
     const ctx = document.getElementById(canvasId)?.getContext('2d');
     if (!ctx) return;
     destroyChart(canvasId);
@@ -368,7 +382,7 @@ const renderScatterChart = (canvasId, analysis, color) => {
 /**
  * Renderiza una curva de Lorenz.
  */
-const renderLorenzChart = (canvasId, analysis, color) => {
+export const renderLorenzChart = (canvasId, analysis, color) => {
     const ctx = document.getElementById(canvasId)?.getContext('2d');
     if (!ctx) return;
     destroyChart(canvasId);
@@ -584,6 +598,29 @@ function autoFitSavedPortfoliosColumn(th, colId) {
     localStorage.setItem('savedPortfoliosTableConfig', JSON.stringify(tableConfig));
 }
 
+/**
+ * Initialize Focus Mode listeners for Saved Portfolios
+ */
+export const initSavedPortfoliosFocus = () => {
+    if (!dom.savedPortfoliosBody) return;
+
+    dom.savedPortfoliosBody.addEventListener('click', (e) => {
+        const row = e.target.closest('tr');
+        if (!row) return;
+
+        // Ignore if clicking on buttons
+        if (e.target.closest('button')) return;
+
+        const index = row.dataset.rowIndex;
+        if (index !== undefined) {
+            const portfolio = state.savedPortfolios[index];
+            if (portfolio) {
+                focusMode.enable(portfolio, 'saved', row);
+            }
+        }
+    });
+};
+
 // Resizer functionality for Saved Portfolios (copied from Strategies)
 let savedPortfoliosResizeData = null;
 
@@ -651,15 +688,54 @@ const sortSavedPortfoliosTable = (headerEl) => {
  * Renderiza los gráficos de comparación de portafolios.
  */
 export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
+    console.log('[UI] renderPortfolioComparisonCharts called with', portfolioAnalyses.length, 'items');
+    console.log('[UI] Portfolio names:', portfolioAnalyses.map(p => p.name).join(', '));
     const canvasId = 'portfolioEquityChart'; // ID del canvas
     destroyChart(canvasId);
     const ctx = document.getElementById(canvasId)?.getContext('2d');
     if (!ctx) return;
 
-    if (portfolioAnalyses.length > 0 || state.comparisonPortfolioIndex !== null) {
-        dom.portfolioComparisonChartSection.classList.remove('hidden');
-    } else {
-        dom.portfolioComparisonChartSection.classList.add('hidden');
+    // Always show the chart section (for clean slate UX)
+    dom.portfolioComparisonChartSection.classList.remove('hidden');
+
+    // If empty, render benchmark only
+    if (portfolioAnalyses.length === 0 && state.comparisonPortfolioIndex === null) {
+        console.log('[UI] Rendering benchmark-only chart');
+        // Get benchmark data from first analysis result
+        const benchmarkData = window.analysisResults?.[0]?.analysis?.chartData?.benchmarkCurve;
+
+        if (!benchmarkData) {
+            console.warn('[UI] No benchmark data available');
+            return;
+        }
+
+        const datasets = [{
+            label: 'Benchmark',
+            data: benchmarkData,
+            borderColor: '#f87171',
+            backgroundColor: '#f871711a',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.1,
+            fill: false
+        }];
+
+        state.chartInstances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                ...CHART_OPTIONS,
+                plugins: {
+                    ...CHART_OPTIONS.plugins,
+                    title: {
+                        display: true,
+                        text: 'Portfolio Comparison (Benchmark Only)',
+                        color: '#e5e7eb',
+                        font: { size: 16, weight: 'bold' }
+                    }
+                }
+            }
+        });
         return;
     }
 
@@ -679,7 +755,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         return {
             label: result.name,
             data: normalizedData,
-            borderColor: isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]),
+            borderColor: result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length])),
             borderWidth: isFeatured ? 3 : 2,
             pointRadius: 0,
             tension: 0.1,

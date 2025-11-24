@@ -228,8 +228,18 @@
                     class="h-10 bg-gray-800/50 border-b border-gray-700 flex items-center justify-between px-4 flex-shrink-0">
                     <span class="text-sm font-semibold text-gray-300">Visor Principal</span>
                     <div id="chart-actions-group" class="flex items-center text-xs">
+                        <button id="select-all-btn"
+                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-l border-r border-gray-600"
+                            title="Seleccionar Todo (Precaución: Lento)">
+                            👁️ Todo
+                        </button>
+                        <button id="clear-all-btn"
+                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 border-r border-gray-600"
+                            title="Limpiar Selección">
+                            ❌ Limpiar
+                        </button>
                         <button data-action="destacar"
-                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-l border-r border-gray-600">Destacar</button>
+                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 border-r border-gray-600">Destacar</button>
                         <button data-action="ocultar"
                             class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-r">Ocultar/Mostrar</button>
                     </div>
