@@ -43,19 +43,7 @@ const renderDatabankViewer = () => {
 
     const datasets = [];
 
-    // Agregar benchmark primero
-    if (window.analysisResults && window.analysisResults[0]?.analysis?.chartData?.benchmarkCurve) {
-        datasets.push({
-            label: 'Benchmark',
-            data: window.analysisResults[0].analysis.chartData.benchmarkCurve,
-            borderColor: '#f87171',
-            backgroundColor: '#f871711a',
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.1,
-            fill: false
-        });
-    }
+    // No benchmark needed
 
     // Agregar cada portafolio del DataBank
     topPortfolios.forEach((portfolio, index) => {
@@ -125,19 +113,7 @@ const renderSavedPortfoliosViewer = () => {
 
     const datasets = [];
 
-    // Agregar benchmark
-    if (savedPortfolioAnalyses[0]?.analysis?.chartData?.benchmarkCurve) {
-        datasets.push({
-            label: 'Benchmark',
-            data: savedPortfolioAnalyses[0].analysis.chartData.benchmarkCurve,
-            borderColor: '#f87171',
-            backgroundColor: '#f871711a',
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.1,
-            fill: false
-        });
-    }
+    // No benchmark needed
 
     // Agregar cada portafolio guardado
     savedPortfolioAnalyses.forEach((result, index) => {
@@ -195,19 +171,7 @@ const renderStrategiesViewer = () => {
 
     const datasets = [];
 
-    // Agregar benchmark
-    if (strategies[0]?.analysis?.chartData?.benchmarkCurve) {
-        datasets.push({
-            label: 'Benchmark',
-            data: strategies[0].analysis.chartData.benchmarkCurve,
-            borderColor: '#f87171',
-            backgroundColor: '#f871711a',
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.1,
-            fill: false
-        });
-    }
+    // No benchmark needed
 
     // Agregar cada estrategia
     strategies.forEach((result, index) => {
@@ -281,19 +245,7 @@ const renderOptimizationViewer = () => {
 
     const datasets = [];
 
-    // Add benchmark first (if available)
-    if (baseAnalysis?.metrics?.chartData?.benchmarkCurve) {
-        datasets.push({
-            label: '📈 Benchmark',
-            data: baseAnalysis.metrics.chartData.benchmarkCurve,
-            borderColor: '#f87171',
-            backgroundColor: '#f871711a',
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.1,
-            fill: false
-        });
-    }
+    // No benchmark needed
 
     // Add Original portfolio (Gray)
     if (baseAnalysis?.metrics?.chartData?.equityCurve) {

@@ -209,12 +209,6 @@
                         title="Restaurar">↺</button>
                     <input type="checkbox" id="normalize-risk-checkbox" class="hidden">
                 </div>
-
-                <button id="analyzeBtn"
-                    class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-1.5 px-4 rounded-lg text-sm shadow-lg flex items-center gap-2">
-                    <span>Analizar</span>
-                    <span id="analyzeBtnSpinner" class="hidden animate-spin">↻</span>
-                </button>
             </div>
         </header>
 
@@ -587,16 +581,13 @@
                     </label>
                     <input id="tradesFiles" type="file" class="hidden" accept=".csv" multiple>
                     <div id="tradesFilesList" class="mt-2 text-sm text-gray-400 max-h-40 overflow-y-auto"></div>
-                </div>
-                <!-- Benchmark Input -->
-                <div>
-                    <h3 class="text-lg font-semibold text-sky-400 mb-4">2. Benchmark (.csv)</h3>
-                    <label for="benchmarkFile"
-                        class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors">
-                        <span class="text-sm text-gray-400">Click para subir benchmark</span>
-                        <span id="benchmarkFileName" class="text-xs text-gray-500 mt-1">(date, price)</span>
-                    </label>
-                    <input id="benchmarkFile" type="file" class="hidden" accept=".csv">
+
+                    <!-- Analyze Button - Only for new CSVs -->
+                    <button id="analyzeBtn"
+                        class="mt-4 w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-colors">
+                        <span>🚀 Analizar Estrategias</span>
+                        <span id="analyzeBtnSpinner" class="hidden animate-spin">↻</span>
+                    </button>
                 </div>
 
                 <div class="md:col-span-2 border-t border-gray-700 pt-6 flex justify-end gap-4">
@@ -778,7 +769,7 @@
         <button id="saved-manage-views-btn"></button>
     </div>
 
-    <script type="module" src="src/main.js"></script>
+    <script type="module" src="src/main.js?v=3.0"></script>
 
 </body>
 

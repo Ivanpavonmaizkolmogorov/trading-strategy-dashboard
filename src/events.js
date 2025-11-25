@@ -36,10 +36,6 @@ export function initializeEventListeners() {
         }
     });
 
-    dom.benchmarkFileInput.addEventListener('change', () => {
-        dom.benchmarkFileNameEl.textContent = dom.benchmarkFileInput.files[0]?.name || '(date, price)';
-    });
-
     dom.analysisModeSelect.addEventListener('change', () => {
         if (!dom.resultsDiv.classList.contains('hidden')) {
             reAnalyzeAllData();

@@ -19,18 +19,20 @@ const AVAILABLE_COLUMNS = [
     { id: 'upi', label: 'UPI', minWidth: 80 },
     { id: 'captureRatio', label: 'Capture Ratio', minWidth: 100 },
     { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
+    { id: 'totalTrades', label: 'Trades', minWidth: 80 },
+    { id: 'strategyCount', label: 'Strategies #', minWidth: 80 },
 ];
 
 // Default configuration
 const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'sharpeRatio', 'totalProfit', 'maxDrawdown', 'profitFactor'],
+    visibleColumns: ['name', 'strategyCount', 'totalTrades', 'sharpeRatio', 'totalProfit', 'maxDrawdown', 'profitFactor'],
     columnWidths: {}
 };
 
 // Create table instance
 const databankTable = new CustomizableTable({
     id: 'databank',
-    storageKey: 'databankTableConfig',
+    storageKey: 'databankTableConfig_v3',
     columns: AVAILABLE_COLUMNS,
     defaultConfig: DEFAULT_CONFIG,
     containerId: 'databank-content',

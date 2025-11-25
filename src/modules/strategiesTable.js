@@ -60,6 +60,8 @@ export const renderStrategiesTable = () => {
     const tableBody = document.getElementById('strategies-table-body');
     if (!tableBody || !tableHead) return;
 
+    console.log('[StrategiesTable] Rendering table with', window.analysisResults?.length || 0, 'strategies');
+
     const config = strategiesTable.getConfig();
 
     // 1. Render Headers

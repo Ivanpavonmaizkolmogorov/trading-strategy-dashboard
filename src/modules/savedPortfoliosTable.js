@@ -19,18 +19,19 @@ const AVAILABLE_COLUMNS = [
     { id: 'captureRatio', label: 'Capture Ratio', minWidth: 100 },
     { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
     { id: 'totalTrades', label: 'Trades', minWidth: 80 },
+    { id: 'strategyCount', label: 'Strategies #', minWidth: 80 },
 ];
 
 // Default configuration
 const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'sharpeRatio', 'totalProfit', 'maxDrawdown', 'profitFactor', 'winningPercentage'],
+    visibleColumns: ['name', 'strategyCount', 'sharpeRatio', 'totalProfit', 'maxDrawdown', 'profitFactor', 'winningPercentage'],
     columnWidths: {}
 };
 
 // Create table instance
 const savedPortfoliosTable = new CustomizableTable({
     id: 'saved-portfolios',
-    storageKey: 'savedPortfoliosTableConfig',
+    storageKey: 'savedPortfoliosTableConfig_v2',
     columns: AVAILABLE_COLUMNS,
     defaultConfig: DEFAULT_CONFIG,
     containerId: 'saved-portfolios-content',

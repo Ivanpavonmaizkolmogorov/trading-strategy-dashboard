@@ -216,8 +216,7 @@ export const focusMode = {
                 // Create a synthetic analysis object
                 analysis = {
                     chartData: {
-                        equityCurve: combinedEquityCurve,
-                        benchmarkCurve: firstStrategy.analysis.chartData.benchmarkCurve
+                        equityCurve: combinedEquityCurve
                     }
                 };
 

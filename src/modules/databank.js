@@ -83,7 +83,6 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
     const requestBody = {
         strategy_names: state.loadedStrategyFiles.map(f => f.name), // <-- Añadimos los nombres
         strategies_data: state.rawStrategiesData,
-        benchmark_data: state.rawBenchmarkData,
         params: {
             metric_to_optimize_key: customConfig.metric || dom.optimizationMetricSelect.value,
             optimization_goal: customConfig.goal || dom.optimizationGoalSelect.value,
@@ -181,6 +180,15 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
                                 if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
                                 if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
                                 reader.cancel(); // Detener la lectura del stream
+                            } else if (data.status === 'completed') {
+                                setDatabankStatus('completed', 'Búsqueda completada');
+                                // Re-habilitar botones
+                                if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+                                if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
+                                if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+                                if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+                                if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
+                                reader.cancel();
                             } else {
                                 const newPortfolio = data;
                                 if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i + 1}`).join(', ');
@@ -274,10 +282,10 @@ export const updateDatabankDisplay = () => {
     dom.databankEmptyRow.classList.add('hidden');
 
     // Get custom column configuration
-    const tableConfig = getDatabankTableConfig();
-    const visibleColumns = tableConfig.visibleColumns || [];
+    const config = getDatabankTableConfig();
+    const visibleColumns = config.visibleColumns;
 
-    // Clear and rebuild header using DOM (like Strategies)
+    // 2. Render Headers
     dom.databankTableHeader.innerHTML = '';
     const headerRow = document.createElement('tr');
 
@@ -326,9 +334,9 @@ export const updateDatabankDisplay = () => {
         }
 
         // Apply saved width OR auto-fit if first time
-        if (tableConfig.columnWidths && tableConfig.columnWidths[key]) {
-            th.style.width = tableConfig.columnWidths[key];
-            th.style.minWidth = tableConfig.columnWidths[key];
+        if (config.columnWidths && config.columnWidths[key]) {
+            th.style.width = config.columnWidths[key];
+            th.style.minWidth = config.columnWidths[key];
         } else {
             // First time: auto-fit after table is rendered
             // Special case: name column has max-width limit (contains multiple strategy names)
@@ -337,9 +345,9 @@ export const updateDatabankDisplay = () => {
                 th.style.width = '300px';
                 th.style.minWidth = '200px';
                 // Save this default width
-                if (!tableConfig.columnWidths) tableConfig.columnWidths = {};
-                tableConfig.columnWidths[key] = '300px';
-                localStorage.setItem('databankTableConfig', JSON.stringify(tableConfig));
+                if (!config.columnWidths) config.columnWidths = {};
+                config.columnWidths[key] = '300px';
+                localStorage.setItem('databankTableConfig_v3', JSON.stringify(config));
             } else {
                 setTimeout(() => autoFitDatabankColumn(th, key), 0);
             }
@@ -393,6 +401,10 @@ export const updateDatabankDisplay = () => {
                 <td class="px-4 py-3 text-center">${rankBadge}</td>`;
 
         visibleColumns.forEach(key => {
+            // Safety check: ensure column exists in definition to match header rendering
+            const colInfo = ALL_METRICS[key];
+            if (!colInfo) return;
+
             if (key === 'name') {
                 let constructedName = p.name;
                 if (!constructedName && p.indices) {
@@ -405,6 +417,9 @@ export const updateDatabankDisplay = () => {
                 let value;
                 if (key === 'metricValue') {
                     value = p.metricValue;
+                } else if (key === 'strategyCount') {
+                    value = p.indices ? p.indices.length : 0;
+                    console.log(`[DEBUG] Row ${index} - strategyCount:`, value, 'Indices:', p.indices);
                 } else {
                     value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.analysis?.[key];
                 }

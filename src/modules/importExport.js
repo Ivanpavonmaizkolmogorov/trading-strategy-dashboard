@@ -18,9 +18,7 @@ export const exportAnalysis = () => {
 
     const appState = {
         loadedStrategyFiles: state.loadedStrategyFiles.map(f => ({ name: f.name })),
-        benchmarkFileName: dom.benchmarkFileInput.files[0]?.name || null,
         rawStrategiesData: state.rawStrategiesData,
-        rawBenchmarkData: state.rawBenchmarkData,
         savedPortfolios: state.savedPortfolios,
         selectedPortfolioIndices: Array.from(state.selectedPortfolioIndices),
         featuredPortfolioIndex: state.featuredPortfolioIndex,
@@ -133,7 +131,6 @@ const restoreState = async (importedState) => {
 
     state.loadedStrategyFiles = importedState.loadedStrategyFiles.map(f => ({ name: f.name, isPlaceholder: true }));
     state.rawStrategiesData = importedState.rawStrategiesData;
-    state.rawBenchmarkData = importedState.rawBenchmarkData;
     state.savedPortfolios = importedState.savedPortfolios || [];
     state.selectedPortfolioIndices = new Set(importedState.selectedPortfolioIndices || []);
     state.featuredPortfolioIndex = importedState.featuredPortfolioIndex !== undefined ? importedState.featuredPortfolioIndex : null;
@@ -143,7 +140,10 @@ const restoreState = async (importedState) => {
     state.databankPortfolios = importedState.databankPortfolios || [];
 
     updateTradesFilesList();
-    dom.benchmarkFileNameEl.textContent = importedState.benchmarkFileName || '(date, price)';
+
+    // Backward compatibility: ignore old benchmark fields if present
+    // (Files exported before benchmark removal may still have these fields)
+
     populateViewSelector('databank');
     populateViewSelector('saved');
 

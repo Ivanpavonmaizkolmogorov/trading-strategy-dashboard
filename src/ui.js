@@ -30,9 +30,7 @@ export const updateTradesFilesList = () => {
  */
 export const resetUI = () => {
     dom.tradesFileInput.value = '';
-    dom.benchmarkFileInput.value = '';
     state.loadedStrategyFiles = [];
-    state.rawBenchmarkData = null;
     state.rawStrategiesData = [];
     state.selectedPortfolioIndices.clear();
     state.savedPortfolios = [];
@@ -41,7 +39,6 @@ export const resetUI = () => {
 
     updateTradesFilesList();
     updateAnalysisModeSelector();
-    dom.benchmarkFileNameEl.textContent = '(date, price)';
 
     // Ocultar secciones obsoletas (con null checks)
     if (dom.resultsDiv) dom.resultsDiv.classList.add('hidden');
@@ -131,6 +128,7 @@ export const displayResults = (results) => {
         console.log('[UI] Nuevo layout detectado - omitiendo renderizado de pestañas de estrategias');
     }
     displaySavedPortfoliosList();
+    renderStrategiesTable(); // ✅ Render strategies table in bottom panel
     updateDatabankDisplay(); // <-- NUEVO: Refrescar el DataBank con las métricas actualizadas.
 
     // PERFORMANCE OVERHAUL: Disabled auto-rendering
@@ -270,8 +268,8 @@ const createStrategyTab = (result) => {
         </div>
     </div > `;
 
-    const chartsHTML = `< div class="grid grid-cols-1 xl:grid-cols-2 gap-8" >
-        <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 xl:col-span-2"><h2 class="text-xl font-bold">Equity vs. Benchmark</h2><div class="h-96"><canvas id="equityChart-${tabId}"></canvas></div></div>
+    const chartsHTML = `<div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 xl:col-span-2"><h2 class="text-xl font-bold">Equity Curve</h2><div class="h-96"><canvas id="equityChart-${tabId}"></canvas></div></div>
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-xl font-bold">Dispersión de Rendimientos</h2><div class="h-80"><canvas id="scatterChart-${tabId}"></canvas></div></div>
         <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700"><h2 class="text-xl font-bold">Curva de Lorenz</h2><div class="h-80"><canvas id="lorenzChart-${tabId}"></canvas></div></div>
     </div > `;
@@ -291,9 +289,9 @@ const createStrategyTab = (result) => {
 export const renderChartsForTab = (tabId) => {
     // PERFORMANCE OVERHAUL: Disable auto-rendering.
     // Charts are now only rendered via Focus Mode (user selection).
-    // We only render the empty benchmark view if needed.
+    // Clear charts if needed
 
-    // If it's the main viewer, ensure it's clear or shows benchmark
+    // If it's the main viewer, ensure it's cleared
     if (tabId === 'strategies-content' || tabId === 'databank-content' || tabId === 'saved-portfolios-content') {
         // Only clear if we are NOT in focus mode (to avoid clearing user selection on tab switch)
         // But actually, we want to persist selection across tabs if possible, or clear it?
@@ -344,8 +342,7 @@ export const renderEquityChart = (canvasId, analysis, name, color) => {
         type: 'line',
         data: {
             datasets: [
-                { label: name, data: analysis.chartData.equityCurve, borderColor: color, backgroundColor: `${color} 1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true },
-                { label: 'Benchmark', data: analysis.chartData.benchmarkCurve, borderColor: '#f87171', backgroundColor: '#f871711a', borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true }
+                { label: name, data: analysis.chartData.equityCurve, borderColor: color, backgroundColor: `${color}1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true }
             ]
         },
         options: CHART_OPTIONS
@@ -372,7 +369,7 @@ export const renderScatterChart = (canvasId, analysis, color) => {
         options: {
             ...CHART_OPTIONS,
             scales: {
-                x: { ...CHART_OPTIONS.scales.x, title: { display: true, text: 'Rendimiento Benchmark (%)', color: '#d1d5db' } },
+                x: { ...CHART_OPTIONS.scales.x, title: { display: true, text: 'Rendimiento Portfolio (%)', color: '#d1d5db' } },
                 y: { ...CHART_OPTIONS.scales.y, title: { display: true, text: 'Rendimiento Estrategia (%)', color: '#d1d5db' } }
             }
         }
@@ -530,8 +527,15 @@ export const displaySavedPortfoliosList = () => {
 
         let rowHTML = `<tr class="hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0" data-row-type="saved" data-row-index="${originalIndex}">`;
         visibleColumns.forEach(key => {
+            // Safety check: ensure column exists in definition
+            const colInfo = ALL_METRICS[key];
+            if (!colInfo) return;
+
             if (key === 'name') {
                 rowHTML += `<td class="px-4 py-3"><p class="font-semibold text-sky-300">${p.name}</p><p class="text-gray-400 text-xs">${weightsText}</p></td>`;
+            } else if (key === 'strategyCount') {
+                const value = p.indices ? p.indices.length : 0;
+                rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${value}</td>`;
             } else {
                 const value = p.metrics[key];
                 rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;
@@ -698,44 +702,9 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     // Always show the chart section (for clean slate UX)
     dom.portfolioComparisonChartSection.classList.remove('hidden');
 
-    // If empty, render benchmark only
+    // If empty and no comparison, just destroy chart and return
     if (portfolioAnalyses.length === 0 && state.comparisonPortfolioIndex === null) {
-        console.log('[UI] Rendering benchmark-only chart');
-        // Get benchmark data from first analysis result
-        const benchmarkData = window.analysisResults?.[0]?.analysis?.chartData?.benchmarkCurve;
-
-        if (!benchmarkData) {
-            console.warn('[UI] No benchmark data available');
-            return;
-        }
-
-        const datasets = [{
-            label: 'Benchmark',
-            data: benchmarkData,
-            borderColor: '#f87171',
-            backgroundColor: '#f871711a',
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.1,
-            fill: false
-        }];
-
-        state.chartInstances[canvasId] = new Chart(ctx, {
-            type: 'line',
-            data: { datasets },
-            options: {
-                ...CHART_OPTIONS,
-                plugins: {
-                    ...CHART_OPTIONS.plugins,
-                    title: {
-                        display: true,
-                        text: 'Portfolio Comparison (Benchmark Only)',
-                        color: '#e5e7eb',
-                        font: { size: 16, weight: 'bold' }
-                    }
-                }
-            }
-        });
+        console.log('[UI] No portfolios to display');
         return;
     }
 
@@ -765,7 +734,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     });
 
     const firstAnalysis = allAnalyses[0].analysis;
-    datasets.push({ label: 'Benchmark', data: firstAnalysis.chartData.benchmarkCurve, borderColor: '#f87171', borderWidth: 2, pointRadius: 0, tension: 0.1, borderDash: [5, 5] });
+    // No benchmark needed
 
     const chartOptionsWithClick = {
         // Hacemos una copia profunda de las opciones para evitar conflictos

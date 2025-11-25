@@ -43,7 +43,7 @@ class DatabankParams(BaseModel):
 class DatabankRequest(BaseModel):
     strategy_names: List[str] # <-- Añadimos los nombres de las estrategias
     strategies_data: List[List[Trade]]
-    benchmark_data: List[Dict[str, Any]]
+    benchmark_data: Optional[List[Dict[str, Any]]] = None
     params: DatabankParams
 
 class PortfolioDefinition(BaseModel):
@@ -64,7 +64,7 @@ class PortfolioDefinition(BaseModel):
 
 class FullAnalysisRequest(BaseModel): # Contenido movido a PortfolioDefinition
     strategies_data: List[List[Trade]]
-    benchmark_data: List[Dict[str, Any]]
+    benchmark_data: Optional[List[Dict[str, Any]]] = None
     is_risk_normalized: Optional[bool] = False
     normalization_metric: Optional[str] = None
     normalization_target_value: Optional[float] = None
@@ -80,7 +80,7 @@ class OptimizationParams(BaseModel):
 class OptimizationRequest(BaseModel):
     portfolio_indices: List[int]
     strategies_data: List[List[Trade]]
-    benchmark_data: List[Dict[str, Any]]
+    benchmark_data: Optional[List[Dict[str, Any]]] = None
     params: OptimizationParams
     is_risk_normalized: bool = False
     normalization_metric: Optional[str] = None

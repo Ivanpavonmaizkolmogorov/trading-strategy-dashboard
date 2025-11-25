@@ -10,8 +10,8 @@ export const runAnalysis = async () => {
     displayError(''); // Ocultar errores previos
     // destroyAllCharts(); // Se gestiona dentro de displayResults
 
-    if (state.loadedStrategyFiles.length === 0 || !dom.benchmarkFileInput.files[0]) {
-        displayError('Por favor, selecciona al menos un archivo de estrategia y un archivo de benchmark.');
+    if (state.loadedStrategyFiles.length === 0) {
+        displayError('Por favor, selecciona al menos un archivo de estrategia.');
         return;
     }
 
@@ -19,15 +19,10 @@ export const runAnalysis = async () => {
     dom.resultsDiv.classList.add('hidden');
 
     try {
-        state.rawBenchmarkData = await parseCsv(dom.benchmarkFileInput.files[0]);
-        if (!state.rawBenchmarkData[0].hasOwnProperty('date') || !state.rawBenchmarkData[0].hasOwnProperty('price')) {
-            throw new Error(`El archivo de benchmark debe tener columnas de fecha y precio. Detectadas: [${Object.keys(state.rawBenchmarkData[0]).join(', ')}]`);
-        }
         const strategiesPromises = state.loadedStrategyFiles.map(file => parseCsv(file));
         state.rawStrategiesData = await Promise.all(strategiesPromises);
 
-        // --- CORRECCIÓN: Limpiar métricas antiguas antes de un nuevo análisis completo ---
-        // Esto asegura que si cambiamos el benchmark, todo se recalcule.
+        // Clear old metrics antes de un nuevo análisis completo
         state.savedPortfolios.forEach(p => { delete p.metrics; delete p.analysis; });
         state.databankPortfolios.forEach(p => { delete p.metrics; });
 
@@ -42,14 +37,15 @@ export const runAnalysis = async () => {
 
 /**
  * Llama al backend para obtener un análisis completo de todas las estrategias y portafolios.
- * @param {Array} strategies - Array de datos de trades de las estrategias.
- * @param {Array} benchmark - Datos del benchmark.
- * @returns {Promise<Array>} - Promesa que resuelve a un array de resultados de análisis del backend.
+ * @param {Array} strategies - Datos de las estrategias.
+ * @param {Array} portfolios - Arreglo de portafolios a analizar.
+ * @param {boolean} isRiskNormalized - Si se debe normalizar por riesgo.
+ * @param {number} targetMaxDD - Valor objetivo para la normalización.
  */
-const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios, isRiskNormalized, targetMaxDD) => {
+const getFullAnalysisFromBackend = async (strategies, portfolios, isRiskNormalized, targetMaxDD) => {
+    console.log(`%c[FRONTEND-LOG] 0.5. Llamando getFullAnalysisFromBackend`, 'color: blue;');
     const payload = {
         strategies_data: strategies,
-        benchmark_data: benchmark,
         portfolios_to_analyze: portfolios,
         is_risk_normalized: isRiskNormalized,
         normalization_metric: document.getElementById('normalization-metric-select')?.value || 'max_dd',
@@ -78,9 +74,9 @@ const getFullAnalysisFromBackend = async (strategies, benchmark, portfolios, isR
  */
 export const reAnalyzeAllData = async () => {
     // --- GUARDIA DE SEGURIDAD ---
-    // Si no hay datos de estrategias o de benchmark, no podemos analizar nada.
-    if (!state.rawStrategiesData || state.rawStrategiesData.length === 0 || !state.rawBenchmarkData) {
-        console.warn("reAnalyzeAllData abortado: Faltan datos de estrategias o de benchmark.");
+    // Si no hay datos de estrategias, no podemos analizar nada.
+    if (!state.rawStrategiesData || state.rawStrategiesData.length === 0) {
+        console.warn("reAnalyzeAllData abortado: Faltan datos de estrategias.");
         return;
     }
 
@@ -186,7 +182,7 @@ export const reAnalyzeAllData = async () => {
 
     try {
         console.log(`[FRONTEND-LOG] Enviando ${portfoliosToAnalyze.length} portafolios en una sola petición.`);
-        backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, state.rawBenchmarkData, portfoliosToAnalyze, isRiskNormalized, targetValue);
+        backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, portfoliosToAnalyze, isRiskNormalized, targetValue);
     } catch (error) {
         console.error("Error durante el análisis:", error);
         displayError("Ocurrió un error durante el análisis. Revisa la consola.");

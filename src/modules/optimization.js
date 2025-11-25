@@ -348,7 +348,6 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
         const requestBody = {
             portfolio_indices: portfolio.indices,
             strategies_data: state.rawStrategiesData,
-            benchmark_data: state.rawBenchmarkData,
             is_risk_normalized: false,
             normalization_metric: 'max_dd',
             normalization_target_value: 0,
@@ -966,7 +965,6 @@ async function startOptimizationInTab() {
         const requestBody = {
             portfolio_indices: portfolio.indices,
             strategies_data: state.rawStrategiesData,
-            benchmark_data: state.rawBenchmarkData,
             is_risk_normalized: false,
             normalization_metric: 'max_dd',
             normalization_target_value: 0,

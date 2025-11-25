@@ -19,6 +19,7 @@ export const ALL_METRICS = {
     maxStagnationDays: { label: 'Stagnation (Días)', class: 'p-2 text-center' },
     sqn: { label: 'SQN', class: 'p-2 text-center' },
     ulcerIndexInDollars: { label: 'Ulcer Index $', class: 'p-2 text-center' },
+    strategyCount: { label: 'Strategies #', class: 'p-2 text-center' },
 };
 
 export const SELECTION_COLORS = [

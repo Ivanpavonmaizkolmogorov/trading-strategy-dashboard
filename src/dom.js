@@ -4,9 +4,7 @@
 export const dom = {
     // Controles principales (Barra Superior y Modal Config)
     tradesFileInput: document.getElementById('tradesFiles'),
-    benchmarkFileInput: document.getElementById('benchmarkFile'),
     tradesFilesListEl: document.getElementById('tradesFilesList'),
-    benchmarkFileNameEl: document.getElementById('benchmarkFileName'),
     analyzeBtn: document.getElementById('analyzeBtn'),
     analyzeBtnSpinner: document.getElementById('analyzeBtnSpinner'), // Nuevo spinner
     resetBtn: document.getElementById('resetBtn'),
