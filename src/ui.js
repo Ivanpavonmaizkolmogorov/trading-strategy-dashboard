@@ -440,8 +440,18 @@ export const displaySavedPortfoliosList = () => {
     state.savedPortfolios.sort((a, b) => {
         // Ahora es simple: cada portafolio tiene sus métricas.
         const sortConfig = state.savedPortfoliosSortConfig;
-        let valA = sortConfig.key === 'name' ? a.name : (a.metrics?.[sortConfig.key] ?? 0);
-        let valB = sortConfig.key === 'name' ? b.name : (b.metrics?.[sortConfig.key] ?? 0);
+
+        let valA, valB;
+        if (sortConfig.key === 'name') {
+            valA = a.name;
+            valB = b.name;
+        } else if (sortConfig.key === 'strategyCount') {
+            valA = a.indices ? a.indices.length : 0;
+            valB = b.indices ? b.indices.length : 0;
+        } else {
+            valA = a.metrics?.[sortConfig.key] ?? 0;
+            valB = b.metrics?.[sortConfig.key] ?? 0;
+        }
 
         if (typeof valA === 'number') {
             valA = isFinite(valA) ? valA : (sortConfig.order === 'asc' ? Infinity : -Infinity);

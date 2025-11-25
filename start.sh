@@ -20,6 +20,11 @@ function open_url_in_browser() {
     return 1
 }
 
+# --- LIMPIEZA AUTOMÁTICA ---
+echo "Limpiando instancias previas del backend..."
+pkill -f "uvicorn app:app" || true
+sleep 1
+
 # --- LÓGICA DE ARRANQUE INTELIGENTE ---
 BASE_PORT=8001
 PORT=$BASE_PORT
@@ -46,10 +51,7 @@ echo "Lanzando el servidor backend en $URL"
 echo "Los logs del servidor se guardarán en: $LOG_FILE"
 
 # Ejecutar uvicorn en segundo plano y redirigir su salida a un archivo de log
-# COMENTAMOS la línea de producción para poder depurar
 uvicorn app:app --host 0.0.0.0 --port $PORT > "$LOG_FILE" 2>&1 &
-# uvicorn app:app --host 0.0.0.0 --port $PORT --reload
-
 
 # Guardar el ID del proceso de uvicorn para poder detenerlo después
 UVICORN_PID=$!
@@ -57,7 +59,10 @@ UVICORN_PID=$!
 # Función para limpiar al salir
 cleanup() {
     echo -e "\nDeteniendo el servidor (PID: $UVICORN_PID)..."
-    kill $UVICORN_PID
+    kill $UVICORN_PID 2>/dev/null
+    if [ -n "$TAIL_PID" ]; then
+        kill $TAIL_PID 2>/dev/null
+    fi
     echo "Servidor detenido."
     exit
 }
@@ -75,7 +80,12 @@ for i in {1..10}; do
         
         echo ""
         echo "El servidor se está ejecutando en segundo plano."
-        echo "Para detenerlo, presiona Ctrl+C en esta terminal."
+        echo "Logs en tiempo real:"
+        echo "-----------------------------------------------------"
+        
+        # Mostrar logs en tiempo real
+        tail -f "$LOG_FILE" &
+        TAIL_PID=$!
 
         # Esperar a que el proceso de uvicorn termine
         wait $UVICORN_PID

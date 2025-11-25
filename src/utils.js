@@ -112,6 +112,9 @@ export const formatMetricForDisplay = (value, metricName) => {
 
     if (isPercent) return `${value.toFixed(2)}%`;
 
+    const isInteger = ['totalTrades', 'maxStagnationTrades', 'maxStagnationDays', 'strategyCount'].includes(metricName);
+    if (isInteger) return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+
     // Format with space as thousands separator
     // If > 1000, no decimals. Else 2 decimals.
     const decimals = Math.abs(value) > 1000 ? 0 : 2;

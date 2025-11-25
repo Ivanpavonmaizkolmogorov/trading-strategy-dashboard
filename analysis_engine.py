@@ -343,6 +343,20 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         if isinstance(value, pd.Timestamp):
             metrics_dict[key] = value.isoformat()
 
+    # --- DEBUG LOG FOR USER (SURGERY) ---
+    print("\n--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---")
+    # Filter out heavy data for logging
+    debug_metrics = {k: v for k, v in metrics_dict.items() if k not in ['chartData', 'lorenzData']}
+    import json # Ensure json is available here if not at top level, though it is imported in app.py. 
+                # analysis_engine.py imports: pandas, numpy, itertools. Need json.
+    try:
+        import json
+        print(json.dumps(debug_metrics, indent=2, default=str))
+    except Exception as e:
+        print(f"Error logging metrics: {e}")
+        print(debug_metrics)
+    print("-------------------------------------------------------------------\n")
+
     return metrics_dict, daily_returns
 
 

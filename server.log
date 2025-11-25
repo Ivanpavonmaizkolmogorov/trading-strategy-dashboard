@@ -1,34 +1,20 @@
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:383: UserWarning: Valid config keys have changed in V2:
 * 'json_loads' has been removed
   warnings.warn(message, UserWarning)
-INFO:     Started server process [3234286]
+INFO:     Started server process [3250096]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8150 (Press CTRL+C to quit)
-INFO:     127.0.0.1:55540 - "HEAD / HTTP/1.1" 405 Method Not Allowed
-INFO:     127.0.0.1:55556 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55556 - "GET /src/main.js?v=3.0 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55556 - "GET /src/events.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55558 - "GET /src/modules/viewManager.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55558 - "GET /src/dom.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55556 - "GET /src/state.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55560 - "GET /src/analysis.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55564 - "GET /src/ui.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55574 - "GET /src/modules/optimization.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55568 - "GET /src/modules/databank.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55558 - "GET /src/modules/importExport.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55560 - "GET /src/modules/layout.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55564 - "GET /src/config.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55556 - "GET /src/modules/notifications.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55558 - "GET /src/modules/viewer.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55574 - "GET /src/modules/focusMode.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55568 - "GET /src/utils.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55564 - "GET /src/modules/strategiesTable.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55560 - "GET /src/modules/databankTable.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55556 - "GET /src/modules/savedPortfoliosTable.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55558 - "GET /src/modules/searchConfig.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55556 - "GET /src/modules/tableEngine.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55556 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49120 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:49124 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49124 - "GET /src/main.js?v=3.7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49124 - "GET /src/config.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49134 - "GET /src/modules/databank.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49136 - "GET /src/ui.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49136 - "GET /src/utils.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49134 - "GET /src/modules/databankTable.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49124 - "GET /src/modules/strategiesTable.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49124 - "GET /src/modules/portfolioBuilder.js HTTP/1.1" 200 OK
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_pnl = equity_curve['pnl'].resample('M').sum()
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
@@ -47,297 +33,162 @@ Received 5 strategies and benchmark with 0 rows.
   Processing strategy 3/5...
   Processing strategy 4/5...
   Processing strategy 5/5...
---- [DEBUG ENGINE] Processing strategy. Rows: 1365
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
---- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
---- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
-  -> Strategy 1 analysis complete.
---- [DEBUG ENGINE] Processing strategy. Rows: 1722
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -118.3 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
---- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
---- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
-  -> Strategy 2 analysis complete.
---- [DEBUG ENGINE] Processing strategy. Rows: 532
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -98.68 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
---- [DEBUG ENGINE] Valid PnL after parsing: 532/532
---- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
-  -> Strategy 3 analysis complete.
 --- [DEBUG ENGINE] Processing strategy. Rows: 742
 --- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -86.77 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
 --- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
 --- [DEBUG ENGINE] Valid PnL after parsing: 742/742
 --- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
-  -> Strategy 4 analysis complete.
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3689898286332711,
+  "sortinoRatio": 1.5879123304865526,
+  "maxDrawdown": 12.160774137744657,
+  "monthlyAvgProfit": 66.82265814419225,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 366.16357747172395,
+  "upi": 1.9604769493295828,
+  "sharpeRatio": 0.8249327948240398,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1439.680000000004,
+  "profitMaxDD_Ratio": 9.136606745943517,
+  "monthlyProfitToDollarDD": 4.64149381419427,
+  "winningPercentage": 45.68733153638814,
+  "maxStagnationTrades": 64,
+  "totalTrades": 742,
+  "maxStagnationDays": 572,
+  "sqn": 3.6083778112592646,
+  "totalProfit": 13153.789999999999
+}
+-------------------------------------------------------------------
+
+  -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.574805733614906,
+  "sortinoRatio": 1.8989469148836873,
+  "maxDrawdown": 16.079005924528612,
+  "monthlyAvgProfit": 77.05774511934156,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 507.29135781287624,
+  "upi": 1.3786197720633604,
+  "sharpeRatio": 0.9103377023100337,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1755.9399999999969,
+  "profitMaxDD_Ratio": 8.758066904336154,
+  "monthlyProfitToDollarDD": 4.388404223341441,
+  "winningPercentage": 46.99248120300752,
+  "maxStagnationTrades": 71,
+  "totalTrades": 532,
+  "maxStagnationDays": 802,
+  "sqn": 4.320679995268276,
+  "totalProfit": 15378.64
+}
+-------------------------------------------------------------------
+
+  -> Strategy 2 analysis complete.
 --- [DEBUG ENGINE] Processing strategy. Rows: 1337
 --- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -112.65 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
 --- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
 --- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
 --- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.5058204875357952,
+  "sortinoRatio": 2.7219912234809343,
+  "maxDrawdown": 9.59535742755561,
+  "monthlyAvgProfit": 165.95978192592594,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 404.1966718740219,
+  "upi": 4.310364011237019,
+  "sharpeRatio": 1.3189381530182303,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1290.739999999998,
+  "profitMaxDD_Ratio": 25.66053581666335,
+  "monthlyProfitToDollarDD": 12.85772362566638,
+  "winningPercentage": 47.86836200448766,
+  "maxStagnationTrades": 128,
+  "totalTrades": 1337,
+  "maxStagnationDays": 523,
+  "sqn": 6.096251330006691,
+  "totalProfit": 33121.08
+}
+-------------------------------------------------------------------
+
+  -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4545060206107097,
+  "sortinoRatio": 2.7238601140200744,
+  "maxDrawdown": 5.079406671821357,
+  "monthlyAvgProfit": 127.04724041910852,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 358.0938351145009,
+  "upi": 5.219378005748421,
+  "sharpeRatio": 1.4354814866061587,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1237.5900000000038,
+  "profitMaxDD_Ratio": 18.990190612399847,
+  "monthlyProfitToDollarDD": 10.26569707408012,
+  "winningPercentage": 59.29152148664344,
+  "maxStagnationTrades": 147,
+  "totalTrades": 1722,
+  "maxStagnationDays": 491,
+  "sqn": 5.51472389013377,
+  "totalProfit": 23502.07
+}
+-------------------------------------------------------------------
+
+  -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3733140858267765,
+  "sortinoRatio": 2.1866931260810287,
+  "maxDrawdown": 13.094326427135217,
+  "monthlyAvgProfit": 139.23778199254127,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 703.8275640098428,
+  "upi": 1.87210931606201,
+  "sharpeRatio": 0.984600105044967,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 2028.9100000000035,
+  "profitMaxDD_Ratio": 12.695072723777768,
+  "monthlyProfitToDollarDD": 6.862688931127601,
+  "winningPercentage": 38.901098901098905,
+  "maxStagnationTrades": 159,
+  "totalTrades": 1365,
+  "maxStagnationDays": 723,
+  "sqn": 4.518924874618532,
+  "totalProfit": 25757.159999999996
+}
+-------------------------------------------------------------------
+
   -> Strategy 5 analysis complete.
 
 [BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 5 objetos de resultados al frontend.
-INFO:     127.0.0.1:55320 - "POST /analysis/full HTTP/1.1" 200 OK
-INFO:     127.0.0.1:39720 - "POST /databank/find-portfolios-stream HTTP/1.1" 200 OK
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-✅ Petición de streaming recibida. Iniciando cálculos...
---- [DEBUG ENGINE] Processing strategy. Rows: 1365
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
---- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
---- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
---- [DEBUG ENGINE] Processing strategy. Rows: 1722
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -118.3 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
---- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
---- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
---- [DEBUG ENGINE] Processing strategy. Rows: 532
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -98.68 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
---- [DEBUG ENGINE] Valid PnL after parsing: 532/532
---- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
---- [DEBUG ENGINE] Processing strategy. Rows: 742
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -86.77 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
---- [DEBUG ENGINE] Valid PnL after parsing: 742/742
---- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
---- [DEBUG ENGINE] Processing strategy. Rows: 1337
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -112.65 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
---- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
---- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
---- [DEBUG ENGINE] Processing strategy. Rows: 3087
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 3087/3087
---- [DEBUG ENGINE] Valid PnL after parsing: 3087/3087
---- [DEBUG ENGINE] Rows before drop: 3087, After drop: 3087
---- [DEBUG ENGINE] Processing strategy. Rows: 1897
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1897/1897
---- [DEBUG ENGINE] Valid PnL after parsing: 1897/1897
---- [DEBUG ENGINE] Rows before drop: 1897, After drop: 1897
---- [DEBUG ENGINE] Processing strategy. Rows: 2107
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 2107/2107
---- [DEBUG ENGINE] Valid PnL after parsing: 2107/2107
---- [DEBUG ENGINE] Rows before drop: 2107, After drop: 2107
---- [DEBUG ENGINE] Processing strategy. Rows: 2702
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 2702/2702
---- [DEBUG ENGINE] Valid PnL after parsing: 2702/2702
---- [DEBUG ENGINE] Rows before drop: 2702, After drop: 2702
---- [DEBUG ENGINE] Processing strategy. Rows: 2254
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -118.3 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 2254/2254
---- [DEBUG ENGINE] Valid PnL after parsing: 2254/2254
---- [DEBUG ENGINE] Rows before drop: 2254, After drop: 2254
---- [DEBUG ENGINE] Processing strategy. Rows: 2464
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -118.3 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 2464/2464
---- [DEBUG ENGINE] Valid PnL after parsing: 2464/2464
---- [DEBUG ENGINE] Rows before drop: 2464, After drop: 2464
---- [DEBUG ENGINE] Processing strategy. Rows: 3059
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -118.3 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 3059/3059
---- [DEBUG ENGINE] Valid PnL after parsing: 3059/3059
---- [DEBUG ENGINE] Rows before drop: 3059, After drop: 3059
---- [DEBUG ENGINE] Processing strategy. Rows: 1274
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -98.68 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1274/1274
---- [DEBUG ENGINE] Valid PnL after parsing: 1274/1274
---- [DEBUG ENGINE] Rows before drop: 1274, After drop: 1274
---- [DEBUG ENGINE] Processing strategy. Rows: 2079
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -86.77 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 2079/2079
---- [DEBUG ENGINE] Valid PnL after parsing: 2079/2079
---- [DEBUG ENGINE] Rows before drop: 2079, After drop: 2079
---- [DEBUG ENGINE] Processing strategy. Rows: 3619
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 3619/3619
---- [DEBUG ENGINE] Valid PnL after parsing: 3619/3619
---- [DEBUG ENGINE] Rows before drop: 3619, After drop: 3619
---- [DEBUG ENGINE] Processing strategy. Rows: 3829
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 3829/3829
---- [DEBUG ENGINE] Valid PnL after parsing: 3829/3829
---- [DEBUG ENGINE] Rows before drop: 3829, After drop: 3829
---- [DEBUG ENGINE] Processing strategy. Rows: 4424
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 4424/4424
---- [DEBUG ENGINE] Valid PnL after parsing: 4424/4424
---- [DEBUG ENGINE] Rows before drop: 4424, After drop: 4424
---- [DEBUG ENGINE] Processing strategy. Rows: 2639
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 2639/2639
---- [DEBUG ENGINE] Valid PnL after parsing: 2639/2639
---- [DEBUG ENGINE] Rows before drop: 2639, After drop: 2639
---- [DEBUG ENGINE] Processing strategy. Rows: 3444
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 3444/3444
---- [DEBUG ENGINE] Valid PnL after parsing: 3444/3444
---- [DEBUG ENGINE] Rows before drop: 3444, After drop: 3444
---- [DEBUG ENGINE] Processing strategy. Rows: 2996
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -118.3 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 2996/2996
---- [DEBUG ENGINE] Valid PnL after parsing: 2996/2996
---- [DEBUG ENGINE] Rows before drop: 2996, After drop: 2996
---- [DEBUG ENGINE] Processing strategy. Rows: 3801
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -118.3 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 3801/3801
---- [DEBUG ENGINE] Valid PnL after parsing: 3801/3801
---- [DEBUG ENGINE] Rows before drop: 3801, After drop: 3801
---- [DEBUG ENGINE] Processing strategy. Rows: 4361
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 4361/4361
---- [DEBUG ENGINE] Valid PnL after parsing: 4361/4361
---- [DEBUG ENGINE] Rows before drop: 4361, After drop: 4361
---- [DEBUG ENGINE] Processing strategy. Rows: 5166
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:184: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 5166/5166
---- [DEBUG ENGINE] Valid PnL after parsing: 5166/5166
---- [DEBUG ENGINE] Rows before drop: 5166, After drop: 5166
-
---- Endpoint /analysis/full HIT ---
-Received 5 strategies and benchmark with 0 rows.
-  Processing strategy 1/5...
-  Processing strategy 2/5...
-  Processing strategy 3/5...
-  Processing strategy 4/5...
-  Processing strategy 5/5...
---- [DEBUG ENGINE] Processing strategy. Rows: 1365
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): 223.43 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
---- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
---- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
-  -> Strategy 1 analysis complete.
---- [DEBUG ENGINE] Processing strategy. Rows: 1722
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -118.3 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
---- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
---- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
-  -> Strategy 2 analysis complete.
---- [DEBUG ENGINE] Processing strategy. Rows: 532
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -98.68 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
---- [DEBUG ENGINE] Valid PnL after parsing: 532/532
---- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
-  -> Strategy 3 analysis complete.
---- [DEBUG ENGINE] Processing strategy. Rows: 742
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -86.77 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
---- [DEBUG ENGINE] Valid PnL after parsing: 742/742
---- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
-  -> Strategy 4 analysis complete.
---- [DEBUG ENGINE] Processing strategy. Rows: 1337
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -112.65 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
---- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
---- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
-  -> Strategy 5 analysis complete.
---- Analyzing 1 requested portfolios ---
-
-[BACKEND-LOG] 2.0 Procesando portafolio (saved_index: 0, is_current: False, is_databank: False)
-  [BACKEND-LOG] 2.0.a -> Normalización Recibida: is_risk_normalized=False, metric='max_dd', value=0.0
-  [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
---- [DEBUG ENGINE] Processing strategy. Rows: 1274
---- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
---- [DEBUG ENGINE] Sample PnL (Raw): -49.34 (Type: <class 'numpy.float64'>)
---- [DEBUG ENGINE] Valid Entry Dates after parsing: 1274/1274
---- [DEBUG ENGINE] Valid PnL after parsing: 1274/1274
---- [DEBUG ENGINE] Rows before drop: 1274, After drop: 1274
-  [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
-
-[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
-INFO:     127.0.0.1:51806 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36098 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39624 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found

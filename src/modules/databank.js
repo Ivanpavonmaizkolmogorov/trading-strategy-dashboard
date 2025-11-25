@@ -583,6 +583,7 @@ export const sortDatabank = (headerEl) => {
         let valA, valB;
         if (sortKey === 'name') { valA = a.name || ''; valB = b.name || ''; }
         else if (sortKey === 'metricValue') { valA = a.metricValue; valB = b.metricValue; }
+        else if (sortKey === 'strategyCount') { valA = a.indices ? a.indices.length : 0; valB = b.indices ? b.indices.length : 0; }
         else { valA = a.metrics[sortKey]; valB = b.metrics[sortKey]; }
 
         if (typeof valA === 'number') {

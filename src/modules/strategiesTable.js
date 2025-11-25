@@ -3,6 +3,7 @@ import { formatMetricForDisplay } from '../utils.js';
 import { focusMode } from './focusMode.js';
 import { CustomizableTable } from './tableEngine.js';
 import { openSearchConfigModal } from './searchConfig.js';
+import { analyzeCustomPortfolio } from './portfolioBuilder.js';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -353,6 +354,10 @@ export const updateFloatingActionBar = () => {
             <span>⚡</span>
             <span>Find Team</span>
         </button>
+        <button id="fab-test-selection" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-full font-bold transition-all flex items-center gap-2" title="Probar combinación seleccionada">
+            <span>🧪</span>
+            <span>Test Selection</span>
+        </button>
         <button id="fab-deselect-all-btn" class="bg-red-500 hover:bg-red-600 px-3 py-2 rounded-full font-bold transition-all">
             Clear
         </button>
@@ -361,6 +366,11 @@ export const updateFloatingActionBar = () => {
     document.getElementById('fab-find-team-btn').addEventListener('click', () => {
         const selectedIndices = Array.from(selectedStrategies);
         openSearchConfigModal(selectedIndices);
+    });
+
+    document.getElementById('fab-test-selection').addEventListener('click', () => {
+        const selectedIndices = Array.from(selectedStrategies);
+        analyzeCustomPortfolio(selectedIndices);
     });
 
     document.getElementById('fab-deselect-all-btn').addEventListener('click', () => {

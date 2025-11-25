@@ -109,14 +109,11 @@ class CustomJSONEncoder(json.JSONEncoder):
 # --- Configuración de la App FastAPI ---
 app = FastAPI()
 
-origins = [
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
+origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
