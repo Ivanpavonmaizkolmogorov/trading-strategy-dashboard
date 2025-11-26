@@ -20,6 +20,9 @@ export const ALL_METRICS = {
     sqn: { label: 'SQN', class: 'p-2 text-center' },
     ulcerIndexInDollars: { label: 'Ulcer Index $', class: 'p-2 text-center' },
     strategyCount: { label: 'Strategies #', class: 'p-2 text-center' },
+    // Health Monitoring Metrics
+    maxConsecutiveLosses: { label: 'Max Consecutive Losses', class: 'p-2 text-center' },
+    maxConsecutiveWins: { label: 'Max Consecutive Wins', class: 'p-2 text-center' },
 };
 
 export const SELECTION_COLORS = [

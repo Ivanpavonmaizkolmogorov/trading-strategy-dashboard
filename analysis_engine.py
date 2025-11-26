@@ -195,6 +195,45 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     win_pct = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
     profit_factor = abs(winning_trades['pnl'].sum() / losing_trades['pnl'].sum()) if losing_trades['pnl'].sum() != 0 else None
 
+    # --- CÁLCULO DE PÉRDIDAS CONSECUTIVAS (Para Health Monitoring) ---
+    # Necesario para comparar con cuentas live de Myfxbook
+    print(f"--- [DEBUG ENGINE] Calculating consecutive losses from {total_trades} trades")
+    
+    max_consecutive_losses = 0
+    current_consecutive_losses = 0
+    max_consecutive_wins = 0
+    current_consecutive_wins = 0
+    current_streak_is_loss = False  # Track if currently in a losing streak
+    
+    # Ordenar trades cronológicamente por exit_date
+    for idx, trade in trades_df_sorted.iterrows():
+        pnl = trade['pnl']
+        
+        if pnl < 0:  # Losing trade
+            current_consecutive_losses += 1
+            current_consecutive_wins = 0  # Reset wins
+            current_streak_is_loss = True
+            
+            if current_consecutive_losses > max_consecutive_losses:
+                max_consecutive_losses = current_consecutive_losses
+                print(f"--- [DEBUG ENGINE] New max consecutive losses: {max_consecutive_losses} (at date: {trade['exit_date']})")
+        
+        else:  # Winning trade (pnl >= 0, breakeven counts as win)
+            current_consecutive_wins += 1
+            current_consecutive_losses = 0  # Reset losses
+            current_streak_is_loss = False
+            
+            if current_consecutive_wins > max_consecutive_wins:
+                max_consecutive_wins = current_consecutive_wins
+    
+    # Current streak (for live monitoring)
+    current_streak_count = current_consecutive_losses if current_streak_is_loss else current_consecutive_wins
+    current_streak_type = "loss" if current_streak_is_loss else "win"
+    
+    print(f"--- [DEBUG ENGINE] Max Consecutive Losses (Historic): {max_consecutive_losses}")
+    print(f"--- [DEBUG ENGINE] Max Consecutive Wins (Historic): {max_consecutive_wins}")
+    print(f"--- [DEBUG ENGINE] Current Streak: {current_streak_count} {current_streak_type}s")
+
     # Métricas de Capture Ratio (siguen necesitando una base diaria para compararse con el benchmark)
     daily_returns = equity_curve['equity'].pct_change().fillna(0)
     
@@ -390,6 +429,11 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "maxStagnationEnd": max_stagnation_end,
         "sqn": sqn,
         "totalProfit": total_profit, # <-- Added missing metric
+        # Health Monitoring Metrics (for Myfxbook comparison)
+        "maxConsecutiveLosses": max_consecutive_losses,  # Histórico máximo
+        "maxConsecutiveWins": max_consecutive_wins,      # Histórico máximo (bonus)
+        "currentStreakCount": current_streak_count,      # Racha actual (al final del backtest)
+        "currentStreakType": current_streak_type,        # "loss" o "win"
         # Datos para gráficos
         "lorenzData": lorenz_data,
         "chartData": {
