@@ -753,19 +753,73 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             pointRadius: 0,
             tension: 0.1,
             savedIndex: result.savedIndex,
-            order: isFeatured ? 0 : 1
+            order: isFeatured ? 0 : 1,
+            analysis: analysis, // Attach the full analysis object for use in plugins
+            isFeatured: isFeatured
         };
     }).filter(ds => ds !== null);
 
     // --- Crosshair Plugin Definition ---
     const crosshairPlugin = {
-        id: 'crosshair',
+        id: 'crosshairPlugin',
         defaults: {
             width: 1,
             color: 'rgba(156, 163, 175, 0.5)', // gray-400 with opacity
             dash: [3, 3],
             labelColor: 'rgba(31, 41, 55, 0.9)', // gray-800
             textColor: '#f3f4f6' // gray-100
+        },
+        beforeDraw: (chart) => {
+            // Draw Stagnation Highlight
+            const datasets = chart.data.datasets;
+            if (!datasets || datasets.length === 0) return;
+
+            // Find a dataset that has stagnation metrics. 
+            // Prioritize featured, then check others.
+            let targetDataset = datasets.find(d => d.isFeatured && d.analysis && (d.analysis.metrics?.maxStagnationStart || d.analysis.maxStagnationStart));
+
+            if (!targetDataset) {
+                targetDataset = datasets.find(d => d.analysis && (d.analysis.metrics?.maxStagnationStart || d.analysis.maxStagnationStart));
+            }
+
+            if (!targetDataset || !targetDataset.analysis) return;
+
+            const analysis = targetDataset.analysis;
+            const metrics = analysis.metrics || analysis; // metrics might be directly on analysis or nested
+
+            if (metrics && metrics.maxStagnationStart && metrics.maxStagnationEnd) {
+                const ctx = chart.ctx;
+                const xAxis = chart.scales.x;
+                const yAxis = chart.scales.y;
+
+                // Parse dates
+                const startDate = new Date(metrics.maxStagnationStart);
+                const endDate = new Date(metrics.maxStagnationEnd);
+
+                // Get pixels
+                const startPixel = xAxis.getPixelForValue(startDate.getTime());
+                const endPixel = xAxis.getPixelForValue(endDate.getTime());
+
+                if (startPixel && endPixel) {
+                    const width = endPixel - startPixel;
+
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'; // Red-500 with 15% opacity
+                    // Draw full height rectangle
+                    ctx.fillRect(startPixel, yAxis.top, width, yAxis.bottom - yAxis.top);
+
+                    // Draw Label
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'; // Darker red for text
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+                    const label = `${metrics.maxStagnationDays} d`;
+                    // Position at the top center of the highlighted area, slightly padded
+                    ctx.fillText(label, startPixel + width / 2, yAxis.top + 5);
+
+                    ctx.restore();
+                }
+            }
         },
         afterInit: (chart) => {
             chart.crosshair = { x: 0, y: 0, draw: false };

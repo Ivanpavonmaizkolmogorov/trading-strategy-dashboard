@@ -243,13 +243,20 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     # --- CÁLCULO DE STAGNATION (ESTANCAMIENTO) ---
     # Ahora se calcula desde la curva diaria, que es la definición estándar de "Stagnation in Days".
     max_stagnation_days = 0
+    max_stagnation_start = None
+    max_stagnation_end = None
+    
     if not equity_curve.empty:
         last_peak_date = equity_curve.index[0]
         for current_date, current_equity in equity_curve['equity'].items():
             if current_equity >= equity_curve['equity'].loc[last_peak_date]:
                 last_peak_date = current_date
+            
             stagnation_days = (current_date - last_peak_date).days
-            max_stagnation_days = max(max_stagnation_days, stagnation_days)
+            if stagnation_days > max_stagnation_days:
+                max_stagnation_days = stagnation_days
+                max_stagnation_start = last_peak_date
+                max_stagnation_end = current_date
 
     # --- CÁLCULO DE SQN (SYSTEM QUALITY NUMBER) ---
     # CORRECCIÓN: Usar % de retorno por trade en lugar de PnL en dólares para evitar distorsión por interés compuesto
@@ -379,6 +386,8 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "maxStagnationTrades": max_stagnation_trades,
         "totalTrades": total_trades,
         "maxStagnationDays": max_stagnation_days,
+        "maxStagnationStart": max_stagnation_start,
+        "maxStagnationEnd": max_stagnation_end,
         "sqn": sqn,
         "totalProfit": total_profit, # <-- Added missing metric
         # Datos para gráficos

@@ -1,20 +1,14 @@
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:383: UserWarning: Valid config keys have changed in V2:
 * 'json_loads' has been removed
   warnings.warn(message, UserWarning)
-INFO:     Started server process [3365770]
+INFO:     Started server process [3369960]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
-INFO:     127.0.0.1:37822 - "HEAD / HTTP/1.1" 405 Method Not Allowed
-INFO:     127.0.0.1:37830 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37830 - "GET /src/ui.js HTTP/1.1" 304 Not Modified
-INFO:     127.0.0.1:37838 - "GET /src/modules/databank.js HTTP/1.1" 304 Not Modified
-INFO:     127.0.0.1:37838 - "GET /src/modules/databankTable.js HTTP/1.1" 304 Not Modified
-INFO:     127.0.0.1:37830 - "GET /src/modules/savedPortfoliosTable.js HTTP/1.1" 304 Not Modified
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
-/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
-  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+INFO:     127.0.0.1:44314 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:44328 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44328 - "GET /src/main.js?v=3.52 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44328 - "GET /src/ui.js HTTP/1.1" 200 OK
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
@@ -73,6 +67,8 @@ Received 5 strategies and benchmark with 0 rows.
   "maxStagnationTrades": 159,
   "totalTrades": 1365,
   "maxStagnationDays": 723,
+  "maxStagnationStart": "2013-08-27T00:00:00",
+  "maxStagnationEnd": "2015-08-20T00:00:00",
   "sqn": 1.0467677741931016,
   "totalProfit": 25757.159999999996
 }
@@ -109,6 +105,8 @@ Received 5 strategies and benchmark with 0 rows.
   "maxStagnationTrades": 147,
   "totalTrades": 1722,
   "maxStagnationDays": 491,
+  "maxStagnationStart": "2018-03-12T00:00:00",
+  "maxStagnationEnd": "2019-07-16T00:00:00",
   "sqn": 1.358641299479374,
   "totalProfit": 23502.07
 }
@@ -145,6 +143,8 @@ Received 5 strategies and benchmark with 0 rows.
   "maxStagnationTrades": 128,
   "totalTrades": 1337,
   "maxStagnationDays": 523,
+  "maxStagnationStart": "2019-08-22T00:00:00",
+  "maxStagnationEnd": "2021-01-26T00:00:00",
   "sqn": 1.4716320279945958,
   "totalProfit": 33121.08
 }
@@ -181,6 +181,8 @@ Received 5 strategies and benchmark with 0 rows.
   "maxStagnationTrades": 71,
   "totalTrades": 532,
   "maxStagnationDays": 802,
+  "maxStagnationStart": "2009-12-16T00:00:00",
+  "maxStagnationEnd": "2012-02-26T00:00:00",
   "sqn": 1.611140066580783,
   "totalProfit": 15378.64
 }
@@ -217,6 +219,8 @@ Received 5 strategies and benchmark with 0 rows.
   "maxStagnationTrades": 64,
   "totalTrades": 742,
   "maxStagnationDays": 572,
+  "maxStagnationStart": "2014-11-04T00:00:00",
+  "maxStagnationEnd": "2016-05-29T00:00:00",
   "sqn": 1.2274399523623152,
   "totalProfit": 13153.789999999999
 }
@@ -230,6 +234,10 @@ Received 5 strategies and benchmark with 0 rows.
   [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
 --- [DEBUG ENGINE] Processing strategy. Rows: 5698
 --- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
 --- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
 --- [DEBUG ENGINE] Valid Entry Dates after parsing: 5698/5698
 --- [DEBUG ENGINE] Valid PnL after parsing: 5698/5698
@@ -258,6 +266,8 @@ Received 5 strategies and benchmark with 0 rows.
   "maxStagnationTrades": 179,
   "totalTrades": 5698,
   "maxStagnationDays": 186,
+  "maxStagnationStart": "2013-12-26T00:00:00",
+  "maxStagnationEnd": "2014-06-30T00:00:00",
   "sqn": 0.9652909648181605,
   "totalProfit": 110912.73999999999
 }
@@ -266,4 +276,5 @@ Received 5 strategies and benchmark with 0 rows.
   [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
 
 [BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
-INFO:     127.0.0.1:33640 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44342 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55728 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
