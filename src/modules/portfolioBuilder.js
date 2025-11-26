@@ -246,7 +246,7 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
             id: Date.now(),
             weights: null,
             metrics: portfolio.metrics, // Save pre-calculated metrics
-            analysis: portfolio.analysis, // Save chart data and analysis
+            analysis: portfolio.metrics, // Save chart data and analysis (metrics contains chartData)
             comments: `Creado manualmente. ${validation.passed ? 'Cumple filtros.' : 'No cumple filtros.'}`
         });
 

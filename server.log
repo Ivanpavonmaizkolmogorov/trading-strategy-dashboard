@@ -1,14 +1,16 @@
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:383: UserWarning: Valid config keys have changed in V2:
 * 'json_loads' has been removed
   warnings.warn(message, UserWarning)
-INFO:     Started server process [3369960]
+INFO:     Started server process [3376282]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
-INFO:     127.0.0.1:44314 - "HEAD / HTTP/1.1" 405 Method Not Allowed
-INFO:     127.0.0.1:44328 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44328 - "GET /src/main.js?v=3.52 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:44328 - "GET /src/ui.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50162 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:50178 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50178 - "GET /src/main.js?v=3.55 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50178 - "GET /src/ui.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:50178 - "GET /src/modules/focusMode.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:50178 - "GET /src/modules/portfolioBuilder.js HTTP/1.1" 304 Not Modified
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
   monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
 /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
@@ -276,5 +278,1955 @@ Received 5 strategies and benchmark with 0 rows.
   [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
 
 [BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
-INFO:     127.0.0.1:44342 - "POST /analysis/full HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55728 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50180 - "POST /analysis/full HTTP/1.1" 200 OK
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 5 strategies and benchmark with 0 rows.
+  Processing strategy 1/5...
+  Processing strategy 2/5...
+  Processing strategy 3/5...
+  Processing strategy 4/5...
+  Processing strategy 5/5...
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3733140858267765,
+  "sortinoRatio": 2.1866931260810287,
+  "maxDrawdown": 13.094326427135217,
+  "monthlyAvgProfit": 139.23778199254127,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 703.8275640098428,
+  "upi": 1.87210931606201,
+  "sharpeRatio": 1.1718279815867336,
+  "sharpeRatioDaily": 0.7961321476558219,
+  "sharpeRatioTrade": 0.984600105044967,
+  "sharpeRatioMonthly": 0.8726293064646352,
+  "sharpeRatioAnnual": 0.7525980073562625,
+  "annualizedVolatility": 0.0735253261848467,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 2028.9100000000035,
+  "profitMaxDD_Ratio": 12.695072723777768,
+  "monthlyProfitToDollarDD": 6.862688931127601,
+  "winningPercentage": 38.901098901098905,
+  "maxStagnationTrades": 159,
+  "totalTrades": 1365,
+  "maxStagnationDays": 723,
+  "maxStagnationStart": "2013-08-27T00:00:00",
+  "maxStagnationEnd": "2015-08-20T00:00:00",
+  "sqn": 1.0467677741931016,
+  "totalProfit": 25757.159999999996
+}
+-------------------------------------------------------------------
+
+  -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4545060206107097,
+  "sortinoRatio": 2.7238601140200744,
+  "maxDrawdown": 5.079406671821357,
+  "monthlyAvgProfit": 127.04724041910852,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 358.0938351145009,
+  "upi": 5.219378005748421,
+  "sharpeRatio": 1.7637612150602695,
+  "sharpeRatioDaily": 1.1999797280801725,
+  "sharpeRatioTrade": 1.4354814866061587,
+  "sharpeRatioMonthly": 1.5110496666896323,
+  "sharpeRatioAnnual": 0.935125328860243,
+  "annualizedVolatility": 0.04625296793667249,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1237.5900000000038,
+  "profitMaxDD_Ratio": 18.990190612399847,
+  "monthlyProfitToDollarDD": 10.26569707408012,
+  "winningPercentage": 59.29152148664344,
+  "maxStagnationTrades": 147,
+  "totalTrades": 1722,
+  "maxStagnationDays": 491,
+  "maxStagnationStart": "2018-03-12T00:00:00",
+  "maxStagnationEnd": "2019-07-16T00:00:00",
+  "sqn": 1.358641299479374,
+  "totalProfit": 23502.07
+}
+-------------------------------------------------------------------
+
+  -> Strategy 2 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1337
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
+--- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
+--- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.5058204875357952,
+  "sortinoRatio": 2.7219912234809343,
+  "maxDrawdown": 9.59535742755561,
+  "monthlyAvgProfit": 165.95978192592594,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 404.1966718740219,
+  "upi": 4.310364011237019,
+  "sharpeRatio": 1.6051342588443098,
+  "sharpeRatioDaily": 1.0950124761606181,
+  "sharpeRatioTrade": 1.3189381530182303,
+  "sharpeRatioMonthly": 1.4100538507696652,
+  "sharpeRatioAnnual": 1.0205035318257878,
+  "annualizedVolatility": 0.05721754679524563,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1290.739999999998,
+  "profitMaxDD_Ratio": 25.66053581666335,
+  "monthlyProfitToDollarDD": 12.85772362566638,
+  "winningPercentage": 47.86836200448766,
+  "maxStagnationTrades": 128,
+  "totalTrades": 1337,
+  "maxStagnationDays": 523,
+  "maxStagnationStart": "2019-08-22T00:00:00",
+  "maxStagnationEnd": "2021-01-26T00:00:00",
+  "sqn": 1.4716320279945958,
+  "totalProfit": 33121.08
+}
+-------------------------------------------------------------------
+
+  -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.574805733614906,
+  "sortinoRatio": 1.8989469148836873,
+  "maxDrawdown": 16.079005924528612,
+  "monthlyAvgProfit": 77.05774511934156,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 507.29135781287624,
+  "upi": 1.3786197720633604,
+  "sharpeRatio": 1.1031694934584158,
+  "sharpeRatioDaily": 0.7736854094234525,
+  "sharpeRatioTrade": 0.9103377023100337,
+  "sharpeRatioMonthly": 0.9712014080541982,
+  "sharpeRatioAnnual": 0.8106607069627343,
+  "annualizedVolatility": 0.052205670521508214,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1755.9399999999969,
+  "profitMaxDD_Ratio": 8.758066904336154,
+  "monthlyProfitToDollarDD": 4.388404223341441,
+  "winningPercentage": 46.99248120300752,
+  "maxStagnationTrades": 71,
+  "totalTrades": 532,
+  "maxStagnationDays": 802,
+  "maxStagnationStart": "2009-12-16T00:00:00",
+  "maxStagnationEnd": "2012-02-26T00:00:00",
+  "sqn": 1.611140066580783,
+  "totalProfit": 15378.64
+}
+-------------------------------------------------------------------
+
+  -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 742
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
+--- [DEBUG ENGINE] Valid PnL after parsing: 742/742
+--- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3689898286332711,
+  "sortinoRatio": 1.5879123304865526,
+  "maxDrawdown": 12.160774137744657,
+  "monthlyAvgProfit": 66.82265814419225,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 366.16357747172395,
+  "upi": 1.9604769493295828,
+  "sharpeRatio": 0.9786838035481957,
+  "sharpeRatioDaily": 0.6924095848231936,
+  "sharpeRatioTrade": 0.8249327948240398,
+  "sharpeRatioMonthly": 0.8984951591122402,
+  "sharpeRatioAnnual": 0.7974894446123935,
+  "annualizedVolatility": 0.053653132025170504,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1439.680000000004,
+  "profitMaxDD_Ratio": 9.136606745943517,
+  "monthlyProfitToDollarDD": 4.64149381419427,
+  "winningPercentage": 45.68733153638814,
+  "maxStagnationTrades": 64,
+  "totalTrades": 742,
+  "maxStagnationDays": 572,
+  "maxStagnationStart": "2014-11-04T00:00:00",
+  "maxStagnationEnd": "2016-05-29T00:00:00",
+  "sqn": 1.2274399523623152,
+  "totalProfit": 13153.789999999999
+}
+-------------------------------------------------------------------
+
+  -> Strategy 5 analysis complete.
+--- Analyzing 1 requested portfolios ---
+
+[BACKEND-LOG] 2.0 Procesando portafolio (saved_index: None, is_current: False, is_databank: False)
+  [BACKEND-LOG] 2.0.a -> Normalización Recibida: is_risk_normalized=False, metric='None', value=None
+  [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
+--- [DEBUG ENGINE] Processing strategy. Rows: 1869
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1869/1869
+--- [DEBUG ENGINE] Valid PnL after parsing: 1869/1869
+--- [DEBUG ENGINE] Rows before drop: 1869, After drop: 1869
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.525831086250782,
+  "sortinoRatio": 2.9215361831349758,
+  "maxDrawdown": 12.531647139488303,
+  "monthlyAvgProfit": 243.0175270452675,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 498.5884034777712,
+  "upi": 4.4259745123797885,
+  "sharpeRatio": 1.5262515853256695,
+  "sharpeRatioDaily": 1.0454606699665743,
+  "sharpeRatioTrade": 1.42007162013265,
+  "sharpeRatioMonthly": 1.3475422167339632,
+  "sharpeRatioAnnual": 0.9452554701626784,
+  "annualizedVolatility": 0.07341452492090522,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1756.9899999999907,
+  "profitMaxDD_Ratio": 27.603867978759276,
+  "monthlyProfitToDollarDD": 13.831468992155266,
+  "winningPercentage": 47.61904761904761,
+  "maxStagnationTrades": 99,
+  "totalTrades": 1869,
+  "maxStagnationDays": 357,
+  "maxStagnationStart": "2010-01-27T00:00:00",
+  "maxStagnationEnd": "2011-01-19T00:00:00",
+  "sqn": 1.3399847046307851,
+  "totalProfit": 48499.72
+}
+-------------------------------------------------------------------
+
+  [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
+
+[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
+INFO:     127.0.0.1:43302 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58726 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:34416 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34416 - "GET /src/main.js?v=3.56 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34416 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:34416 - "GET /src/ui.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34416 - "GET /src/config.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:34416 - "GET /src/modules/portfolioBuilder.js HTTP/1.1" 304 Not Modified
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 5 strategies and benchmark with 0 rows.
+  Processing strategy 1/5...
+  Processing strategy 2/5...
+  Processing strategy 3/5...
+  Processing strategy 4/5...
+  Processing strategy 5/5...
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3733140858267765,
+  "sortinoRatio": 2.1866931260810287,
+  "maxDrawdown": 13.094326427135217,
+  "monthlyAvgProfit": 139.23778199254127,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 703.8275640098428,
+  "upi": 1.87210931606201,
+  "sharpeRatio": 1.1718279815867336,
+  "sharpeRatioDaily": 0.7961321476558219,
+  "sharpeRatioTrade": 0.984600105044967,
+  "sharpeRatioMonthly": 0.8726293064646352,
+  "sharpeRatioAnnual": 0.7525980073562625,
+  "annualizedVolatility": 0.0735253261848467,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 2028.9100000000035,
+  "profitMaxDD_Ratio": 12.695072723777768,
+  "monthlyProfitToDollarDD": 6.862688931127601,
+  "winningPercentage": 38.901098901098905,
+  "maxStagnationTrades": 159,
+  "totalTrades": 1365,
+  "maxStagnationDays": 723,
+  "maxStagnationStart": "2013-08-27T00:00:00",
+  "maxStagnationEnd": "2015-08-20T00:00:00",
+  "sqn": 1.0467677741931016,
+  "totalProfit": 25757.159999999996
+}
+-------------------------------------------------------------------
+
+  -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4545060206107097,
+  "sortinoRatio": 2.7238601140200744,
+  "maxDrawdown": 5.079406671821357,
+  "monthlyAvgProfit": 127.04724041910852,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 358.0938351145009,
+  "upi": 5.219378005748421,
+  "sharpeRatio": 1.7637612150602695,
+  "sharpeRatioDaily": 1.1999797280801725,
+  "sharpeRatioTrade": 1.4354814866061587,
+  "sharpeRatioMonthly": 1.5110496666896323,
+  "sharpeRatioAnnual": 0.935125328860243,
+  "annualizedVolatility": 0.04625296793667249,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1237.5900000000038,
+  "profitMaxDD_Ratio": 18.990190612399847,
+  "monthlyProfitToDollarDD": 10.26569707408012,
+  "winningPercentage": 59.29152148664344,
+  "maxStagnationTrades": 147,
+  "totalTrades": 1722,
+  "maxStagnationDays": 491,
+  "maxStagnationStart": "2018-03-12T00:00:00",
+  "maxStagnationEnd": "2019-07-16T00:00:00",
+  "sqn": 1.358641299479374,
+  "totalProfit": 23502.07
+}
+-------------------------------------------------------------------
+
+  -> Strategy 2 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1337
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
+--- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
+--- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.5058204875357952,
+  "sortinoRatio": 2.7219912234809343,
+  "maxDrawdown": 9.59535742755561,
+  "monthlyAvgProfit": 165.95978192592594,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 404.1966718740219,
+  "upi": 4.310364011237019,
+  "sharpeRatio": 1.6051342588443098,
+  "sharpeRatioDaily": 1.0950124761606181,
+  "sharpeRatioTrade": 1.3189381530182303,
+  "sharpeRatioMonthly": 1.4100538507696652,
+  "sharpeRatioAnnual": 1.0205035318257878,
+  "annualizedVolatility": 0.05721754679524563,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1290.739999999998,
+  "profitMaxDD_Ratio": 25.66053581666335,
+  "monthlyProfitToDollarDD": 12.85772362566638,
+  "winningPercentage": 47.86836200448766,
+  "maxStagnationTrades": 128,
+  "totalTrades": 1337,
+  "maxStagnationDays": 523,
+  "maxStagnationStart": "2019-08-22T00:00:00",
+  "maxStagnationEnd": "2021-01-26T00:00:00",
+  "sqn": 1.4716320279945958,
+  "totalProfit": 33121.08
+}
+-------------------------------------------------------------------
+
+  -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.574805733614906,
+  "sortinoRatio": 1.8989469148836873,
+  "maxDrawdown": 16.079005924528612,
+  "monthlyAvgProfit": 77.05774511934156,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 507.29135781287624,
+  "upi": 1.3786197720633604,
+  "sharpeRatio": 1.1031694934584158,
+  "sharpeRatioDaily": 0.7736854094234525,
+  "sharpeRatioTrade": 0.9103377023100337,
+  "sharpeRatioMonthly": 0.9712014080541982,
+  "sharpeRatioAnnual": 0.8106607069627343,
+  "annualizedVolatility": 0.052205670521508214,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1755.9399999999969,
+  "profitMaxDD_Ratio": 8.758066904336154,
+  "monthlyProfitToDollarDD": 4.388404223341441,
+  "winningPercentage": 46.99248120300752,
+  "maxStagnationTrades": 71,
+  "totalTrades": 532,
+  "maxStagnationDays": 802,
+  "maxStagnationStart": "2009-12-16T00:00:00",
+  "maxStagnationEnd": "2012-02-26T00:00:00",
+  "sqn": 1.611140066580783,
+  "totalProfit": 15378.64
+}
+-------------------------------------------------------------------
+
+  -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 742
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
+--- [DEBUG ENGINE] Valid PnL after parsing: 742/742
+--- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3689898286332711,
+  "sortinoRatio": 1.5879123304865526,
+  "maxDrawdown": 12.160774137744657,
+  "monthlyAvgProfit": 66.82265814419225,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 366.16357747172395,
+  "upi": 1.9604769493295828,
+  "sharpeRatio": 0.9786838035481957,
+  "sharpeRatioDaily": 0.6924095848231936,
+  "sharpeRatioTrade": 0.8249327948240398,
+  "sharpeRatioMonthly": 0.8984951591122402,
+  "sharpeRatioAnnual": 0.7974894446123935,
+  "annualizedVolatility": 0.053653132025170504,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1439.680000000004,
+  "profitMaxDD_Ratio": 9.136606745943517,
+  "monthlyProfitToDollarDD": 4.64149381419427,
+  "winningPercentage": 45.68733153638814,
+  "maxStagnationTrades": 64,
+  "totalTrades": 742,
+  "maxStagnationDays": 572,
+  "maxStagnationStart": "2014-11-04T00:00:00",
+  "maxStagnationEnd": "2016-05-29T00:00:00",
+  "sqn": 1.2274399523623152,
+  "totalProfit": 13153.789999999999
+}
+-------------------------------------------------------------------
+
+  -> Strategy 5 analysis complete.
+--- Analyzing 1 requested portfolios ---
+
+[BACKEND-LOG] 2.0 Procesando portafolio (saved_index: 0, is_current: False, is_databank: False)
+  [BACKEND-LOG] 2.0.a -> Normalización Recibida: is_risk_normalized=False, metric='max_dd', value=0.0
+  [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
+--- [DEBUG ENGINE] Processing strategy. Rows: 5698
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 5698/5698
+--- [DEBUG ENGINE] Valid PnL after parsing: 5698/5698
+--- [DEBUG ENGINE] Rows before drop: 5698, After drop: 5698
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4461718128959897,
+  "sortinoRatio": 3.5806540797102295,
+  "maxDrawdown": 12.926345378838192,
+  "monthlyAvgProfit": 555.7504206748971,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 520.6808360057277,
+  "upi": 9.127340635797946,
+  "sharpeRatio": 1.9452949186549662,
+  "sharpeRatioDaily": 1.2950427936010103,
+  "sharpeRatioTrade": 1.7865012404238039,
+  "sharpeRatioMonthly": 1.8201809508955498,
+  "sharpeRatioAnnual": 1.1182974224313407,
+  "annualizedVolatility": 0.08310710502008845,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1961.1599999999598,
+  "profitMaxDD_Ratio": 56.554661526852605,
+  "monthlyProfitToDollarDD": 28.337841923907714,
+  "winningPercentage": 48.80659880659881,
+  "maxStagnationTrades": 179,
+  "totalTrades": 5698,
+  "maxStagnationDays": 186,
+  "maxStagnationStart": "2013-12-26T00:00:00",
+  "maxStagnationEnd": "2014-06-30T00:00:00",
+  "sqn": 0.9652909648181605,
+  "totalProfit": 110912.73999999999
+}
+-------------------------------------------------------------------
+
+  [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
+
+[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
+INFO:     127.0.0.1:34420 - "POST /analysis/full HTTP/1.1" 200 OK
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 5 strategies and benchmark with 0 rows.
+  Processing strategy 1/5...
+  Processing strategy 2/5...
+  Processing strategy 3/5...
+  Processing strategy 4/5...
+  Processing strategy 5/5...
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3733140858267765,
+  "sortinoRatio": 2.1866931260810287,
+  "maxDrawdown": 13.094326427135217,
+  "monthlyAvgProfit": 139.23778199254127,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 703.8275640098428,
+  "upi": 1.87210931606201,
+  "sharpeRatio": 1.1718279815867336,
+  "sharpeRatioDaily": 0.7961321476558219,
+  "sharpeRatioTrade": 0.984600105044967,
+  "sharpeRatioMonthly": 0.8726293064646352,
+  "sharpeRatioAnnual": 0.7525980073562625,
+  "annualizedVolatility": 0.0735253261848467,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 2028.9100000000035,
+  "profitMaxDD_Ratio": 12.695072723777768,
+  "monthlyProfitToDollarDD": 6.862688931127601,
+  "winningPercentage": 38.901098901098905,
+  "maxStagnationTrades": 159,
+  "totalTrades": 1365,
+  "maxStagnationDays": 723,
+  "maxStagnationStart": "2013-08-27T00:00:00",
+  "maxStagnationEnd": "2015-08-20T00:00:00",
+  "sqn": 1.0467677741931016,
+  "totalProfit": 25757.159999999996
+}
+-------------------------------------------------------------------
+
+  -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4545060206107097,
+  "sortinoRatio": 2.7238601140200744,
+  "maxDrawdown": 5.079406671821357,
+  "monthlyAvgProfit": 127.04724041910852,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 358.0938351145009,
+  "upi": 5.219378005748421,
+  "sharpeRatio": 1.7637612150602695,
+  "sharpeRatioDaily": 1.1999797280801725,
+  "sharpeRatioTrade": 1.4354814866061587,
+  "sharpeRatioMonthly": 1.5110496666896323,
+  "sharpeRatioAnnual": 0.935125328860243,
+  "annualizedVolatility": 0.04625296793667249,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1237.5900000000038,
+  "profitMaxDD_Ratio": 18.990190612399847,
+  "monthlyProfitToDollarDD": 10.26569707408012,
+  "winningPercentage": 59.29152148664344,
+  "maxStagnationTrades": 147,
+  "totalTrades": 1722,
+  "maxStagnationDays": 491,
+  "maxStagnationStart": "2018-03-12T00:00:00",
+  "maxStagnationEnd": "2019-07-16T00:00:00",
+  "sqn": 1.358641299479374,
+  "totalProfit": 23502.07
+}
+-------------------------------------------------------------------
+
+  -> Strategy 2 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1337
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
+--- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
+--- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.5058204875357952,
+  "sortinoRatio": 2.7219912234809343,
+  "maxDrawdown": 9.59535742755561,
+  "monthlyAvgProfit": 165.95978192592594,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 404.1966718740219,
+  "upi": 4.310364011237019,
+  "sharpeRatio": 1.6051342588443098,
+  "sharpeRatioDaily": 1.0950124761606181,
+  "sharpeRatioTrade": 1.3189381530182303,
+  "sharpeRatioMonthly": 1.4100538507696652,
+  "sharpeRatioAnnual": 1.0205035318257878,
+  "annualizedVolatility": 0.05721754679524563,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1290.739999999998,
+  "profitMaxDD_Ratio": 25.66053581666335,
+  "monthlyProfitToDollarDD": 12.85772362566638,
+  "winningPercentage": 47.86836200448766,
+  "maxStagnationTrades": 128,
+  "totalTrades": 1337,
+  "maxStagnationDays": 523,
+  "maxStagnationStart": "2019-08-22T00:00:00",
+  "maxStagnationEnd": "2021-01-26T00:00:00",
+  "sqn": 1.4716320279945958,
+  "totalProfit": 33121.08
+}
+-------------------------------------------------------------------
+
+  -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.574805733614906,
+  "sortinoRatio": 1.8989469148836873,
+  "maxDrawdown": 16.079005924528612,
+  "monthlyAvgProfit": 77.05774511934156,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 507.29135781287624,
+  "upi": 1.3786197720633604,
+  "sharpeRatio": 1.1031694934584158,
+  "sharpeRatioDaily": 0.7736854094234525,
+  "sharpeRatioTrade": 0.9103377023100337,
+  "sharpeRatioMonthly": 0.9712014080541982,
+  "sharpeRatioAnnual": 0.8106607069627343,
+  "annualizedVolatility": 0.052205670521508214,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1755.9399999999969,
+  "profitMaxDD_Ratio": 8.758066904336154,
+  "monthlyProfitToDollarDD": 4.388404223341441,
+  "winningPercentage": 46.99248120300752,
+  "maxStagnationTrades": 71,
+  "totalTrades": 532,
+  "maxStagnationDays": 802,
+  "maxStagnationStart": "2009-12-16T00:00:00",
+  "maxStagnationEnd": "2012-02-26T00:00:00",
+  "sqn": 1.611140066580783,
+  "totalProfit": 15378.64
+}
+-------------------------------------------------------------------
+
+  -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 742
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
+--- [DEBUG ENGINE] Valid PnL after parsing: 742/742
+--- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3689898286332711,
+  "sortinoRatio": 1.5879123304865526,
+  "maxDrawdown": 12.160774137744657,
+  "monthlyAvgProfit": 66.82265814419225,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 366.16357747172395,
+  "upi": 1.9604769493295828,
+  "sharpeRatio": 0.9786838035481957,
+  "sharpeRatioDaily": 0.6924095848231936,
+  "sharpeRatioTrade": 0.8249327948240398,
+  "sharpeRatioMonthly": 0.8984951591122402,
+  "sharpeRatioAnnual": 0.7974894446123935,
+  "annualizedVolatility": 0.053653132025170504,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1439.680000000004,
+  "profitMaxDD_Ratio": 9.136606745943517,
+  "monthlyProfitToDollarDD": 4.64149381419427,
+  "winningPercentage": 45.68733153638814,
+  "maxStagnationTrades": 64,
+  "totalTrades": 742,
+  "maxStagnationDays": 572,
+  "maxStagnationStart": "2014-11-04T00:00:00",
+  "maxStagnationEnd": "2016-05-29T00:00:00",
+  "sqn": 1.2274399523623152,
+  "totalProfit": 13153.789999999999
+}
+-------------------------------------------------------------------
+
+  -> Strategy 5 analysis complete.
+--- Analyzing 1 requested portfolios ---
+
+[BACKEND-LOG] 2.0 Procesando portafolio (saved_index: None, is_current: False, is_databank: False)
+  [BACKEND-LOG] 2.0.a -> Normalización Recibida: is_risk_normalized=False, metric='None', value=None
+  [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
+--- [DEBUG ENGINE] Processing strategy. Rows: 1869
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1869/1869
+--- [DEBUG ENGINE] Valid PnL after parsing: 1869/1869
+--- [DEBUG ENGINE] Rows before drop: 1869, After drop: 1869
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.525831086250782,
+  "sortinoRatio": 2.9215361831349758,
+  "maxDrawdown": 12.531647139488303,
+  "monthlyAvgProfit": 243.0175270452675,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 498.5884034777712,
+  "upi": 4.4259745123797885,
+  "sharpeRatio": 1.5262515853256695,
+  "sharpeRatioDaily": 1.0454606699665743,
+  "sharpeRatioTrade": 1.42007162013265,
+  "sharpeRatioMonthly": 1.3475422167339632,
+  "sharpeRatioAnnual": 0.9452554701626784,
+  "annualizedVolatility": 0.07341452492090522,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1756.9899999999907,
+  "profitMaxDD_Ratio": 27.603867978759276,
+  "monthlyProfitToDollarDD": 13.831468992155266,
+  "winningPercentage": 47.61904761904761,
+  "maxStagnationTrades": 99,
+  "totalTrades": 1869,
+  "maxStagnationDays": 357,
+  "maxStagnationStart": "2010-01-27T00:00:00",
+  "maxStagnationEnd": "2011-01-19T00:00:00",
+  "sqn": 1.3399847046307851,
+  "totalProfit": 48499.72
+}
+-------------------------------------------------------------------
+
+  [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
+
+[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
+INFO:     127.0.0.1:46916 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52408 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52408 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52408 - "GET /src/ui.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52408 - "GET /src/modules/focusMode.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52418 - "GET /src/modules/strategiesTable.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52418 - "GET /src/modules/tableEngine.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52418 - "GET /src/modules/portfolioBuilder.js HTTP/1.1" 304 Not Modified
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 5 strategies and benchmark with 0 rows.
+  Processing strategy 1/5...
+  Processing strategy 2/5...
+  Processing strategy 3/5...
+  Processing strategy 4/5...
+  Processing strategy 5/5...
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3733140858267765,
+  "sortinoRatio": 2.1866931260810287,
+  "maxDrawdown": 13.094326427135217,
+  "monthlyAvgProfit": 139.23778199254127,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 703.8275640098428,
+  "upi": 1.87210931606201,
+  "sharpeRatio": 1.1718279815867336,
+  "sharpeRatioDaily": 0.7961321476558219,
+  "sharpeRatioTrade": 0.984600105044967,
+  "sharpeRatioMonthly": 0.8726293064646352,
+  "sharpeRatioAnnual": 0.7525980073562625,
+  "annualizedVolatility": 0.0735253261848467,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 2028.9100000000035,
+  "profitMaxDD_Ratio": 12.695072723777768,
+  "monthlyProfitToDollarDD": 6.862688931127601,
+  "winningPercentage": 38.901098901098905,
+  "maxStagnationTrades": 159,
+  "totalTrades": 1365,
+  "maxStagnationDays": 723,
+  "maxStagnationStart": "2013-08-27T00:00:00",
+  "maxStagnationEnd": "2015-08-20T00:00:00",
+  "sqn": 1.0467677741931016,
+  "totalProfit": 25757.159999999996
+}
+-------------------------------------------------------------------
+
+  -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4545060206107097,
+  "sortinoRatio": 2.7238601140200744,
+  "maxDrawdown": 5.079406671821357,
+  "monthlyAvgProfit": 127.04724041910852,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 358.0938351145009,
+  "upi": 5.219378005748421,
+  "sharpeRatio": 1.7637612150602695,
+  "sharpeRatioDaily": 1.1999797280801725,
+  "sharpeRatioTrade": 1.4354814866061587,
+  "sharpeRatioMonthly": 1.5110496666896323,
+  "sharpeRatioAnnual": 0.935125328860243,
+  "annualizedVolatility": 0.04625296793667249,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1237.5900000000038,
+  "profitMaxDD_Ratio": 18.990190612399847,
+  "monthlyProfitToDollarDD": 10.26569707408012,
+  "winningPercentage": 59.29152148664344,
+  "maxStagnationTrades": 147,
+  "totalTrades": 1722,
+  "maxStagnationDays": 491,
+  "maxStagnationStart": "2018-03-12T00:00:00",
+  "maxStagnationEnd": "2019-07-16T00:00:00",
+  "sqn": 1.358641299479374,
+  "totalProfit": 23502.07
+}
+-------------------------------------------------------------------
+
+  -> Strategy 2 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1337
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
+--- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
+--- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.5058204875357952,
+  "sortinoRatio": 2.7219912234809343,
+  "maxDrawdown": 9.59535742755561,
+  "monthlyAvgProfit": 165.95978192592594,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 404.1966718740219,
+  "upi": 4.310364011237019,
+  "sharpeRatio": 1.6051342588443098,
+  "sharpeRatioDaily": 1.0950124761606181,
+  "sharpeRatioTrade": 1.3189381530182303,
+  "sharpeRatioMonthly": 1.4100538507696652,
+  "sharpeRatioAnnual": 1.0205035318257878,
+  "annualizedVolatility": 0.05721754679524563,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1290.739999999998,
+  "profitMaxDD_Ratio": 25.66053581666335,
+  "monthlyProfitToDollarDD": 12.85772362566638,
+  "winningPercentage": 47.86836200448766,
+  "maxStagnationTrades": 128,
+  "totalTrades": 1337,
+  "maxStagnationDays": 523,
+  "maxStagnationStart": "2019-08-22T00:00:00",
+  "maxStagnationEnd": "2021-01-26T00:00:00",
+  "sqn": 1.4716320279945958,
+  "totalProfit": 33121.08
+}
+-------------------------------------------------------------------
+
+  -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.574805733614906,
+  "sortinoRatio": 1.8989469148836873,
+  "maxDrawdown": 16.079005924528612,
+  "monthlyAvgProfit": 77.05774511934156,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 507.29135781287624,
+  "upi": 1.3786197720633604,
+  "sharpeRatio": 1.1031694934584158,
+  "sharpeRatioDaily": 0.7736854094234525,
+  "sharpeRatioTrade": 0.9103377023100337,
+  "sharpeRatioMonthly": 0.9712014080541982,
+  "sharpeRatioAnnual": 0.8106607069627343,
+  "annualizedVolatility": 0.052205670521508214,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1755.9399999999969,
+  "profitMaxDD_Ratio": 8.758066904336154,
+  "monthlyProfitToDollarDD": 4.388404223341441,
+  "winningPercentage": 46.99248120300752,
+  "maxStagnationTrades": 71,
+  "totalTrades": 532,
+  "maxStagnationDays": 802,
+  "maxStagnationStart": "2009-12-16T00:00:00",
+  "maxStagnationEnd": "2012-02-26T00:00:00",
+  "sqn": 1.611140066580783,
+  "totalProfit": 15378.64
+}
+-------------------------------------------------------------------
+
+  -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 742
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
+--- [DEBUG ENGINE] Valid PnL after parsing: 742/742
+--- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3689898286332711,
+  "sortinoRatio": 1.5879123304865526,
+  "maxDrawdown": 12.160774137744657,
+  "monthlyAvgProfit": 66.82265814419225,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 366.16357747172395,
+  "upi": 1.9604769493295828,
+  "sharpeRatio": 0.9786838035481957,
+  "sharpeRatioDaily": 0.6924095848231936,
+  "sharpeRatioTrade": 0.8249327948240398,
+  "sharpeRatioMonthly": 0.8984951591122402,
+  "sharpeRatioAnnual": 0.7974894446123935,
+  "annualizedVolatility": 0.053653132025170504,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1439.680000000004,
+  "profitMaxDD_Ratio": 9.136606745943517,
+  "monthlyProfitToDollarDD": 4.64149381419427,
+  "winningPercentage": 45.68733153638814,
+  "maxStagnationTrades": 64,
+  "totalTrades": 742,
+  "maxStagnationDays": 572,
+  "maxStagnationStart": "2014-11-04T00:00:00",
+  "maxStagnationEnd": "2016-05-29T00:00:00",
+  "sqn": 1.2274399523623152,
+  "totalProfit": 13153.789999999999
+}
+-------------------------------------------------------------------
+
+  -> Strategy 5 analysis complete.
+--- Analyzing 1 requested portfolios ---
+
+[BACKEND-LOG] 2.0 Procesando portafolio (saved_index: 0, is_current: False, is_databank: False)
+  [BACKEND-LOG] 2.0.a -> Normalización Recibida: is_risk_normalized=False, metric='max_dd', value=0.0
+  [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
+--- [DEBUG ENGINE] Processing strategy. Rows: 5698
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 5698/5698
+--- [DEBUG ENGINE] Valid PnL after parsing: 5698/5698
+--- [DEBUG ENGINE] Rows before drop: 5698, After drop: 5698
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4461718128959897,
+  "sortinoRatio": 3.5806540797102295,
+  "maxDrawdown": 12.926345378838192,
+  "monthlyAvgProfit": 555.7504206748971,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 520.6808360057277,
+  "upi": 9.127340635797946,
+  "sharpeRatio": 1.9452949186549662,
+  "sharpeRatioDaily": 1.2950427936010103,
+  "sharpeRatioTrade": 1.7865012404238039,
+  "sharpeRatioMonthly": 1.8201809508955498,
+  "sharpeRatioAnnual": 1.1182974224313407,
+  "annualizedVolatility": 0.08310710502008845,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1961.1599999999598,
+  "profitMaxDD_Ratio": 56.554661526852605,
+  "monthlyProfitToDollarDD": 28.337841923907714,
+  "winningPercentage": 48.80659880659881,
+  "maxStagnationTrades": 179,
+  "totalTrades": 5698,
+  "maxStagnationDays": 186,
+  "maxStagnationStart": "2013-12-26T00:00:00",
+  "maxStagnationEnd": "2014-06-30T00:00:00",
+  "sqn": 0.9652909648181605,
+  "totalProfit": 110912.73999999999
+}
+-------------------------------------------------------------------
+
+  [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
+
+[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
+INFO:     127.0.0.1:52720 - "POST /analysis/full HTTP/1.1" 200 OK
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 5 strategies and benchmark with 0 rows.
+  Processing strategy 1/5...
+  Processing strategy 2/5...
+  Processing strategy 3/5...
+  Processing strategy 4/5...
+  Processing strategy 5/5...
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3733140858267765,
+  "sortinoRatio": 2.1866931260810287,
+  "maxDrawdown": 13.094326427135217,
+  "monthlyAvgProfit": 139.23778199254127,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 703.8275640098428,
+  "upi": 1.87210931606201,
+  "sharpeRatio": 1.1718279815867336,
+  "sharpeRatioDaily": 0.7961321476558219,
+  "sharpeRatioTrade": 0.984600105044967,
+  "sharpeRatioMonthly": 0.8726293064646352,
+  "sharpeRatioAnnual": 0.7525980073562625,
+  "annualizedVolatility": 0.0735253261848467,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 2028.9100000000035,
+  "profitMaxDD_Ratio": 12.695072723777768,
+  "monthlyProfitToDollarDD": 6.862688931127601,
+  "winningPercentage": 38.901098901098905,
+  "maxStagnationTrades": 159,
+  "totalTrades": 1365,
+  "maxStagnationDays": 723,
+  "maxStagnationStart": "2013-08-27T00:00:00",
+  "maxStagnationEnd": "2015-08-20T00:00:00",
+  "sqn": 1.0467677741931016,
+  "totalProfit": 25757.159999999996
+}
+-------------------------------------------------------------------
+
+  -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4545060206107097,
+  "sortinoRatio": 2.7238601140200744,
+  "maxDrawdown": 5.079406671821357,
+  "monthlyAvgProfit": 127.04724041910852,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 358.0938351145009,
+  "upi": 5.219378005748421,
+  "sharpeRatio": 1.7637612150602695,
+  "sharpeRatioDaily": 1.1999797280801725,
+  "sharpeRatioTrade": 1.4354814866061587,
+  "sharpeRatioMonthly": 1.5110496666896323,
+  "sharpeRatioAnnual": 0.935125328860243,
+  "annualizedVolatility": 0.04625296793667249,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1237.5900000000038,
+  "profitMaxDD_Ratio": 18.990190612399847,
+  "monthlyProfitToDollarDD": 10.26569707408012,
+  "winningPercentage": 59.29152148664344,
+  "maxStagnationTrades": 147,
+  "totalTrades": 1722,
+  "maxStagnationDays": 491,
+  "maxStagnationStart": "2018-03-12T00:00:00",
+  "maxStagnationEnd": "2019-07-16T00:00:00",
+  "sqn": 1.358641299479374,
+  "totalProfit": 23502.07
+}
+-------------------------------------------------------------------
+
+  -> Strategy 2 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1337
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
+--- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
+--- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.5058204875357952,
+  "sortinoRatio": 2.7219912234809343,
+  "maxDrawdown": 9.59535742755561,
+  "monthlyAvgProfit": 165.95978192592594,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 404.1966718740219,
+  "upi": 4.310364011237019,
+  "sharpeRatio": 1.6051342588443098,
+  "sharpeRatioDaily": 1.0950124761606181,
+  "sharpeRatioTrade": 1.3189381530182303,
+  "sharpeRatioMonthly": 1.4100538507696652,
+  "sharpeRatioAnnual": 1.0205035318257878,
+  "annualizedVolatility": 0.05721754679524563,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1290.739999999998,
+  "profitMaxDD_Ratio": 25.66053581666335,
+  "monthlyProfitToDollarDD": 12.85772362566638,
+  "winningPercentage": 47.86836200448766,
+  "maxStagnationTrades": 128,
+  "totalTrades": 1337,
+  "maxStagnationDays": 523,
+  "maxStagnationStart": "2019-08-22T00:00:00",
+  "maxStagnationEnd": "2021-01-26T00:00:00",
+  "sqn": 1.4716320279945958,
+  "totalProfit": 33121.08
+}
+-------------------------------------------------------------------
+
+  -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.574805733614906,
+  "sortinoRatio": 1.8989469148836873,
+  "maxDrawdown": 16.079005924528612,
+  "monthlyAvgProfit": 77.05774511934156,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 507.29135781287624,
+  "upi": 1.3786197720633604,
+  "sharpeRatio": 1.1031694934584158,
+  "sharpeRatioDaily": 0.7736854094234525,
+  "sharpeRatioTrade": 0.9103377023100337,
+  "sharpeRatioMonthly": 0.9712014080541982,
+  "sharpeRatioAnnual": 0.8106607069627343,
+  "annualizedVolatility": 0.052205670521508214,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1755.9399999999969,
+  "profitMaxDD_Ratio": 8.758066904336154,
+  "monthlyProfitToDollarDD": 4.388404223341441,
+  "winningPercentage": 46.99248120300752,
+  "maxStagnationTrades": 71,
+  "totalTrades": 532,
+  "maxStagnationDays": 802,
+  "maxStagnationStart": "2009-12-16T00:00:00",
+  "maxStagnationEnd": "2012-02-26T00:00:00",
+  "sqn": 1.611140066580783,
+  "totalProfit": 15378.64
+}
+-------------------------------------------------------------------
+
+  -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 742
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
+--- [DEBUG ENGINE] Valid PnL after parsing: 742/742
+--- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3689898286332711,
+  "sortinoRatio": 1.5879123304865526,
+  "maxDrawdown": 12.160774137744657,
+  "monthlyAvgProfit": 66.82265814419225,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 366.16357747172395,
+  "upi": 1.9604769493295828,
+  "sharpeRatio": 0.9786838035481957,
+  "sharpeRatioDaily": 0.6924095848231936,
+  "sharpeRatioTrade": 0.8249327948240398,
+  "sharpeRatioMonthly": 0.8984951591122402,
+  "sharpeRatioAnnual": 0.7974894446123935,
+  "annualizedVolatility": 0.053653132025170504,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1439.680000000004,
+  "profitMaxDD_Ratio": 9.136606745943517,
+  "monthlyProfitToDollarDD": 4.64149381419427,
+  "winningPercentage": 45.68733153638814,
+  "maxStagnationTrades": 64,
+  "totalTrades": 742,
+  "maxStagnationDays": 572,
+  "maxStagnationStart": "2014-11-04T00:00:00",
+  "maxStagnationEnd": "2016-05-29T00:00:00",
+  "sqn": 1.2274399523623152,
+  "totalProfit": 13153.789999999999
+}
+-------------------------------------------------------------------
+
+  -> Strategy 5 analysis complete.
+--- Analyzing 1 requested portfolios ---
+
+[BACKEND-LOG] 2.0 Procesando portafolio (saved_index: None, is_current: False, is_databank: False)
+  [BACKEND-LOG] 2.0.a -> Normalización Recibida: is_risk_normalized=False, metric='None', value=None
+  [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
+--- [DEBUG ENGINE] Processing strategy. Rows: 1869
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1869/1869
+--- [DEBUG ENGINE] Valid PnL after parsing: 1869/1869
+--- [DEBUG ENGINE] Rows before drop: 1869, After drop: 1869
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.525831086250782,
+  "sortinoRatio": 2.9215361831349758,
+  "maxDrawdown": 12.531647139488303,
+  "monthlyAvgProfit": 243.0175270452675,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 498.5884034777712,
+  "upi": 4.4259745123797885,
+  "sharpeRatio": 1.5262515853256695,
+  "sharpeRatioDaily": 1.0454606699665743,
+  "sharpeRatioTrade": 1.42007162013265,
+  "sharpeRatioMonthly": 1.3475422167339632,
+  "sharpeRatioAnnual": 0.9452554701626784,
+  "annualizedVolatility": 0.07341452492090522,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1756.9899999999907,
+  "profitMaxDD_Ratio": 27.603867978759276,
+  "monthlyProfitToDollarDD": 13.831468992155266,
+  "winningPercentage": 47.61904761904761,
+  "maxStagnationTrades": 99,
+  "totalTrades": 1869,
+  "maxStagnationDays": 357,
+  "maxStagnationStart": "2010-01-27T00:00:00",
+  "maxStagnationEnd": "2011-01-19T00:00:00",
+  "sqn": 1.3399847046307851,
+  "totalProfit": 48499.72
+}
+-------------------------------------------------------------------
+
+  [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
+
+[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
+INFO:     127.0.0.1:53070 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55604 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55604 - "GET /src/main.js?v=3.57 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55604 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55604 - "GET /src/ui.js HTTP/1.1" 200 OK
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 5 strategies and benchmark with 0 rows.
+  Processing strategy 1/5...
+  Processing strategy 2/5...
+  Processing strategy 3/5...
+  Processing strategy 4/5...
+  Processing strategy 5/5...
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3733140858267765,
+  "sortinoRatio": 2.1866931260810287,
+  "maxDrawdown": 13.094326427135217,
+  "monthlyAvgProfit": 139.23778199254127,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 703.8275640098428,
+  "upi": 1.87210931606201,
+  "sharpeRatio": 1.1718279815867336,
+  "sharpeRatioDaily": 0.7961321476558219,
+  "sharpeRatioTrade": 0.984600105044967,
+  "sharpeRatioMonthly": 0.8726293064646352,
+  "sharpeRatioAnnual": 0.7525980073562625,
+  "annualizedVolatility": 0.0735253261848467,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 2028.9100000000035,
+  "profitMaxDD_Ratio": 12.695072723777768,
+  "monthlyProfitToDollarDD": 6.862688931127601,
+  "winningPercentage": 38.901098901098905,
+  "maxStagnationTrades": 159,
+  "totalTrades": 1365,
+  "maxStagnationDays": 723,
+  "maxStagnationStart": "2013-08-27T00:00:00",
+  "maxStagnationEnd": "2015-08-20T00:00:00",
+  "sqn": 1.0467677741931016,
+  "totalProfit": 25757.159999999996
+}
+-------------------------------------------------------------------
+
+  -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4545060206107097,
+  "sortinoRatio": 2.7238601140200744,
+  "maxDrawdown": 5.079406671821357,
+  "monthlyAvgProfit": 127.04724041910852,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 358.0938351145009,
+  "upi": 5.219378005748421,
+  "sharpeRatio": 1.7637612150602695,
+  "sharpeRatioDaily": 1.1999797280801725,
+  "sharpeRatioTrade": 1.4354814866061587,
+  "sharpeRatioMonthly": 1.5110496666896323,
+  "sharpeRatioAnnual": 0.935125328860243,
+  "annualizedVolatility": 0.04625296793667249,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1237.5900000000038,
+  "profitMaxDD_Ratio": 18.990190612399847,
+  "monthlyProfitToDollarDD": 10.26569707408012,
+  "winningPercentage": 59.29152148664344,
+  "maxStagnationTrades": 147,
+  "totalTrades": 1722,
+  "maxStagnationDays": 491,
+  "maxStagnationStart": "2018-03-12T00:00:00",
+  "maxStagnationEnd": "2019-07-16T00:00:00",
+  "sqn": 1.358641299479374,
+  "totalProfit": 23502.07
+}
+-------------------------------------------------------------------
+
+  -> Strategy 2 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1337
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
+--- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
+--- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.5058204875357952,
+  "sortinoRatio": 2.7219912234809343,
+  "maxDrawdown": 9.59535742755561,
+  "monthlyAvgProfit": 165.95978192592594,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 404.1966718740219,
+  "upi": 4.310364011237019,
+  "sharpeRatio": 1.6051342588443098,
+  "sharpeRatioDaily": 1.0950124761606181,
+  "sharpeRatioTrade": 1.3189381530182303,
+  "sharpeRatioMonthly": 1.4100538507696652,
+  "sharpeRatioAnnual": 1.0205035318257878,
+  "annualizedVolatility": 0.05721754679524563,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1290.739999999998,
+  "profitMaxDD_Ratio": 25.66053581666335,
+  "monthlyProfitToDollarDD": 12.85772362566638,
+  "winningPercentage": 47.86836200448766,
+  "maxStagnationTrades": 128,
+  "totalTrades": 1337,
+  "maxStagnationDays": 523,
+  "maxStagnationStart": "2019-08-22T00:00:00",
+  "maxStagnationEnd": "2021-01-26T00:00:00",
+  "sqn": 1.4716320279945958,
+  "totalProfit": 33121.08
+}
+-------------------------------------------------------------------
+
+  -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.574805733614906,
+  "sortinoRatio": 1.8989469148836873,
+  "maxDrawdown": 16.079005924528612,
+  "monthlyAvgProfit": 77.05774511934156,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 507.29135781287624,
+  "upi": 1.3786197720633604,
+  "sharpeRatio": 1.1031694934584158,
+  "sharpeRatioDaily": 0.7736854094234525,
+  "sharpeRatioTrade": 0.9103377023100337,
+  "sharpeRatioMonthly": 0.9712014080541982,
+  "sharpeRatioAnnual": 0.8106607069627343,
+  "annualizedVolatility": 0.052205670521508214,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1755.9399999999969,
+  "profitMaxDD_Ratio": 8.758066904336154,
+  "monthlyProfitToDollarDD": 4.388404223341441,
+  "winningPercentage": 46.99248120300752,
+  "maxStagnationTrades": 71,
+  "totalTrades": 532,
+  "maxStagnationDays": 802,
+  "maxStagnationStart": "2009-12-16T00:00:00",
+  "maxStagnationEnd": "2012-02-26T00:00:00",
+  "sqn": 1.611140066580783,
+  "totalProfit": 15378.64
+}
+-------------------------------------------------------------------
+
+  -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 742
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
+--- [DEBUG ENGINE] Valid PnL after parsing: 742/742
+--- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3689898286332711,
+  "sortinoRatio": 1.5879123304865526,
+  "maxDrawdown": 12.160774137744657,
+  "monthlyAvgProfit": 66.82265814419225,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 366.16357747172395,
+  "upi": 1.9604769493295828,
+  "sharpeRatio": 0.9786838035481957,
+  "sharpeRatioDaily": 0.6924095848231936,
+  "sharpeRatioTrade": 0.8249327948240398,
+  "sharpeRatioMonthly": 0.8984951591122402,
+  "sharpeRatioAnnual": 0.7974894446123935,
+  "annualizedVolatility": 0.053653132025170504,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1439.680000000004,
+  "profitMaxDD_Ratio": 9.136606745943517,
+  "monthlyProfitToDollarDD": 4.64149381419427,
+  "winningPercentage": 45.68733153638814,
+  "maxStagnationTrades": 64,
+  "totalTrades": 742,
+  "maxStagnationDays": 572,
+  "maxStagnationStart": "2014-11-04T00:00:00",
+  "maxStagnationEnd": "2016-05-29T00:00:00",
+  "sqn": 1.2274399523623152,
+  "totalProfit": 13153.789999999999
+}
+-------------------------------------------------------------------
+
+  -> Strategy 5 analysis complete.
+--- Analyzing 1 requested portfolios ---
+
+[BACKEND-LOG] 2.0 Procesando portafolio (saved_index: 0, is_current: False, is_databank: False)
+  [BACKEND-LOG] 2.0.a -> Normalización Recibida: is_risk_normalized=False, metric='max_dd', value=0.0
+  [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
+--- [DEBUG ENGINE] Processing strategy. Rows: 5698
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 5698/5698
+--- [DEBUG ENGINE] Valid PnL after parsing: 5698/5698
+--- [DEBUG ENGINE] Rows before drop: 5698, After drop: 5698
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4461718128959897,
+  "sortinoRatio": 3.5806540797102295,
+  "maxDrawdown": 12.926345378838192,
+  "monthlyAvgProfit": 555.7504206748971,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 520.6808360057277,
+  "upi": 9.127340635797946,
+  "sharpeRatio": 1.9452949186549662,
+  "sharpeRatioDaily": 1.2950427936010103,
+  "sharpeRatioTrade": 1.7865012404238039,
+  "sharpeRatioMonthly": 1.8201809508955498,
+  "sharpeRatioAnnual": 1.1182974224313407,
+  "annualizedVolatility": 0.08310710502008845,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1961.1599999999598,
+  "profitMaxDD_Ratio": 56.554661526852605,
+  "monthlyProfitToDollarDD": 28.337841923907714,
+  "winningPercentage": 48.80659880659881,
+  "maxStagnationTrades": 179,
+  "totalTrades": 5698,
+  "maxStagnationDays": 186,
+  "maxStagnationStart": "2013-12-26T00:00:00",
+  "maxStagnationEnd": "2014-06-30T00:00:00",
+  "sqn": 0.9652909648181605,
+  "totalProfit": 110912.73999999999
+}
+-------------------------------------------------------------------
+
+  [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
+
+[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 6 objetos de resultados al frontend.
+INFO:     127.0.0.1:55608 - "POST /analysis/full HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57400 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57400 - "GET /src/main.js?v=3.58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57410 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57410 - "GET /src/analysis.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57400 - "GET /src/ui.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57426 - "GET /src/modules/optimization.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57434 - "GET /src/config.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57438 - "GET /src/modules/databankTable.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57410 - "GET /src/modules/portfolioBuilder.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57410 - "GET /src/modules/savedPortfoliosTable.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57438 - "GET /src/modules/riskConfig.js?v=3.24 HTTP/1.1" 304 Not Modified
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+
+--- Endpoint /analysis/full HIT ---
+Received 5 strategies and benchmark with 0 rows.
+  Processing strategy 1/5...
+  Processing strategy 2/5...
+  Processing strategy 3/5...
+  Processing strategy 4/5...
+  Processing strategy 5/5...
+--- [DEBUG ENGINE] Processing strategy. Rows: 1365
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1365/1365
+--- [DEBUG ENGINE] Valid PnL after parsing: 1365/1365
+--- [DEBUG ENGINE] Rows before drop: 1365, After drop: 1365
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3733140858267765,
+  "sortinoRatio": 2.1866931260810287,
+  "maxDrawdown": 13.094326427135217,
+  "monthlyAvgProfit": 139.23778199254127,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 703.8275640098428,
+  "upi": 1.87210931606201,
+  "sharpeRatio": 1.1718279815867336,
+  "sharpeRatioDaily": 0.7961321476558219,
+  "sharpeRatioTrade": 0.984600105044967,
+  "sharpeRatioMonthly": 0.8726293064646352,
+  "sharpeRatioAnnual": 0.7525980073562625,
+  "annualizedVolatility": 0.0735253261848467,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 2028.9100000000035,
+  "profitMaxDD_Ratio": 12.695072723777768,
+  "monthlyProfitToDollarDD": 6.862688931127601,
+  "winningPercentage": 38.901098901098905,
+  "maxStagnationTrades": 159,
+  "totalTrades": 1365,
+  "maxStagnationDays": 723,
+  "maxStagnationStart": "2013-08-27T00:00:00",
+  "maxStagnationEnd": "2015-08-20T00:00:00",
+  "sqn": 1.0467677741931016,
+  "totalProfit": 25757.159999999996
+}
+-------------------------------------------------------------------
+
+  -> Strategy 1 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1722
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 01:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.38 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1722/1722
+--- [DEBUG ENGINE] Valid PnL after parsing: 1722/1722
+--- [DEBUG ENGINE] Rows before drop: 1722, After drop: 1722
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4545060206107097,
+  "sortinoRatio": 2.7238601140200744,
+  "maxDrawdown": 5.079406671821357,
+  "monthlyAvgProfit": 127.04724041910852,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 358.0938351145009,
+  "upi": 5.219378005748421,
+  "sharpeRatio": 1.7637612150602695,
+  "sharpeRatioDaily": 1.1999797280801725,
+  "sharpeRatioTrade": 1.4354814866061587,
+  "sharpeRatioMonthly": 1.5110496666896323,
+  "sharpeRatioAnnual": 0.935125328860243,
+  "annualizedVolatility": 0.04625296793667249,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1237.5900000000038,
+  "profitMaxDD_Ratio": 18.990190612399847,
+  "monthlyProfitToDollarDD": 10.26569707408012,
+  "winningPercentage": 59.29152148664344,
+  "maxStagnationTrades": 147,
+  "totalTrades": 1722,
+  "maxStagnationDays": 491,
+  "maxStagnationStart": "2018-03-12T00:00:00",
+  "maxStagnationEnd": "2019-07-16T00:00:00",
+  "sqn": 1.358641299479374,
+  "totalProfit": 23502.07
+}
+-------------------------------------------------------------------
+
+  -> Strategy 2 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 1337
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 09:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -101.16 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 1337/1337
+--- [DEBUG ENGINE] Valid PnL after parsing: 1337/1337
+--- [DEBUG ENGINE] Rows before drop: 1337, After drop: 1337
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.5058204875357952,
+  "sortinoRatio": 2.7219912234809343,
+  "maxDrawdown": 9.59535742755561,
+  "monthlyAvgProfit": 165.95978192592594,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 404.1966718740219,
+  "upi": 4.310364011237019,
+  "sharpeRatio": 1.6051342588443098,
+  "sharpeRatioDaily": 1.0950124761606181,
+  "sharpeRatioTrade": 1.3189381530182303,
+  "sharpeRatioMonthly": 1.4100538507696652,
+  "sharpeRatioAnnual": 1.0205035318257878,
+  "annualizedVolatility": 0.05721754679524563,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1290.739999999998,
+  "profitMaxDD_Ratio": 25.66053581666335,
+  "monthlyProfitToDollarDD": 12.85772362566638,
+  "winningPercentage": 47.86836200448766,
+  "maxStagnationTrades": 128,
+  "totalTrades": 1337,
+  "maxStagnationDays": 523,
+  "maxStagnationStart": "2019-08-22T00:00:00",
+  "maxStagnationEnd": "2021-01-26T00:00:00",
+  "sqn": 1.4716320279945958,
+  "totalProfit": 33121.08
+}
+-------------------------------------------------------------------
+
+  -> Strategy 3 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 532
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.02 21:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -100.74 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 532/532
+--- [DEBUG ENGINE] Valid PnL after parsing: 532/532
+--- [DEBUG ENGINE] Rows before drop: 532, After drop: 532
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.574805733614906,
+  "sortinoRatio": 1.8989469148836873,
+  "maxDrawdown": 16.079005924528612,
+  "monthlyAvgProfit": 77.05774511934156,
+  "maxConsecutiveLosingMonths": 5,
+  "ulcerIndexInDollars": 507.29135781287624,
+  "upi": 1.3786197720633604,
+  "sharpeRatio": 1.1031694934584158,
+  "sharpeRatioDaily": 0.7736854094234525,
+  "sharpeRatioTrade": 0.9103377023100337,
+  "sharpeRatioMonthly": 0.9712014080541982,
+  "sharpeRatioAnnual": 0.8106607069627343,
+  "annualizedVolatility": 0.052205670521508214,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1755.9399999999969,
+  "profitMaxDD_Ratio": 8.758066904336154,
+  "monthlyProfitToDollarDD": 4.388404223341441,
+  "winningPercentage": 46.99248120300752,
+  "maxStagnationTrades": 71,
+  "totalTrades": 532,
+  "maxStagnationDays": 802,
+  "maxStagnationStart": "2009-12-16T00:00:00",
+  "maxStagnationEnd": "2012-02-26T00:00:00",
+  "sqn": 1.611140066580783,
+  "totalProfit": 15378.64
+}
+-------------------------------------------------------------------
+
+  -> Strategy 4 analysis complete.
+--- [DEBUG ENGINE] Processing strategy. Rows: 742
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2009.01.06 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): -98.34 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 742/742
+--- [DEBUG ENGINE] Valid PnL after parsing: 742/742
+--- [DEBUG ENGINE] Rows before drop: 742, After drop: 742
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.3689898286332711,
+  "sortinoRatio": 1.5879123304865526,
+  "maxDrawdown": 12.160774137744657,
+  "monthlyAvgProfit": 66.82265814419225,
+  "maxConsecutiveLosingMonths": 4,
+  "ulcerIndexInDollars": 366.16357747172395,
+  "upi": 1.9604769493295828,
+  "sharpeRatio": 0.9786838035481957,
+  "sharpeRatioDaily": 0.6924095848231936,
+  "sharpeRatioTrade": 0.8249327948240398,
+  "sharpeRatioMonthly": 0.8984951591122402,
+  "sharpeRatioAnnual": 0.7974894446123935,
+  "annualizedVolatility": 0.053653132025170504,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1439.680000000004,
+  "profitMaxDD_Ratio": 9.136606745943517,
+  "monthlyProfitToDollarDD": 4.64149381419427,
+  "winningPercentage": 45.68733153638814,
+  "maxStagnationTrades": 64,
+  "totalTrades": 742,
+  "maxStagnationDays": 572,
+  "maxStagnationStart": "2014-11-04T00:00:00",
+  "maxStagnationEnd": "2016-05-29T00:00:00",
+  "sqn": 1.2274399523623152,
+  "totalProfit": 13153.789999999999
+}
+-------------------------------------------------------------------
+
+  -> Strategy 5 analysis complete.
+--- Analyzing 2 requested portfolios ---
+
+[BACKEND-LOG] 2.0 Procesando portafolio (saved_index: 0, is_current: False, is_databank: False)
+  [BACKEND-LOG] 2.0.a -> Normalización Recibida: is_risk_normalized=False, metric='max_dd', value=0.0
+  [BACKEND-LOG] 2.0.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
+--- [DEBUG ENGINE] Processing strategy. Rows: 5698
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:140: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/analysis_engine.py:232: FutureWarning: 'M' is deprecated and will be removed in a future version, please use 'ME' instead.
+  monthly_pnl = equity_curve['pnl'].resample('M').sum()
+--- [DEBUG ENGINE] Sample PnL (Raw): 261.95 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 5698/5698
+--- [DEBUG ENGINE] Valid PnL after parsing: 5698/5698
+--- [DEBUG ENGINE] Rows before drop: 5698, After drop: 5698
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4461718128959897,
+  "sortinoRatio": 3.5806540797102295,
+  "maxDrawdown": 12.926345378838192,
+  "monthlyAvgProfit": 555.7504206748971,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 520.6808360057277,
+  "upi": 9.127340635797946,
+  "sharpeRatio": 1.9452949186549662,
+  "sharpeRatioDaily": 1.2950427936010103,
+  "sharpeRatioTrade": 1.7865012404238039,
+  "sharpeRatioMonthly": 1.8201809508955498,
+  "sharpeRatioAnnual": 1.1182974224313407,
+  "annualizedVolatility": 0.08310710502008845,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1961.1599999999598,
+  "profitMaxDD_Ratio": 56.554661526852605,
+  "monthlyProfitToDollarDD": 28.337841923907714,
+  "winningPercentage": 48.80659880659881,
+  "maxStagnationTrades": 179,
+  "totalTrades": 5698,
+  "maxStagnationDays": 186,
+  "maxStagnationStart": "2013-12-26T00:00:00",
+  "maxStagnationEnd": "2014-06-30T00:00:00",
+  "sqn": 0.9652909648181605,
+  "totalProfit": 110912.73999999999
+}
+-------------------------------------------------------------------
+
+  [BACKEND-LOG] 2.0.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
+
+[BACKEND-LOG] 2.1 Procesando portafolio (saved_index: 1, is_current: False, is_databank: False)
+  [BACKEND-LOG] 2.1.a -> Normalización Recibida: is_risk_normalized=False, metric='max_dd', value=0.0
+  [BACKEND-LOG] 2.1.b -> ❌ SALTANDO bloque de normalización (condiciones no cumplidas).
+--- [DEBUG ENGINE] Processing strategy. Rows: 5698
+--- [DEBUG ENGINE] Sample Entry Date (Raw): 2010.01.04 11:00:00
+--- [DEBUG ENGINE] Sample PnL (Raw): 222.65749999999997 (Type: <class 'numpy.float64'>)
+--- [DEBUG ENGINE] Valid Entry Dates after parsing: 5698/5698
+--- [DEBUG ENGINE] Valid PnL after parsing: 5698/5698
+--- [DEBUG ENGINE] Rows before drop: 5698, After drop: 5698
+
+--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---
+{
+  "profitFactor": 1.4493368530751594,
+  "sortinoRatio": 3.619620108039047,
+  "maxDrawdown": 12.926345378838192,
+  "monthlyAvgProfit": 536.3912120230452,
+  "maxConsecutiveLosingMonths": 3,
+  "ulcerIndexInDollars": 486.4070676206801,
+  "upi": 9.540739045334302,
+  "sharpeRatio": 1.9716463984810362,
+  "sharpeRatioDaily": 1.3123172536880012,
+  "sharpeRatioTrade": 1.8166863178351327,
+  "sharpeRatioMonthly": 1.8531562052933506,
+  "sharpeRatioAnnual": 1.1277136008371287,
+  "annualizedVolatility": 0.08084708837214391,
+  "captureRatio": null,
+  "maxDrawdownInDollars": 1883.1330000000016,
+  "profitMaxDD_Ratio": 56.84631197052991,
+  "monthlyProfitToDollarDD": 28.483979199719016,
+  "winningPercentage": 48.80659880659881,
+  "maxStagnationTrades": 178,
+  "totalTrades": 5698,
+  "maxStagnationDays": 175,
+  "maxStagnationStart": "2013-12-26T00:00:00",
+  "maxStagnationEnd": "2014-06-19T00:00:00",
+  "sqn": 0.981600711398902,
+  "totalProfit": 107049.166
+}
+-------------------------------------------------------------------
+
+  [BACKEND-LOG] 2.1.c -> Análisis finalizado. ¿Métricas encontradas?: True. Enviando de vuelta.
+
+[BACKEND-LOG] 3. ANÁLISIS COMPLETO. Enviando 7 objetos de resultados al frontend.
+INFO:     127.0.0.1:59440 - "POST /analysis/full HTTP/1.1" 200 OK

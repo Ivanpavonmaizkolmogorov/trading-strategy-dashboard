@@ -771,26 +771,23 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         },
         beforeDraw: (chart) => {
             // Draw Stagnation Highlight
+            // Draw Stagnation Highlights - One per dataset using its color
             const datasets = chart.data.datasets;
             if (!datasets || datasets.length === 0) return;
 
-            // Find a dataset that has stagnation metrics. 
-            // Prioritize featured, then check others.
-            let targetDataset = datasets.find(d => d.isFeatured && d.analysis && (d.analysis.metrics?.maxStagnationStart || d.analysis.maxStagnationStart));
+            const ctx = chart.ctx;
+            const xAxis = chart.scales.x;
+            const yAxis = chart.scales.y;
 
-            if (!targetDataset) {
-                targetDataset = datasets.find(d => d.analysis && (d.analysis.metrics?.maxStagnationStart || d.analysis.maxStagnationStart));
-            }
+            let labelYOffset = 5; // Start labels at top, then stack them
 
-            if (!targetDataset || !targetDataset.analysis) return;
+            // Iterate through each dataset and draw its stagnation highlight
+            datasets.forEach((dataset, index) => {
+                const analysis = dataset.analysis;
+                if (!analysis) return;
 
-            const analysis = targetDataset.analysis;
-            const metrics = analysis.metrics || analysis; // metrics might be directly on analysis or nested
-
-            if (metrics && metrics.maxStagnationStart && metrics.maxStagnationEnd) {
-                const ctx = chart.ctx;
-                const xAxis = chart.scales.x;
-                const yAxis = chart.scales.y;
+                const metrics = analysis.metrics || analysis;
+                if (!metrics || !metrics.maxStagnationStart || !metrics.maxStagnationEnd) return;
 
                 // Parse dates
                 const startDate = new Date(metrics.maxStagnationStart);
@@ -800,26 +797,56 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 const startPixel = xAxis.getPixelForValue(startDate.getTime());
                 const endPixel = xAxis.getPixelForValue(endDate.getTime());
 
-                if (startPixel && endPixel) {
-                    const width = endPixel - startPixel;
+                if (!startPixel || !endPixel) return;
 
-                    ctx.save();
-                    ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'; // Red-500 with 15% opacity
-                    // Draw full height rectangle
-                    ctx.fillRect(startPixel, yAxis.top, width, yAxis.bottom - yAxis.top);
+                const width = endPixel - startPixel;
 
-                    // Draw Label
-                    ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'; // Darker red for text
-                    ctx.font = 'bold 12px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'top';
-                    const label = `${metrics.maxStagnationDays} d`;
-                    // Position at the top center of the highlighted area, slightly padded
-                    ctx.fillText(label, startPixel + width / 2, yAxis.top + 5);
+                // Use dataset's color (from borderColor)
+                const datasetColor = dataset.borderColor || '#38bdf8'; // Fallback to sky-400
 
-                    ctx.restore();
+                // Convert hex to rgba for transparency
+                // Simple approach: extract RGB and add alpha
+                let r, g, b;
+                if (datasetColor.startsWith('#')) {
+                    const hex = datasetColor.slice(1);
+                    r = parseInt(hex.substr(0, 2), 16);
+                    g = parseInt(hex.substr(2, 2), 16);
+                    b = parseInt(hex.substr(4, 2), 16);
+                } else if (datasetColor.startsWith('rgb')) {
+                    // Extract RGB values from rgb() or rgba()
+                    const match = datasetColor.match(/\d+/g);
+                    if (match) {
+                        r = parseInt(match[0]);
+                        g = parseInt(match[1]);
+                        b = parseInt(match[2]);
+                    }
+                } else {
+                    // Fallback
+                    r = 56; g = 189; b = 248;
                 }
-            }
+
+                ctx.save();
+
+                // Draw semi-transparent rectangle with dataset color
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.15)`;
+                ctx.fillRect(startPixel, yAxis.top, width, yAxis.bottom - yAxis.top);
+
+                // Draw Label with dataset color (darker)
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+
+                // Label: Portfolio name (or index) + days
+                const shortName = dataset.label.length > 25 ? dataset.label.substring(0, 22) + '...' : dataset.label;
+                const label = `${shortName}: ${metrics.maxStagnationDays} d`;
+
+                // Draw label at stacked position
+                ctx.fillText(label, startPixel + width / 2, yAxis.top + labelYOffset);
+                labelYOffset += 16; // Stack next label below
+
+                ctx.restore();
+            });
         },
         afterInit: (chart) => {
             chart.crosshair = { x: 0, y: 0, draw: false };
@@ -945,9 +972,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                                     <span class="text-gray-300 font-bold text-xs">${dataset.label}</span>
                                 </div>
                                 <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs ml-4">
-                                    <div class="text-gray-400">Valor:</div>
-                                    <div class="text-white font-mono text-right">${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(equityUSD)}</div>
-
                                     <div class="text-gray-400">Beneficio (Equity):</div>
                                     <div class="${profitUSD >= 0 ? 'text-green-400' : 'text-red-400'} font-mono text-right">${profitUSD >= 0 ? '+' : ''}${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(profitUSD)}</div>
                                     

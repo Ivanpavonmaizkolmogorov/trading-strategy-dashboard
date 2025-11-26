@@ -123,8 +123,11 @@ export const reAnalyzeAllData = async () => {
         const hasMetrics = p.metrics && Object.keys(p.metrics).length > 0;
         // FIX: Ensure chart data exists before skipping
         const hasChartData = p.analysis && p.analysis.chartData && p.analysis.chartData.equityCurve && p.analysis.chartData.equityCurve.length > 0;
+        // Check for new stagnation metrics to force update of old portfolios
+        // Using truthy check to catch both undefined and null
+        const hasStagnationData = p.metrics && p.metrics.maxStagnationStart && p.metrics.maxStagnationEnd;
 
-        const needsRecalculation = !hasMetrics || !hasChartData || isRiskNormalized; // Si hay normalización global, siempre recalcular para asegurar consistencia visual
+        const needsRecalculation = !hasMetrics || !hasChartData || !hasStagnationData || isRiskNormalized; // Si hay normalización global, siempre recalcular para asegurar consistencia visual
 
         if (needsRecalculation) {
             console.log(`[FRONTEND-LOG] 1.1. Preparando Portafolio Guardado (índice ${i}, id: ${p.id}) para backend. Normalización: ${isNormalizedForThisRun}, Métrica: ${metricForThisRun}, Objetivo: ${targetForThisRun}`);
