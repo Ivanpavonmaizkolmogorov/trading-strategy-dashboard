@@ -8,31 +8,35 @@ import { initDatabankFocus } from './databank.js';
 // Column definitions
 const AVAILABLE_COLUMNS = [
     { id: 'name', label: 'Strategies', minWidth: 200 },
+    { id: 'totalTrades', label: 'Trades', minWidth: 80 },
     { id: 'totalProfit', label: 'Net Profit', minWidth: 100 },
-    { id: 'profitFactor', label: 'Profit Factor', minWidth: 100 },
-    { id: 'winningPercentage', label: 'Win %', minWidth: 80 },
-    { id: 'maxDrawdown', label: 'Max DD %', minWidth: 100 },
-    { id: 'maxDrawdownInDollars', label: 'Max DD $', minWidth: 100 },
-    { id: 'sharpeRatio', label: 'Sharpe', minWidth: 80 },
-    { id: 'sortinoRatio', label: 'Sortino', minWidth: 80 },
-    { id: 'sqn', label: 'SQN', minWidth: 80 },
+    { id: 'returnDD', label: 'Ret/DD', minWidth: 80 },
     { id: 'upi', label: 'UPI', minWidth: 80 },
+    { id: 'sortinoRatio', label: 'Sortino', minWidth: 80 },
+    { id: 'sharpeRatio', label: 'Sharpe', minWidth: 80 },
+    { id: 'sharpeRatioTrade', label: 'Sharpe (Trade)', minWidth: 80 },
+    { id: 'maxDrawdownInDollars', label: 'Max DD $', minWidth: 100 },
+    { id: 'maxStagnationTrades', label: 'Stag. Trades', minWidth: 100 },
+    { id: 'maxStagnationDays', label: 'Stag. Days', minWidth: 100 },
+    { id: 'winningPercentage', label: 'Win %', minWidth: 80 },
+    { id: 'profitFactor', label: 'Profit Factor', minWidth: 100 },
+    { id: 'sqn', label: 'SQN', minWidth: 80 },
+    { id: 'maxDrawdown', label: 'Max DD %', minWidth: 100 },
     { id: 'captureRatio', label: 'Capture Ratio', minWidth: 100 },
     { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
-    { id: 'totalTrades', label: 'Trades', minWidth: 80 },
     { id: 'strategyCount', label: 'Strategies #', minWidth: 80 },
 ];
 
 // Default configuration
 const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'strategyCount', 'totalTrades', 'sharpeRatio', 'totalProfit', 'maxDrawdown', 'profitFactor'],
+    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn'],
     columnWidths: {}
 };
 
 // Create table instance
 const databankTable = new CustomizableTable({
     id: 'databank',
-    storageKey: 'databankTableConfig_v3',
+    storageKey: 'databankTableConfig_v5',
     columns: AVAILABLE_COLUMNS,
     defaultConfig: DEFAULT_CONFIG,
     containerId: 'databank-content',

@@ -121,7 +121,10 @@ export const reAnalyzeAllData = async () => {
         // NOTA: Si ya tiene métricas y NO estamos en modo global, asumimos que son válidas.
 
         const hasMetrics = p.metrics && Object.keys(p.metrics).length > 0;
-        const needsRecalculation = !hasMetrics || isRiskNormalized; // Si hay normalización global, siempre recalcular para asegurar consistencia visual
+        // FIX: Ensure chart data exists before skipping
+        const hasChartData = p.analysis && p.analysis.chartData && p.analysis.chartData.equityCurve && p.analysis.chartData.equityCurve.length > 0;
+
+        const needsRecalculation = !hasMetrics || !hasChartData || isRiskNormalized; // Si hay normalización global, siempre recalcular para asegurar consistencia visual
 
         if (needsRecalculation) {
             console.log(`[FRONTEND-LOG] 1.1. Preparando Portafolio Guardado (índice ${i}, id: ${p.id}) para backend. Normalización: ${isNormalizedForThisRun}, Métrica: ${metricForThisRun}, Objetivo: ${targetForThisRun}`);
@@ -134,7 +137,8 @@ export const reAnalyzeAllData = async () => {
                 portfolio_id: p.id,
                 is_risk_normalized: isNormalizedForThisRun,
                 normalization_metric: metricForThisRun,
-                normalization_target_value: targetForThisRun
+                normalization_target_value: targetForThisRun,
+                risk_per_strategy: p.riskPerStrategy || null
             });
         } else {
             console.log(`[FRONTEND-LOG] 1.1. OMITIENDO Portafolio Guardado (índice ${i}) - Ya tiene métricas y no se requiere normalización global.`);

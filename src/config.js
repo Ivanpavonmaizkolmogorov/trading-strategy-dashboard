@@ -35,12 +35,46 @@ export const STRATEGY_COLORS = ['#38bdf8', '#a78bfa', '#f472b6', '#4ade80', '#fb
 export const CHART_OPTIONS = {
     maintainAspectRatio: false,
     responsive: true,
+    interaction: {
+        mode: 'index',
+        intersect: false,
+    },
     plugins: {
-        legend: { position: 'top', labels: { color: '#e5e7eb' } },
+        legend: {
+            position: 'top',
+            labels: {
+                color: '#e5e7eb',
+                usePointStyle: true,
+                pointStyle: 'circle',
+                padding: 20,
+                font: { size: 12 }
+            }
+        },
+        tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(17, 24, 39, 0.95)',
+            titleColor: '#f9fafb',
+            bodyColor: '#d1d5db',
+            borderColor: '#374151',
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 8,
+            displayColors: true,
+            boxPadding: 4
+        },
         zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
     },
     scales: {
-        x: { type: 'timeseries', time: { unit: 'month' }, ticks: { color: '#9ca3af', autoSkip: true, maxTicksLimit: 20 }, grid: { color: 'rgba(75, 85, 99, 0.5)' } },
-        y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(75, 85, 99, 0.5)' } }
+        x: {
+            type: 'timeseries',
+            time: { unit: 'month' },
+            ticks: { color: '#9ca3af', autoSkip: true, maxTicksLimit: 12, font: { size: 11 } },
+            grid: { color: 'rgba(75, 85, 99, 0.15)', borderColor: '#374151' }
+        },
+        y: {
+            ticks: { color: '#9ca3af', font: { size: 11 } },
+            grid: { color: 'rgba(75, 85, 99, 0.15)', borderColor: '#374151' }
+        }
     }
 };

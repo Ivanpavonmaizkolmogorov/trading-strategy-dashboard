@@ -122,11 +122,59 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
     trades_per_year = total_trades / duration_years if duration_years > 0 else 0
     annualization_factor = np.sqrt(trades_per_year) if trades_per_year > 0 else 1
 
-    # 3. Calcular Sharpe Ratio
-    sharpe_ratio = 0
+    # 3. Calcular Sharpe Ratio (TRADE - Ahora secundario)
+    sharpe_ratio_trade = 0
     if trade_returns.std() > 0:
         # (Retorno medio por trade / Desviación estándar de los retornos por trade) * sqrt(Trades por año)
-        sharpe_ratio = (trade_returns.mean() / trade_returns.std()) * annualization_factor
+        sharpe_ratio_trade = (trade_returns.mean() / trade_returns.std()) * annualization_factor
+
+    # 3b. Calcular Sharpe Ratio (TIME/DAILY - Ahora el principal)
+    sharpe_ratio_time = 0
+    daily_returns_series = equity_curve['equity'].pct_change().fillna(0)
+    if daily_returns_series.std() > 0:
+        # Asumiendo 252 días de trading al año
+        sharpe_ratio_time = (daily_returns_series.mean() / daily_returns_series.std()) * np.sqrt(252)
+
+    # 3c. Calcular Sharpe Ratio (MONTHLY - Para comparación con SQX)
+    sharpe_ratio_monthly = 0
+    monthly_returns_series = equity_curve['equity'].resample('M').last().pct_change().fillna(0)
+    if monthly_returns_series.std() > 0:
+        # Asumiendo 12 meses al año
+        sharpe_ratio_monthly = (monthly_returns_series.mean() / monthly_returns_series.std()) * np.sqrt(12)
+
+    # 3d. Calcular Sharpe Simple (CAGR / Volatilidad Anualizada)
+    # Hipótesis: SQX usa esta fórmula simple.
+    sharpe_simple = 0
+    # Nota: cagr ya se calcula más abajo, pero lo necesitamos aquí.
+    # Vamos a mover el cálculo de CAGR antes de Sharpe o recalcularlo temporalmente.
+    # Mejor movemos el bloque de UPI/CAGR antes de Sharpe.
+    # O simplemente calculamos CAGR aquí de nuevo para no romper la estructura.
+    
+    # Cálculo temporal de CAGR para Sharpe Simple
+    temp_cagr = 0
+    if initial_capital > 0 and equity_curve['equity'].iloc[-1] > 0 and duration_years > 0:
+        final_eq = equity_curve['equity'].iloc[-1]
+        if duration_years < 1.0:
+            temp_cagr = ((final_eq / initial_capital) - 1) / duration_years
+        else:
+            temp_cagr = ((final_eq / initial_capital)**(1/duration_years)) - 1
+    
+    annualized_volatility = daily_returns_series.std() * np.sqrt(252)
+    if annualized_volatility > 0:
+        sharpe_simple = temp_cagr / annualized_volatility
+
+    # 3e. Calcular Sharpe Anual (Basado en retornos anuales)
+    # Hipótesis 2: SQX usa el promedio de retornos anuales / std anual.
+    sharpe_annual = 0
+    # Usamos 'YE' (Year End) si pandas es muy nuevo, o 'Y' si es viejo. El warning decía usar 'ME' para meses.
+    # Probaremos 'YE' para evitar warnings futuros, o 'Y' con fallback.
+    try:
+        annual_returns = equity_curve['equity'].resample('YE').last().pct_change().fillna(0)
+    except ValueError:
+        annual_returns = equity_curve['equity'].resample('Y').last().pct_change().fillna(0)
+        
+    if annual_returns.std() > 0:
+        sharpe_annual = annual_returns.mean() / annual_returns.std()
 
     # 4. Calcular Sortino Ratio
     mean_trade_return = trade_returns.mean()
@@ -204,11 +252,15 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
             max_stagnation_days = max(max_stagnation_days, stagnation_days)
 
     # --- CÁLCULO DE SQN (SYSTEM QUALITY NUMBER) ---
-    avg_pnl = trades_df['pnl'].mean()
-    std_pnl = trades_df['pnl'].std()
+    # CORRECCIÓN: Usar % de retorno por trade en lugar de PnL en dólares para evitar distorsión por interés compuesto
+    # CORRECCIÓN 2: Limitar N a 100 (Estándar Van Tharp / SQX) para no inflar el SQN con muchos trades.
+    # CORRECCIÓN 3: Usar desviación estándar poblacional (ddof=0) en lugar de muestral (ddof=1) para coincidir con SQX
+    avg_trade_ret = trade_returns.mean()
+    std_trade_ret = trade_returns.std(ddof=0)  # Desviación poblacional
     sqn = 0
-    if std_pnl > 0 and total_trades > 0:
-        sqn = (avg_pnl / std_pnl) * np.sqrt(total_trades)
+    if std_trade_ret > 0 and total_trades > 0:
+        n_capped = min(total_trades, 100)
+        sqn = (avg_trade_ret / std_trade_ret) * np.sqrt(n_capped)
 
     # --- CÁLCULO DE UPI (ULCER PERFORMANCE INDEX) - USA LA CURVA POR OPERACIÓN ---
 
@@ -276,8 +328,9 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
 
     # --- PREPARAR DATOS PARA GRÁFICOS DEL FRONTEND ---
     # 1. Curva de Equity (normalizada a 100)
-    first_equity_value = equity_curve['equity'].iloc[0]
-    equity_chart_data = [{'x': idx.strftime('%Y-%m-%d'), 'y': (val / first_equity_value) * 100} for idx, val in equity_curve['equity'].items()]
+    # CORRECCIÓN: Normalizar respecto al capital inicial, no al primer valor de la serie (que puede incluir PnL del primer día).
+    # Esto asegura que 100 = Capital Inicial, y el frontend pueda desnormalizar correctamente.
+    equity_chart_data = [{'x': idx.strftime('%Y-%m-%d'), 'y': (val / initial_capital) * 100} for idx, val in equity_curve['equity'].items()]
 
     # 2. Curva de Benchmark (normalizada a 100 y alineada con las fechas del portafolio)
     benchmark_chart_data = []
@@ -312,7 +365,12 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "maxConsecutiveLosingMonths": max_consecutive_losing_months,
         "ulcerIndexInDollars": ulcer_index_dollars, # <-- NUEVO KPI
         "upi": upi,
-        "sharpeRatio": sharpe_ratio,
+        "sharpeRatio": sharpe_simple, # Ahora usa Sharpe Simple (CAGR/Vol) - más cercano a SQX
+        "sharpeRatioDaily": sharpe_ratio_time, # Sharpe Diario (oculto)
+        "sharpeRatioTrade": sharpe_ratio_trade, # Sharpe por Trade (oculto por defecto)
+        "sharpeRatioMonthly": sharpe_ratio_monthly, # Sharpe Mensual (para debug)
+        "sharpeRatioAnnual": sharpe_annual, # Sharpe Anual (para debug)
+        "annualizedVolatility": annualized_volatility, # Debug
         "captureRatio": capture_ratio,
         "maxDrawdownInDollars": max_drawdown_dollars,
         "profitMaxDD_Ratio": profit_max_dd_ratio,

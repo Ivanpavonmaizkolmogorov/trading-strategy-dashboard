@@ -60,6 +60,8 @@ class PortfolioDefinition(BaseModel):
     is_risk_normalized: Optional[bool] = False
     normalization_metric: Optional[str] = None
     normalization_target_value: Optional[float] = None
+    # --- NUEVO: Configuración de riesgo manual por estrategia ---
+    risk_per_strategy: Optional[List[float]] = None
 
 
 class FullAnalysisRequest(BaseModel): # Contenido movido a PortfolioDefinition
@@ -225,20 +227,28 @@ async def get_full_analysis(request: FullAnalysisRequest):
             for p_idx, p_def in enumerate(request.portfolios_to_analyze):
                 print(f"\n[BACKEND-LOG] 2.{p_idx} Procesando portafolio (saved_index: {p_def.saved_index}, is_current: {p_def.is_current_portfolio}, is_databank: {p_def.is_databank_portfolio})")
                 portfolio_trades = []
-                weights = p_def.weights if p_def.weights else [1/len(p_def.indices)] * len(p_def.indices)
+                # CORRECCIÓN CRÍTICA: NO aplicar pesos cuando se combinan estrategias completas.
+                # Los pesos solo se usan en la optimización de pesos (endpoint diferente).
+                # Al combinar estrategias, simplemente concatenamos todos los trades tal como están.
+                # Esto permite que los valores absolutos (Net Profit, Max DD $, etc.) sean correctos.
                 
                 for i, strat_idx in enumerate(p_def.indices):
                     if strat_idx < len(processed_strategy_dfs):
-                        # --- CORRECCIÓN CLAVE ---
-                        # Usar los DFs originales (sin escalar) para construir el portafolio.
-                        weight = weights[i]
-                        # --- CORRECCIÓN FINALÍSIMA Y ABSOLUTAMENTE DEFINITIVA ---
-                        # Si un trade tiene PnL nulo, la multiplicación falla. Lo filtramos.
-                        # Esto previene el TypeError que contaminaba los datos iniciales.
                         strat_df_original = processed_strategy_dfs[strat_idx]
                         if not strat_df_original.empty:
                             strat_df_copy = strat_df_original[strat_df_original['pnl'].notna()].copy()
-                            strat_df_copy['pnl'] *= weight
+                            
+                            # --- LÓGICA DE RIESGO MANUAL ---
+                            # Si se proporciona configuración de riesgo, escalamos los trades.
+                            # Base: $100. Si risk=200, factor=2.0. Si risk=50, factor=0.5.
+                            if p_def.risk_per_strategy and i < len(p_def.risk_per_strategy):
+                                risk_val = p_def.risk_per_strategy[i]
+                                if risk_val is not None and risk_val > 0:
+                                    scale_factor = risk_val / 100.0
+                                    # print(f"    [RiskConfig] Strategy {strat_idx} Risk: ${risk_val} -> Scale: {scale_factor}")
+                                    strat_df_copy['pnl'] *= scale_factor
+                            
+                            # NO multiplicar por weight (a menos que sea optimización, pero eso es otro endpoint)
                             portfolio_trades.append(strat_df_copy)
 
                 portfolio_df = pd.concat(portfolio_trades, ignore_index=True) if portfolio_trades else pd.DataFrame()

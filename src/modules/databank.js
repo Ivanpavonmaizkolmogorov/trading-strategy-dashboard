@@ -385,6 +385,10 @@ export const updateDatabankDisplay = () => {
     const rankColors = ['bg-amber-400', 'bg-slate-300', 'bg-yellow-600'];
 
     state.databankPortfolios.forEach((p, index) => {
+        if (index === 0) {
+            console.log("[DEBUG FRONTEND] First Portfolio Metrics:", p.metrics);
+            console.log("[DEBUG FRONTEND] First Portfolio Object:", p);
+        }
         let rowClass = (index < 3 && state.databankSortConfig.key === 'metricValue') ? 'databank-top3' : '';
         const selectionIndex = state.selectedRows.databank.indexOf(index);
         if (selectionIndex !== -1) {
@@ -420,8 +424,16 @@ export const updateDatabankDisplay = () => {
                 } else if (key === 'strategyCount') {
                     value = p.indices ? p.indices.length : 0;
                     console.log(`[DEBUG] Row ${index} - strategyCount:`, value, 'Indices:', p.indices);
+                } else if (key === 'returnDD') {
+                    // Mapping for Ret/DD
+                    const metrics = p.metrics || p.analysis?.metrics || p.analysis || {};
+                    value = metrics['profitMaxDD_Ratio'];
                 } else {
                     value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.analysis?.[key];
+                }
+
+                if (index === 0) {
+                    console.log(`[DEBUG FRONTEND] Col '${key}': Value extracted:`, value);
                 }
 
                 html += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;

@@ -117,22 +117,54 @@ export const focusMode = {
     renderBanner() {
         this.removeBanner(); // Ensure no duplicates
 
+        // Force styles via style tag to override any cache or conflicts
+        const styleId = 'focus-mode-banner-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                #focus-mode-banner {
+                    position: fixed !important;
+                    top: 1rem !important;
+                    left: 50% !important;
+                    transform: translateX(-50%) !important;
+                    background-color: rgba(37, 99, 235, 0.95) !important;
+                    backdrop-filter: blur(12px) !important;
+                    color: white !important;
+                    padding: 0.375rem 1rem !important;
+                    border-radius: 9999px !important;
+                    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+                    z-index: 100 !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    gap: 0.75rem !important;
+                    border: 1px solid rgba(96, 165, 250, 0.3) !important;
+                    transition: all 0.2s ease !important;
+                }
+                #focus-mode-banner:hover {
+                    background-color: rgb(37, 99, 235) !important;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
         const count = this.focusedItems.size;
         const banner = document.createElement('div');
         banner.id = 'focus-mode-banner';
-        banner.className = 'fixed top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-2xl z-50 flex items-center gap-4 animate-bounce-in';
-        banner.style.animation = 'fadeInDown 0.3s ease-out';
+        // Classes are kept for fallback, but styles above take precedence
+        banner.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-600/95 backdrop-blur-md text-white px-4 py-1.5 rounded-full shadow-lg z-[100] flex items-center gap-3 animate-bounce-in border border-blue-400/30 transition-all hover:bg-blue-600';
 
         banner.innerHTML = `
             <div class="flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-200" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
                 </svg>
-                <span class="font-bold">Focus Mode:</span>
-                <span class="max-w-xs truncate">${count} item${count !== 1 ? 's' : ''} selected</span>
+                <span class="font-bold text-xs uppercase tracking-wider text-blue-100">Focus:</span>
+                <span class="text-sm font-medium max-w-xs truncate" id="focus-mode-count">${count} item${count !== 1 ? 's' : ''}</span>
             </div>
-            <button id="exit-focus-mode" class="bg-white/20 hover:bg-white/30 rounded-full p-1 transition-colors" title="Clear all">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <div class="h-4 w-px bg-blue-400/50"></div>
+            <button id="exit-focus-mode" class="bg-blue-500/50 hover:bg-white/20 rounded-full p-0.5 transition-colors" title="Clear all">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
                 </svg>
             </button>
@@ -241,10 +273,18 @@ export const focusMode = {
                 }
             }
 
+            // Determine savedIndex for correct color assignment in UI
+            let savedIndex = item.savedIndex;
+            if (item.type === 'saved' && savedIndex === undefined) {
+                // Try to find index in state based on ID
+                savedIndex = state.savedPortfolios.findIndex(p => p.id === item.id);
+            }
+
             analyses.push({
                 name: item.name,
                 analysis: analysis,
-                color: item.color
+                color: item.color,
+                savedIndex: savedIndex // Pass index for UI logic
             });
         });
 

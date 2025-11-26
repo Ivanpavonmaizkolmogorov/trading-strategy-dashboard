@@ -3,6 +3,7 @@ import { dom } from '../dom.js';
 import { displayError, formatMetricForDisplay } from '../utils.js';
 import { savePortfolioFromDatabank } from './databank.js'; // Reusing save logic? Maybe need a generic one.
 import { displaySavedPortfoliosList } from '../ui.js';
+import { ALL_METRICS } from '../config.js';
 
 /**
  * Analyzes a manually selected set of strategies.
@@ -168,60 +169,47 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
         modal.onclick = (e) => { if (e.target === modal) close(); };
     }
 
-    // Populate Content
+    // Populate Content - Use default visible columns from savedPortfoliosTable
     const content = document.getElementById('result-modal-content');
     const metrics = portfolio.metrics;
 
+    // Default visible columns (same as savedPortfoliosTable.js DEFAULT_CONFIG.visibleColumns)
+    // Excluding 'name' since it's not a metric
+    const defaultMetrics = ['totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn'];
+
+    // Generate metric cards dynamically
+    const metricCards = defaultMetrics.map(metricId => {
+        const metricDef = ALL_METRICS[metricId];
+        if (!metricDef) return '';
+
+        const value = metrics[metricId];
+        const formattedValue = formatMetricForDisplay(value, metricId);
+
+        // Determine color based on metric type
+        let colorClass = 'text-gray-200';
+        if (metricId === 'totalProfit') {
+            colorClass = value >= 0 ? 'text-emerald-400' : 'text-red-400';
+        } else if (['maxDrawdown', 'maxDrawdownInDollars'].includes(metricId)) {
+            colorClass = 'text-red-400';
+        } else if (['sharpeRatio', 'sortinoRatio', 'upi'].includes(metricId)) {
+            colorClass = 'text-purple-400';
+        } else if (['profitFactor', 'returnDD'].includes(metricId)) {
+            colorClass = 'text-blue-400';
+        }
+
+        return `
+            <div class="bg-gray-700/50 p-3 rounded-lg text-center">
+                <div class="text-xs text-gray-400 uppercase">${metricDef.label}</div>
+                <div class="text-lg font-bold ${colorClass}">
+                    ${formattedValue}
+                </div>
+            </div>
+        `;
+    }).join('');
+
     content.innerHTML = `
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="bg-gray-700/50 p-3 rounded-lg text-center">
-                <div class="text-xs text-gray-400 uppercase">Net Profit</div>
-                <div class="text-lg font-bold ${metrics.totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}">
-                    $${formatMetricForDisplay(metrics.totalProfit, 'totalProfit')}
-                </div>
-            </div>
-            <div class="bg-gray-700/50 p-3 rounded-lg text-center">
-                <div class="text-xs text-gray-400 uppercase">Profit Factor</div>
-                <div class="text-lg font-bold text-blue-400">
-                    ${formatMetricForDisplay(metrics.profitFactor, 'profitFactor')}
-                </div>
-            </div>
-            <div class="bg-gray-700/50 p-3 rounded-lg text-center">
-                <div class="text-xs text-gray-400 uppercase">Max DD</div>
-                <div class="text-lg font-bold text-red-400">
-                    ${formatMetricForDisplay(metrics.maxDrawdown, 'maxDrawdown')}
-                </div>
-            </div>
-            <div class="bg-gray-700/50 p-3 rounded-lg text-center">
-                <div class="text-xs text-gray-400 uppercase">Trades</div>
-                <div class="text-lg font-bold text-gray-200">
-                    ${formatMetricForDisplay(metrics.totalTrades, 'totalTrades')}
-                </div>
-            </div>
-             <div class="bg-gray-700/50 p-3 rounded-lg text-center">
-                <div class="text-xs text-gray-400 uppercase">Sharpe</div>
-                <div class="text-lg font-bold text-purple-400">
-                    ${formatMetricForDisplay(metrics.sharpeRatio, 'sharpeRatio')}
-                </div>
-            </div>
-            <div class="bg-gray-700/50 p-3 rounded-lg text-center">
-                <div class="text-xs text-gray-400 uppercase">Sortino</div>
-                <div class="text-lg font-bold text-purple-400">
-                    ${formatMetricForDisplay(metrics.sortinoRatio, 'sortinoRatio')}
-                </div>
-            </div>
-             <div class="bg-gray-700/50 p-3 rounded-lg text-center">
-                <div class="text-xs text-gray-400 uppercase">Win %</div>
-                <div class="text-lg font-bold text-gray-200">
-                    ${formatMetricForDisplay(metrics.winningPercentage, 'winningPercentage')}
-                </div>
-            </div>
-             <div class="bg-gray-700/50 p-3 rounded-lg text-center">
-                <div class="text-xs text-gray-400 uppercase">SQN</div>
-                <div class="text-lg font-bold text-gray-200">
-                    ${formatMetricForDisplay(metrics.sqn, 'sqn')}
-                </div>
-            </div>
+            ${metricCards}
         </div>
     `;
 
@@ -255,9 +243,10 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
         state.savedPortfolios.push({
             name: `Manual (${names})`,
             indices: indices,
-            id: state.nextPortfolioId++,
+            id: Date.now(),
             weights: null,
             metrics: portfolio.metrics, // Save pre-calculated metrics
+            analysis: portfolio.analysis, // Save chart data and analysis
             comments: `Creado manualmente. ${validation.passed ? 'Cumple filtros.' : 'No cumple filtros.'}`
         });
 

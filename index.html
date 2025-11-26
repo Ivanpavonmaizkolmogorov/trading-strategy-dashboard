@@ -240,8 +240,21 @@
                 </div>
 
                 <!-- Chart Area -->
-                <div class="flex-1 relative p-2">
-                    <canvas id="portfolioEquityChart"></canvas>
+                <div class="flex-1 relative p-2 flex flex-col group">
+                    <!-- Unified Info Panel -->
+                    <div id="chart-info-panel"
+                        class="fixed z-50 bg-gray-900/95 backdrop-blur-md p-4 rounded-xl border border-gray-700/50 shadow-2xl pointer-events-none transition-opacity duration-75 opacity-0 min-w-[200px] hidden">
+                        <div class="text-gray-400 text-xs font-mono mb-2 border-b border-gray-700 pb-1"
+                            id="chart-info-date">--/--/----</div>
+                        <div id="chart-info-body" class="space-y-2"></div>
+                    </div>
+                    <div class="flex-[4] relative min-h-0">
+                        <canvas id="portfolioEquityChart"></canvas>
+                    </div>
+                    <div class="flex-1 relative min-h-0 border-t border-gray-700 pt-1"
+                        style="min-height: 80px; max-height: 120px;">
+                        <canvas id="portfolioDrawdownChart"></canvas>
+                    </div>
                 </div>
             </div>
 
@@ -464,8 +477,13 @@
 
                                 <!-- Action Buttons -->
                                 <div class="mt-4 flex gap-2">
+                                    <button id="opt-manual-risk-btn"
+                                        class="bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-3 rounded flex items-center justify-center gap-2 transition-colors"
+                                        title="Manual Risk Configuration">
+                                        <span>⚙️</span>
+                                    </button>
                                     <button id="opt-start-btn"
-                                        class="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-2 px-4 rounded flex items-center justify-center gap-2">
+                                        class="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-2 px-4 rounded flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20 transition-all hover:shadow-purple-900/40">
                                         <span>🚀</span>
                                         <span>Start Optimization</span>
                                     </button>
@@ -748,7 +766,21 @@
     <!-- Other Modals (Optimization, View Manager, etc.) - Preserved but hidden -->
     <div id="optimization-modal" class="hidden"></div> <!-- Placeholder to prevent JS errors until refactored -->
     <div id="view-manager-modal" class="hidden"></div> <!-- Placeholder -->
-    <div id="chart-click-modal" class="hidden"></div> <!-- Placeholder -->
+    <div id="chart-click-modal" class="fixed inset-0 z-[110] hidden items-center justify-center">
+        <div id="chart-click-modal-backdrop"
+            class="absolute inset-0 bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-300"></div>
+        <div id="chart-click-modal-content"
+            class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-md m-4 border border-gray-700 relative z-10 transform scale-95 opacity-0 transition-all duration-300 p-6">
+            <h3 id="chart-click-modal-title" class="text-xl font-bold text-white mb-4">Confirmar</h3>
+            <p id="chart-click-modal-body" class="text-gray-300 mb-6">¿Estás seguro?</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="window.closeChartClickModal()"
+                    class="px-4 py-2 text-gray-400 hover:text-white transition-colors">Cancelar</button>
+                <button id="chart-click-modal-confirm-btn"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-colors">Confirmar</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Hidden Inputs for JS Compatibility (Temporary) -->
     <div class="hidden">
@@ -769,7 +801,7 @@
         <button id="saved-manage-views-btn"></button>
     </div>
 
-    <script type="module" src="src/main.js?v=3.7"></script>
+    <script type="module" src="src/main.js?v=3.48"></script>
 
 </body>
 

@@ -87,6 +87,12 @@ export class CustomizableTable {
                 
                 <p class="text-gray-400 text-sm mb-4">Select which columns to display. Drag to reorder.</p>
                 
+                <!-- Select All / Deselect All -->
+                <div class="flex items-center gap-3 bg-gray-700/50 p-3 rounded mb-3 border border-gray-600">
+                    <input type="checkbox" id="${this.id}-select-all" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-700">
+                    <label for="${this.id}-select-all" class="text-white font-semibold cursor-pointer">Select All / Deselect All</label>
+                </div>
+                
                 <div class="space-y-2" id="${this.id}-column-list">
                     ${this.columns.map((col, index) => {
             const isVisible = this.currentConfig.visibleColumns.includes(col.id);
@@ -132,6 +138,32 @@ export class CustomizableTable {
 
         // Drag and drop
         this.setupDragAndDrop(modal);
+
+        // Select All / Deselect All functionality
+        const selectAllCheckbox = document.getElementById(`${this.id}-select-all`);
+        const columnCheckboxes = modal.querySelectorAll(`input[type="checkbox"][id^="col-${this.id}-"]:not([disabled])`);
+
+        // Set initial state of select all checkbox
+        const updateSelectAllState = () => {
+            const allChecked = Array.from(columnCheckboxes).every(cb => cb.checked);
+            const someChecked = Array.from(columnCheckboxes).some(cb => cb.checked);
+            selectAllCheckbox.checked = allChecked;
+            selectAllCheckbox.indeterminate = someChecked && !allChecked;
+        };
+        updateSelectAllState();
+
+        // Handle select all checkbox click
+        selectAllCheckbox.onchange = () => {
+            const shouldCheck = selectAllCheckbox.checked;
+            columnCheckboxes.forEach(cb => {
+                cb.checked = shouldCheck;
+            });
+        };
+
+        // Update select all state when individual checkboxes change
+        columnCheckboxes.forEach(cb => {
+            cb.addEventListener('change', updateSelectAllState);
+        });
 
         // Up/Down buttons
         modal.querySelectorAll('.move-up-btn').forEach(btn => {

@@ -546,6 +546,9 @@ export const displaySavedPortfoliosList = () => {
             } else if (key === 'strategyCount') {
                 const value = p.indices ? p.indices.length : 0;
                 rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${value}</td>`;
+            } else if (key === 'returnDD') {
+                const value = p.metrics ? p.metrics['profitMaxDD_Ratio'] : 0;
+                rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;
             } else {
                 const value = p.metrics[key];
                 rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;
@@ -729,19 +732,361 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
     const datasets = allAnalyses.map((result) => {
         const isFeatured = result.savedIndex === state.featuredPortfolioIndex;
-        const normalizedData = result.analysis.chartData.equityCurve;
+        const analysis = result.analysis || {};
+        const chartData = analysis.chartData || {};
+        const normalizedData = chartData.equityCurve || [];
+
+        if (!normalizedData.length) {
+            console.warn(`[UI] Dataset for ${result.name} (Index: ${result.savedIndex}) is EMPTY. Skipping.`);
+            return null;
+        }
+
+        const color = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]));
+
+        console.log(`[UI] Dataset for ${result.name}: ${normalizedData.length} points. Color: ${color}. Featured: ${isFeatured}`);
 
         return {
             label: result.name,
             data: normalizedData,
-            borderColor: result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length])),
+            borderColor: color,
             borderWidth: isFeatured ? 3 : 2,
             pointRadius: 0,
             tension: 0.1,
             savedIndex: result.savedIndex,
             order: isFeatured ? 0 : 1
         };
-    });
+    }).filter(ds => ds !== null);
+
+    // --- Crosshair Plugin Definition ---
+    const crosshairPlugin = {
+        id: 'crosshair',
+        defaults: {
+            width: 1,
+            color: 'rgba(156, 163, 175, 0.5)', // gray-400 with opacity
+            dash: [3, 3],
+            labelColor: 'rgba(31, 41, 55, 0.9)', // gray-800
+            textColor: '#f3f4f6' // gray-100
+        },
+        afterInit: (chart) => {
+            chart.crosshair = { x: 0, y: 0, draw: false };
+        },
+        afterEvent: (chart, args) => {
+            const { inChartArea } = args;
+            const { x, y } = args.event;
+
+            // Sync logic: Update the OTHER chart
+            const otherChartId = chart.canvas.id === 'portfolioEquityChart' ? 'portfolioDrawdownChart' : 'portfolioEquityChart';
+            const otherChart = state.chartInstances[otherChartId];
+
+            chart.crosshair = { x, y, draw: inChartArea };
+
+            if (otherChart && inChartArea) {
+                // Sync X coordinate (assuming aligned axes)
+                otherChart.crosshair = { x, y: 0, draw: true }; // y:0 means don't draw horizontal on other
+                otherChart.draw();
+            } else if (otherChart) {
+                otherChart.crosshair = { x: 0, y: 0, draw: false };
+                otherChart.draw();
+            }
+
+            args.changed = true; // Force redraw
+
+            // --- Unified Tooltip Logic ---
+            const infoPanel = document.getElementById('chart-info-panel');
+            const infoDate = document.getElementById('chart-info-date');
+            const infoBody = document.getElementById('chart-info-body');
+
+            if (inChartArea && infoPanel && infoDate && infoBody) {
+                // Position Tooltip near mouse (Floating)
+                // Offset: 15px right, 15px down (closer)
+                const tooltipX = args.event.native.clientX;
+                const tooltipY = args.event.native.clientY;
+
+                // Smart Positioning: Flip to left if too close to right edge
+                const tooltipWidth = infoPanel.offsetWidth || 220; // Estimate if 0
+                const viewportWidth = window.innerWidth;
+                const edgeThreshold = 20;
+
+                let finalX = tooltipX + 15;
+
+                if (finalX + tooltipWidth > viewportWidth - edgeThreshold) {
+                    finalX = tooltipX - tooltipWidth - 15;
+                }
+
+                infoPanel.style.position = 'fixed';
+                infoPanel.style.left = `${finalX}px`;
+                infoPanel.style.top = `${tooltipY + 15}px`;
+                infoPanel.classList.remove('hidden');
+                infoPanel.classList.remove('opacity-0');
+
+                // Get active elements (points under cursor)
+                // We use 'index' mode to get points from all datasets at the same X
+                const activePoints = chart.getElementsAtEventForMode(args.event, 'index', { intersect: false }, true);
+
+                if (activePoints.length > 0) {
+                    // Update Date
+                    const firstPoint = activePoints[0];
+                    const xValue = chart.data.datasets[firstPoint.datasetIndex].data[firstPoint.index].x;
+                    const date = new Date(xValue);
+                    infoDate.textContent = date.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+
+                    // Build Body Content
+                    let html = '';
+
+                    // Sort points by value descending
+                    const sortedPoints = [...activePoints].sort((a, b) => {
+                        const valA = chart.data.datasets[a.datasetIndex].data[a.index].y;
+                        const valB = chart.data.datasets[b.datasetIndex].data[b.index].y;
+                        return valB - valA;
+                    });
+
+                    sortedPoints.forEach(point => {
+                        const dataset = chart.data.datasets[point.datasetIndex];
+                        const meta = dataset.savedIndex !== undefined
+                            ? allAnalyses.find(a => a.savedIndex === dataset.savedIndex)
+                            : null;
+
+                        const initialBalance = meta?.analysis?.metrics?.initial_balance || 10000;
+                        const rawY = dataset.data[point.index].y;
+
+                        let equityUSD, ddUSD;
+
+                        if (chart.canvas.id === 'portfolioEquityChart') {
+                            // Triggered from Equity Chart
+                            equityUSD = (rawY / 100) * initialBalance;
+
+                            // Find corresponding DD
+                            const ddChart = state.chartInstances['portfolioDrawdownChart'];
+                            if (ddChart) {
+                                const ddDataset = ddChart.data.datasets.find(ds => ds.label === dataset.label);
+                                if (ddDataset && ddDataset.data[point.index]) {
+                                    ddUSD = ddDataset.data[point.index].y;
+                                } else {
+                                    ddUSD = 0;
+                                }
+                            }
+                        } else {
+                            // Triggered from Drawdown Chart
+                            ddUSD = rawY; // Already in $
+
+                            // Find corresponding Equity
+                            const eqChart = state.chartInstances['portfolioEquityChart'];
+                            if (eqChart) {
+                                const eqDataset = eqChart.data.datasets.find(ds => ds.label === dataset.label);
+                                if (eqDataset && eqDataset.data[point.index]) {
+                                    const eqRawY = eqDataset.data[point.index].y;
+                                    equityUSD = (eqRawY / 100) * initialBalance;
+                                } else {
+                                    equityUSD = 0;
+                                }
+                            }
+                        }
+
+                        const profitUSD = equityUSD - initialBalance;
+
+                        html += `
+                            <div class="flex flex-col gap-1 mb-2 border-b border-gray-700/50 pb-2 last:border-0 last:mb-0 last:pb-0">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded-full" style="background-color: ${dataset.borderColor}"></div>
+                                    <span class="text-gray-300 font-bold text-xs">${dataset.label}</span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs ml-4">
+                                    <div class="text-gray-400">Valor:</div>
+                                    <div class="text-white font-mono text-right">${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(equityUSD)}</div>
+
+                                    <div class="text-gray-400">Beneficio (Equity):</div>
+                                    <div class="${profitUSD >= 0 ? 'text-green-400' : 'text-red-400'} font-mono text-right">${profitUSD >= 0 ? '+' : ''}${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(profitUSD)}</div>
+                                    
+                                    <div class="text-gray-400">Drawdown:</div>
+                                    <div class="text-red-400 font-mono text-right">${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(ddUSD)}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    infoBody.innerHTML = html;
+                }
+            } else if (infoPanel && !inChartArea) {
+                infoPanel.classList.add('opacity-0');
+            }
+        },
+        afterDraw: (chart, args, options) => {
+            const { ctx, chartArea: { top, bottom, left, right }, scales: { x: xScale, y: yScale } } = chart;
+            const { x, y, draw } = chart.crosshair || {};
+
+            // Draw if this chart is active OR if it's being synced (draw=true but x might be from other chart)
+            if (!draw) return;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.lineWidth = options.width || 1;
+            ctx.strokeStyle = options.color || 'rgba(156, 163, 175, 0.5)';
+            ctx.setLineDash(options.dash || [3, 3]);
+
+            // Vertical Line (Always draw if x is present)
+            if (x) {
+                ctx.moveTo(x, top);
+                ctx.lineTo(x, bottom);
+            }
+
+            // Horizontal Line (Only if y is present and > 0, usually only on active chart)
+            if (y) {
+                ctx.moveTo(left, y);
+                ctx.lineTo(right, y);
+            }
+
+            ctx.stroke();
+
+            // --- Draw Labels ---
+            ctx.setLineDash([]);
+            ctx.font = '10px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // X Axis Label (Date) - Only if x is valid
+            if (xScale && x) {
+                const xValue = xScale.getValueForPixel(x);
+                const date = new Date(xValue);
+                if (!isNaN(date.getTime())) {
+                    const label = date.toLocaleDateString();
+                    const textWidth = ctx.measureText(label).width + 10;
+
+                    ctx.fillStyle = options.labelColor || 'rgba(31, 41, 55, 0.9)';
+                    ctx.fillRect(x - textWidth / 2, bottom, textWidth, 20);
+
+                    ctx.fillStyle = options.textColor || '#f3f4f6';
+                    ctx.fillText(label, x, bottom + 10);
+                }
+            }
+
+            // Y Axis Label (Value) - Only if y is valid (active chart)
+            if (yScale && y) {
+                const yValue = yScale.getValueForPixel(y);
+                let label;
+                if (chart.canvas.id === 'portfolioDrawdownChart') {
+                    label = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: "compact" }).format(yValue);
+                } else {
+                    label = new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(yValue);
+                }
+
+                const textWidth = ctx.measureText(label).width + 10;
+
+                ctx.fillStyle = options.labelColor || 'rgba(31, 41, 55, 0.9)';
+                ctx.fillRect(right - textWidth, y - 10, textWidth, 20);
+
+                ctx.fillStyle = options.textColor || '#f3f4f6';
+                ctx.fillText(label, right - textWidth / 2, y);
+            }
+
+            ctx.restore();
+        }
+    };
+
+    // --- Drawdown Chart Logic ---
+    const ddCanvasId = 'portfolioDrawdownChart';
+    destroyChart(ddCanvasId);
+    const ddCtx = document.getElementById(ddCanvasId)?.getContext('2d');
+
+    if (ddCtx) {
+        // Set cursor to crosshair for better UX
+        ddCtx.canvas.style.cursor = 'crosshair';
+
+        const calculateDrawdownCurve = (equityCurve, initialBalance) => {
+            if (!equityCurve || equityCurve.length === 0) return [];
+            let maxEquity = -Infinity;
+            return equityCurve.map(point => {
+                if (point.y > maxEquity) maxEquity = point.y;
+
+                // Calculate Dollar Drawdown
+                // Assuming equityCurve is normalized (base 100)
+                // RealEquity = (PointY / 100) * InitialBalance
+                // RealMax = (MaxY / 100) * InitialBalance
+                // DD$ = RealEquity - RealMax
+
+                const realEquity = (point.y / 100) * initialBalance;
+                const realMax = (maxEquity / 100) * initialBalance;
+                const drawdownUSD = realEquity - realMax;
+
+                return { x: point.x, y: drawdownUSD };
+            });
+        };
+
+        const ddDatasets = allAnalyses.map((result) => {
+            const isFeatured = result.savedIndex === state.featuredPortfolioIndex;
+            const analysis = result.analysis || {};
+            const chartData = analysis.chartData || {};
+            const equityCurve = chartData.equityCurve || [];
+            const initialBalance = analysis.metrics?.initial_balance || 10000; // Fallback
+
+            if (!equityCurve.length) return null;
+
+            const drawdownCurve = calculateDrawdownCurve(equityCurve, initialBalance);
+            const color = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]));
+
+            return {
+                label: result.name,
+                data: drawdownCurve,
+                borderColor: color,
+                backgroundColor: color + '40', // Slightly more opaque fill
+                borderWidth: 0, // No border
+                pointRadius: 0,
+                fill: true,
+                tension: 0.1,
+                savedIndex: result.savedIndex,
+                order: isFeatured ? 0 : 1
+            };
+        }).filter(ds => ds !== null);
+
+        // Create Drawdown Chart
+        // FIX: Register in state.chartInstances to allow proper destruction via utils.destroyChart
+        const ddChart = new Chart(ddCtx, {
+            type: 'line', // Back to line for stability with large datasets
+            data: { datasets: ddDatasets },
+            plugins: [crosshairPlugin], // Register local plugin
+            options: {
+                ...CHART_OPTIONS,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    ...CHART_OPTIONS.plugins,
+                    legend: { display: false },
+                    title: { display: false },
+                    tooltip: {
+                        enabled: false, // Disable built-in tooltip in favor of unified panel
+                    },
+                    crosshair: { // Plugin options
+                        color: 'rgba(255, 255, 255, 0.3)',
+                        width: 1
+                    }
+                },
+                scales: {
+                    x: {
+                        display: false,
+                        grid: { display: false }
+                    },
+                    y: {
+                        display: false,
+                        grid: { display: false }
+                    }
+                },
+                elements: {
+                    point: {
+                        radius: 0, // No points, just the shape
+                        hitRadius: 10,
+                        hoverRadius: 4 // Show point on hover
+                    },
+                    line: {
+                        borderWidth: 0, // No border, just fill
+                    }
+                }
+            }
+        });
+
+        state.chartInstances[ddCanvasId] = ddChart;
+    }
 
     const firstAnalysis = allAnalyses[0].analysis;
     // No benchmark needed
@@ -749,6 +1094,12 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     const chartOptionsWithClick = {
         // Hacemos una copia profunda de las opciones para evitar conflictos
         ...CHART_OPTIONS, // Usamos la copia superficial, es más simple.
+        plugins: {
+            ...CHART_OPTIONS.plugins,
+            tooltip: {
+                enabled: false // Disable built-in tooltip for main chart too
+            }
+        },
         onClick: (evt, elements, chart) => {
             console.log('%c[CHART CLICK] 1. Evento onClick del gráfico disparado.', 'color: #f0abfc');
             const points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
@@ -779,17 +1130,17 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     const modal = document.getElementById('chart-click-modal');
                     const modalTitle = document.getElementById('chart-click-modal-title');
                     const modalBody = document.getElementById('chart-click-modal-body');
-                    const confirmBtn = document.getElementById('chart-click-confirm-btn');
+                    const confirmBtn = document.getElementById('chart-click-modal-confirm-btn');
 
                     modalTitle.textContent = 'Confirmar Destacado';
-                    modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado ? `;
+                    modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado?`;
 
                     confirmBtn.onclick = () => {
-                        console.log(`% c[CHART CLICK]6. Confirmado.Estableciendo portafolio destacado a índice ${clickedPortfolioIndex} `, 'color: #f0abfc; font-weight: bold;');
+                        console.log(`%c[CHART CLICK] 6. Confirmado. Estableciendo portafolio destacado a índice ${clickedPortfolioIndex}`, 'color: #f0abfc; font-weight: bold;');
                         state.featuredPortfolioIndex = clickedPortfolioIndex;
                         renderFeaturedPortfolio();
                         renderPortfolioComparisonCharts(portfolioAnalyses); // Re-render para actualizar el estilo
-                        closeChartClickModal(); // Cierra el modal directamente
+                        window.closeChartClickModal(); // Cierra el modal directamente
                     };
 
                     console.log('%c[CHART CLICK] 7. Mostrando modal de confirmación.', 'color: #f0abfc');
@@ -810,7 +1161,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     // El índice del portafolio ya lo tenemos en 'clickedPortfolioIndex'
                     openOptimizationModal(clickedPortfolioIndex);
                 } else {
-                    console.log(`% c[CHART CLICK]5.1.La acción activa('${activeAction}') no tiene una función de clic definida.No se hace nada.`, 'color: #f0abfc');
+                    console.log(`%c[CHART CLICK] 5.1. La acción activa ('${activeAction}') no tiene una función de clic definida. No se hace nada.`, 'color: #f0abfc');
                 }
             }
         }
@@ -821,7 +1172,40 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     // Damos prioridad al onClick.
     delete chartOptionsWithClick.plugins.zoom;
 
-    state.chartInstances[canvasId] = new Chart(ctx, { type: 'line', data: { datasets }, options: chartOptionsWithClick });
+    // Set cursor to crosshair for main chart too
+    if (ctx) ctx.canvas.style.cursor = 'crosshair';
+
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        plugins: [crosshairPlugin], // Register local plugin
+        options: {
+            ...chartOptionsWithClick,
+            plugins: {
+                ...chartOptionsWithClick.plugins,
+                crosshair: { // Plugin options
+                    color: 'rgba(255, 255, 255, 0.3)',
+                    width: 1
+                }
+            }
+        }
+    });
+    state.chartInstances[canvasId] = chart;
+};
+
+// Expose close modal function globally
+window.closeChartClickModal = () => {
+    const modal = document.getElementById('chart-click-modal');
+    if (modal) {
+        const backdrop = document.getElementById('chart-click-modal-backdrop');
+        const content = document.getElementById('chart-click-modal-content');
+        backdrop.classList.add('opacity-0');
+        content.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex'); // Ensure flex is removed
+        }, 300); // Coincide con la duración de la transición
+    }
 };
 
 /**

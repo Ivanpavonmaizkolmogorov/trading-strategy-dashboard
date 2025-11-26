@@ -5,6 +5,7 @@ import { toggleLoading, formatMetricForDisplay } from '../utils.js';
 import { reAnalyzeAllData } from '../analysis.js';
 import { showToast } from './notifications.js';
 import { METRIC_CONFIG } from './searchConfig.js';
+import { openRiskConfigModal } from './riskConfig.js?v=3.24';
 
 // Helper function to determine if an increase in a metric value is an improvement
 const isIncreaseGood = (metricKey) => {
@@ -871,6 +872,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isNaN(selectedIndex)) {
                 console.log('[Optimization] Portfolio selected from dropdown:', selectedIndex);
                 startOptimizationWorkflow(selectedIndex);
+            }
+        });
+    }
+
+    // Manual Risk Button
+    const manualRiskBtn = document.getElementById('opt-manual-risk-btn');
+    if (manualRiskBtn) {
+        manualRiskBtn.addEventListener('click', () => {
+            const portDropdown = document.getElementById('opt-portfolio-dropdown');
+            const selectedIndex = parseInt(portDropdown.value, 10);
+            if (!isNaN(selectedIndex)) {
+                openRiskConfigModal(selectedIndex);
+            } else {
+                showToast('Please select a portfolio first', 'warning');
             }
         });
     }

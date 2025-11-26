@@ -10,28 +10,32 @@ const AVAILABLE_COLUMNS = [
     { id: 'name', label: 'Strategy Name', minWidth: 200 },
     { id: 'totalTrades', label: 'Trades', minWidth: 80 },
     { id: 'totalProfit', label: 'Net Profit', minWidth: 100 },
-    { id: 'profitFactor', label: 'Profit Factor', minWidth: 100 },
-    { id: 'winningPercentage', label: 'Win %', minWidth: 80 },
-    { id: 'maxDrawdownInDollars', label: 'Max DD $', minWidth: 100 },
-    { id: 'maxDrawdown', label: 'Max DD %', minWidth: 100 },
-    { id: 'sharpeRatio', label: 'Sharpe', minWidth: 80 },
-    { id: 'sqn', label: 'SQN', minWidth: 80 },
+    { id: 'returnDD', label: 'Ret/DD', minWidth: 80 },
     { id: 'upi', label: 'UPI', minWidth: 80 },
+    { id: 'sortinoRatio', label: 'Sortino', minWidth: 80 },
+    { id: 'sharpeRatio', label: 'Sharpe', minWidth: 80 },
+    { id: 'sharpeRatioTrade', label: 'Sharpe (Trade)', minWidth: 80 },
+    { id: 'maxDrawdownInDollars', label: 'Max DD $', minWidth: 100 },
+    { id: 'maxStagnationTrades', label: 'Stag. Trades', minWidth: 100 },
+    { id: 'maxStagnationDays', label: 'Stag. Days', minWidth: 100 },
+    { id: 'winningPercentage', label: 'Win %', minWidth: 80 },
+    { id: 'profitFactor', label: 'Profit Factor', minWidth: 100 },
+    { id: 'sqn', label: 'SQN', minWidth: 80 },
+    { id: 'maxDrawdown', label: 'Max DD %', minWidth: 100 }, // Extra but useful
     { id: 'cagr', label: 'CAGR %', minWidth: 80 },
-    { id: 'avgTrade', label: 'Avg Trade', minWidth: 100 },
-    { id: 'returnDD', label: 'Ret/DD', minWidth: 80 }
+    { id: 'avgTrade', label: 'Avg Trade', minWidth: 100 }
 ];
 
 // Default configuration
 const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'profitFactor', 'winningPercentage', 'maxDrawdownInDollars', 'sharpeRatio'],
+    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn'],
     columnWidths: {}
 };
 
 // Create table instance
 const strategiesTable = new CustomizableTable({
     id: 'strategies',
-    storageKey: 'strategiesTableConfig',
+    storageKey: 'strategiesTableConfig_v5', // Force reset for new columns
     columns: AVAILABLE_COLUMNS,
     defaultConfig: DEFAULT_CONFIG,
     containerId: 'strategies-content',
@@ -71,7 +75,7 @@ export const renderStrategiesTable = () => {
     // Checkbox Header
     const thCheckbox = document.createElement('th');
     thCheckbox.className = 'px-4 py-3 w-10 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
-    thCheckbox.innerHTML = '<span class="sr-only">Select</span>';
+    thCheckbox.innerHTML = '<input type="checkbox" id="select-all-strategies" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-700 cursor-pointer" title="Select/Deselect All">';
     tableHead.appendChild(thCheckbox);
 
     config.visibleColumns.forEach(colId => {
@@ -196,6 +200,10 @@ export const renderStrategiesTable = () => {
         row.appendChild(tdCheckbox);
 
         // Data Cells
+        if (index === 0) {
+            console.log('[DEBUG RENDER] Visible Columns:', config.visibleColumns);
+        }
+
         config.visibleColumns.forEach(colId => {
             const td = document.createElement('td');
             td.className = 'px-4 py-3 text-gray-300 truncate';
@@ -207,6 +215,7 @@ export const renderStrategiesTable = () => {
                 td.title = fileName;
             } else {
                 const value = getMetricValue(strategy, colId);
+
                 td.className += ' text-right';
                 td.textContent = formatMetricForDisplay(value, colId);
 
@@ -239,12 +248,68 @@ export const renderStrategiesTable = () => {
 
     // Update floating action bar visibility
     updateFloatingActionBar();
+
+    // Select All Checkbox Functionality
+    const selectAllCheckbox = document.getElementById('select-all-strategies');
+    if (selectAllCheckbox) {
+        // Get all individual row checkboxes
+        const rowCheckboxes = tableBody.querySelectorAll('input[type="checkbox"]');
+
+        // Update select all checkbox state based on individual checkboxes
+        const updateSelectAllState = () => {
+            const allChecked = Array.from(rowCheckboxes).every(cb => cb.checked);
+            const someChecked = Array.from(rowCheckboxes).some(cb => cb.checked);
+            selectAllCheckbox.checked = allChecked;
+            selectAllCheckbox.indeterminate = someChecked && !allChecked;
+        };
+
+        // Set initial state
+        updateSelectAllState();
+
+        // Handle select all checkbox click
+        selectAllCheckbox.addEventListener('change', () => {
+            const shouldCheck = selectAllCheckbox.checked;
+            rowCheckboxes.forEach(cb => {
+                if (cb.checked !== shouldCheck) {
+                    cb.checked = shouldCheck;
+                    // Dispatch change event to trigger the existing logic
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+        });
+
+        // Update select all state when individual checkboxes change
+        rowCheckboxes.forEach(cb => {
+            cb.addEventListener('change', updateSelectAllState);
+        });
+    }
 };
 
 // Helper: Get metric value from strategy object
 const getMetricValue = (strategy, metricKey) => {
-    const metrics = strategy.analysis?.metrics || strategy.analysis || strategy.metrics || {};
-    return metrics[metricKey] ?? (metricKey === 'name' ? strategy.fileName : 0);
+    // 1. Determine where metrics are stored
+    let source = strategy;
+    if (strategy.analysis && strategy.analysis.metrics) source = strategy.analysis.metrics;
+    else if (strategy.analysis) source = strategy.analysis;
+    else if (strategy.metrics) source = strategy.metrics;
+
+    // 2. Extract value with mappings
+    let val = source[metricKey];
+
+    if (metricKey === 'returnDD') val = source['profitMaxDD_Ratio'];
+    if (metricKey === 'avgTrade') {
+        const p = source['totalProfit'] || 0;
+        const t = source['totalTrades'] || 0;
+        val = t > 0 ? p / t : 0;
+    }
+
+    // 3. Fallback to strategy root if not found in source (and source was nested)
+    if (val === undefined && source !== strategy) {
+        val = strategy[metricKey];
+        if (metricKey === 'returnDD') val = strategy['profitMaxDD_Ratio'];
+    }
+
+    return val ?? (metricKey === 'name' ? strategy.fileName : 0);
 };
 
 // Auto-fit column to content
