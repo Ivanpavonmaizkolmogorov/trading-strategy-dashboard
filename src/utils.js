@@ -112,7 +112,7 @@ export const formatMetricForDisplay = (value, metricName) => {
 
     if (isPercent) return `${value.toFixed(2)}%`;
 
-    const isInteger = ['totalTrades', 'maxStagnationTrades', 'maxStagnationDays', 'strategyCount'].includes(metricName);
+    const isInteger = ['totalTrades', 'maxStagnationTrades', 'maxStagnationDays', 'strategyCount', 'maxConsecutiveLosses', 'maxConsecutiveWins'].includes(metricName);
     if (isInteger) return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
     // Format with space as thousands separator
@@ -120,3 +120,46 @@ export const formatMetricForDisplay = (value, metricName) => {
     const decimals = Math.abs(value) > 1000 ? 0 : 2;
     return value.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 };
+
+// ===== ID GENERATION FOR HEALTH MONITORING =====
+
+/**
+ * Generates a short hash from a string
+ */
+function generateShortHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return Math.abs(hash).toString(36).substring(0, 4).toUpperCase();
+}
+
+/**
+ * Generates unique ID for strategies (format: STRAT_XXXX)
+ */
+export function generateStrategyId(fileName, timestamp = Date.now()) {
+    const input = `${fileName}_${timestamp}`;
+    const hash = generateShortHash(input);
+    return `STRAT_${hash}`;
+}
+
+/**
+ * Generates unique ID for portfolios (format: PORT_XXXX)
+ */
+export function generatePortfolioId(name, strategyIds = [], timestamp = Date.now()) {
+    const input = `${name}_${strategyIds.join('_')}_${timestamp}`;
+    const hash = generateShortHash(input);
+    return `PORT_${hash}`;
+}
+
+/**
+ * Generates unique ID for accounts (format: ACC_XX_XXXX)
+ */
+export function generateAccountId(broker, accountNumber, timestamp = Date.now()) {
+    const input = `${broker}_${accountNumber}_${timestamp}`;
+    const hash = generateShortHash(input);
+    const brokerPrefix = broker.substring(0, 2).toUpperCase();
+    return `ACC_${brokerPrefix}_${hash}`;
+}

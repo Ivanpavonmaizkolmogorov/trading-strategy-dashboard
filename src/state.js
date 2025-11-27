@@ -17,6 +17,10 @@ export const state = {
     isSearchPaused: false,
     isSearchStopped: false,
 
+    // --- NUEVO: Cuentas vinculadas de Myfxbook ---
+    linkedAccounts: [], // { myfxbookId, accountId, name, broker, portfolioId, lastSyncDate, metrics: {...} }
+
+
     // Configuraciones de ordenamiento
     databankSortConfig: { key: 'metricValue', order: 'desc' },
     savedPortfoliosSortConfig: { key: 'savedIndex', order: 'asc' },

@@ -4,6 +4,7 @@ import { ALL_METRICS, SELECTION_COLORS } from '../config.js'; // ALL_METRICS y S
 import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '../utils.js'; // Estas utilidades se siguen usando
 import { initDatabankTable, getDatabankTableConfig } from './databankTable.js';
 import { focusMode } from './focusMode.js';
+import { generatePortfolioId } from '../utils.js'; // Import ID generator
 
 /**
  * Actualiza el indicador visual de estado del DataBank.
@@ -631,11 +632,12 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
     }
 
     const names = portfolio.indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '').substring(0, 5)).join('+');
+    const strategyIds = portfolio.indices.map(i => state.loadedStrategyFiles[i].strategyId);
 
     state.savedPortfolios.push({
         name: `P-DB (${names}) ${portfolio.metricName}`,
         indices: portfolio.indices, // El ID se asigna aquí
-        id: state.nextPortfolioId++,
+        id: generatePortfolioId(`P-DB (${names})`, strategyIds),
         weights: null,
         comments: `Guardado desde DataBank. Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
     });

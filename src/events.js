@@ -8,10 +8,15 @@ import { openViewManager, closeViewManager, applyView, saveView, deleteView } fr
 import { exportAnalysis, importAnalysis } from './modules/importExport.js';
 import { showToast } from './modules/notifications.js';
 import { initializeLayout } from './modules/layout.js'; // <-- NUEVO
+import { initMyfxbookUI } from './modules/myfxbookUI.js'; // <-- MYFXBOOK
+import { generateStrategyId } from './utils.js'; // <-- ID GENERATOR
 
 export function initializeEventListeners() {
     // Inicializar el nuevo Layout (Sidebar, Tabs, Resizer)
     initializeLayout();
+
+    // Inicializar Myfxbook UI
+    initMyfxbookUI();
 
     // --- Controles Principales ---
     dom.analyzeBtn.addEventListener('click', runAnalysis);
@@ -21,12 +26,15 @@ export function initializeEventListeners() {
         const newFiles = Array.from(e.target.files);
         newFiles.forEach(newFile => {
             if (!state.loadedStrategyFiles.some(existingFile => existingFile.name === newFile.name)) {
+                // Asignar ID único a la estrategia
+                newFile.strategyId = generateStrategyId(newFile.name);
                 state.loadedStrategyFiles.push(newFile);
             }
         });
         updateTradesFilesList();
         e.target.value = ''; // Permite volver a seleccionar el mismo archivo
     });
+
 
     dom.tradesFilesListEl.addEventListener('click', (e) => {
         if (e.target.classList.contains('remove-file-btn')) {
@@ -138,9 +146,9 @@ export function initializeEventListeners() {
             renderAllCharts(); // Renderiza gráficos para la pestaña recién activada
         }
     });
-
+    
     dom.redrawChartsBtn.addEventListener('click', () => renderAllCharts(true));
-
+    
     // --- Selección de Portafolio en Tabla de Resumen ---
     dom.tabContentArea.addEventListener('change', (e) => {
         if (e.target.classList.contains('portfolio-checkbox')) {
@@ -441,4 +449,4 @@ export function initializeEventListeners() {
             if (backdrop) backdrop.addEventListener('click', closeChartClickModal);
         }
     }
-} // Cierre de initializeEventListeners
+}

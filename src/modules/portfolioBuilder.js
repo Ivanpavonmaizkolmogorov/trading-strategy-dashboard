@@ -1,6 +1,6 @@
 import { state } from '../state.js';
 import { dom } from '../dom.js';
-import { displayError, formatMetricForDisplay } from '../utils.js';
+import { displayError, formatMetricForDisplay, generatePortfolioId } from '../utils.js'; // Import ID generator
 import { savePortfolioFromDatabank } from './databank.js'; // Reusing save logic? Maybe need a generic one.
 import { displaySavedPortfoliosList } from '../ui.js';
 import { ALL_METRICS } from '../config.js';
@@ -239,11 +239,12 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
         // Add to saved portfolios
         // Use 'indices' from the closure, as portfolio result from backend might not have it
         const names = indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '').substring(0, 5)).join('+');
+        const strategyIds = indices.map(i => state.loadedStrategyFiles[i].strategyId);
 
         state.savedPortfolios.push({
             name: `Manual (${names})`,
             indices: indices,
-            id: Date.now(),
+            id: generatePortfolioId(`Manual (${names})`, strategyIds),
             weights: null,
             metrics: portfolio.metrics, // Save pre-calculated metrics
             analysis: portfolio.metrics, // Save chart data and analysis (metrics contains chartData)

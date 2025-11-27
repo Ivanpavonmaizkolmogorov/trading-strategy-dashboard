@@ -8,6 +8,7 @@ import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } fro
 import { focusMode } from './modules/focusMode.js';
 import { renderStrategiesTable as renderStrategiesTableModule } from './modules/strategiesTable.js';
 import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig } from './modules/savedPortfoliosTable.js';
+import { unlinkAccount } from './modules/myfxbookUI.js';
 
 
 /**
@@ -511,6 +512,15 @@ export const displaySavedPortfoliosList = () => {
         headerRow.appendChild(th);
     });
 
+    // Dynamic Real Metrics Column
+    const hasRealMetrics = state.savedPortfolios.some(p => p.realMetrics);
+    if (hasRealMetrics) {
+        const th = document.createElement('th');
+        th.className = 'px-4 py-3 text-center text-xs font-medium text-blue-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
+        th.textContent = 'Real vs Backtest';
+        headerRow.appendChild(th);
+    }
+
     // Action header
     const thAction = document.createElement('th');
     thAction.className = 'px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
@@ -542,7 +552,14 @@ export const displaySavedPortfoliosList = () => {
             if (!colInfo) return;
 
             if (key === 'name') {
-                rowHTML += `<td class="px-4 py-3"><p class="font-semibold text-sky-300">${p.name}</p><p class="text-gray-400 text-xs">${weightsText}</p></td>`;
+                let nameHtml = `<p class="font-semibold text-sky-300 flex items-center gap-2">
+                    ${p.name}
+                    ${p.linkedAccountId ? `<span class="inline-flex items-center gap-1 bg-blue-900 text-blue-200 text-[10px] px-1.5 py-0.5 rounded border border-blue-700 group">
+                        <span title="Linked to Myfxbook: ${p.linkedAccountName}">🔗 Myfxbook</span>
+                        <button class="hover:text-red-400 unlink-portfolio-btn ml-1 font-bold" data-index="${originalIndex}" title="Unlink">×</button>
+                    </span>` : ''}
+                </p>`;
+                rowHTML += `<td class="px-4 py-3">${nameHtml}<p class="text-gray-400 text-xs">${weightsText}</p></td>`;
             } else if (key === 'strategyCount') {
                 const value = p.indices ? p.indices.length : 0;
                 rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${value}</td>`;
@@ -554,6 +571,24 @@ export const displaySavedPortfoliosList = () => {
                 rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;
             }
         });
+
+        if (hasRealMetrics) {
+            if (p.realMetrics) {
+                const realProfit = p.realMetrics.totalProfit || 0;
+                const backtestProfit = p.metrics.totalProfit || 0;
+                const diff = realProfit - backtestProfit;
+                const color = diff >= 0 ? 'text-emerald-400' : 'text-red-400';
+
+                rowHTML += `<td class="px-4 py-3 text-center">
+                    <div class="flex flex-col items-center">
+                        <div class="text-xs font-bold ${color}">$${realProfit.toFixed(0)}</div>
+                        <div class="text-[10px] text-gray-500">vs $${backtestProfit.toFixed(0)}</div>
+                    </div>
+                </td>`;
+            } else {
+                rowHTML += `<td class="px-4 py-3 text-center text-gray-600">-</td>`;
+            }
+        }
 
         rowHTML += `<td class="px-4 py-3 text-center whitespace-nowrap">
             <button data-index="${originalIndex}" class="feature-portfolio-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isFeatured ? 'featured' : ''}" title="Destacar/Acciones">&#9733;</button>
@@ -567,6 +602,17 @@ export const displaySavedPortfoliosList = () => {
         bodyHTML += rowHTML;
     });
     dom.savedPortfoliosBody.innerHTML = bodyHTML;
+
+    // Unlink buttons
+    dom.savedPortfoliosBody.querySelectorAll('.unlink-portfolio-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent row click
+            const index = parseInt(btn.dataset.index);
+            if (confirm('Are you sure you want to unlink this Myfxbook account?')) {
+                unlinkAccount(index);
+            }
+        });
+    });
 };
 
 // Make globally accessible for savedPortfoliosTable modal

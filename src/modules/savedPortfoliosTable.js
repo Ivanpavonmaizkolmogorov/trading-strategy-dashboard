@@ -24,6 +24,9 @@ const AVAILABLE_COLUMNS = [
     { id: 'captureRatio', label: 'Capture Ratio', minWidth: 100 },
     { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
     { id: 'strategyCount', label: 'Strategies #', minWidth: 80 },
+    // Health Monitoring Metrics
+    { id: 'maxConsecutiveLosses', label: 'Max Consec. Losses', minWidth: 120 },
+    { id: 'maxConsecutiveWins', label: 'Max Consec. Wins', minWidth: 120 },
 ];
 
 // Default configuration

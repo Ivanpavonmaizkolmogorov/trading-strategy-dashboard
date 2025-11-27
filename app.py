@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional, Union
 import json
@@ -701,3 +701,188 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
         print(f"!!!!!! 🔥🔥🔥 ERROR CATASTRÓFICO en /analysis/optimize-portfolio: {type(e).__name__}: {e} 🔥🔥🔥 !!!!!!")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+# ===== MYFXBOOK HEALTH MONITORING =====
+
+from myfxbook_client import MyfxbookClient, MyfxbookAPIError
+
+class MyfxbookLoginRequest(BaseModel):
+    email: str
+    password: str
+    account_id: int  # Myfxbook account ID to fetch
+
+class MyfxbookCredentials(BaseModel):
+    email: str
+    password: str
+
+@app.post("/myfxbook/get-accounts")
+async def myfxbook_get_accounts(request: MyfxbookCredentials):
+    """
+    Login and fetch all accounts for the user.
+    """
+    try:
+        print(f"[Myfxbook Endpoint] Fetching accounts for: {request.email}")
+        client = MyfxbookClient()
+        session = client.login(request.email, request.password)
+        
+        accounts = client.get_my_accounts()
+        client.logout()
+        
+        return {
+            "success": True,
+            "accounts": accounts,
+            "count": len(accounts)
+        }
+    except MyfxbookAPIError as e:
+        return JSONResponse(status_code=400, content={"success": False, "detail": str(e)})
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"success": False, "detail": str(e)})
+
+
+class MyfxbookHistoryRequest(BaseModel):
+    email: str
+    password: str
+    account_id: int
+
+@app.post("/myfxbook/get-history")
+async def myfxbook_get_history(request: MyfxbookHistoryRequest):
+    """
+    Login and fetch full history for a specific account.
+    """
+    try:
+        print(f"[Myfxbook Endpoint] Fetching history for account: {request.account_id}")
+        client = MyfxbookClient()
+        session = client.login(request.email, request.password)
+        
+        history = client.get_history(request.account_id)
+        
+        # Calculate basic metrics on the backend
+        losses_data = client.calculate_consecutive_losses(history)
+        
+        client.logout()
+        
+        return {
+            "success": True,
+            "accountId": request.account_id,
+            "history": history,
+            "count": len(history),
+            "metrics": {
+                "consecutiveLosses": losses_data
+            }
+        }
+    except MyfxbookAPIError as e:
+        return JSONResponse(status_code=400, content={"success": False, "detail": str(e)})
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"success": False, "detail": str(e)})
+
+
+
+@app.post("/myfxbook/test-sync")
+async def myfxbook_test_sync(request: MyfxbookLoginRequest):
+    """
+    Test endpoint for Myfxbook API integration.
+    
+    This endpoint:
+    1. Logs in to Myfxbook
+    2. Fetches account history (last 50 trades)
+    3. Calculates consecutive losses
+    4. Returns comparison data
+    
+    NOTE: This is a test endpoint. Production version will use stored sessions.
+    """
+    logs = []
+    
+    try:
+        logs.append(f"[Myfxbook Endpoint] Testing sync for account: {request.account_id}")
+        print(f"[Myfxbook Endpoint] Testing sync for account: {request.account_id}")
+        
+        # 1. Create client and login
+        logs.append("[Step 1/4] Creating client and logging in...")
+        client = MyfxbookClient()
+        session = client.login(request.email, request.password)
+        logs.append(f"[Step 1/4] ✅ Login successful. Session: {session[:12]}...")
+        
+        # 1.5 Debug: Get all accounts to verify session and IDs
+        logs.append("[Step 1.5/4] 🔍 Fetching ALL accounts to verify session...")
+        try:
+            accounts = client.get_my_accounts()
+            logs.append(f"[Step 1.5/4] ✅ Session is VALID. Found {len(accounts)} accounts:")
+            for acc in accounts:
+                logs.append(f"   - Name: {acc.get('name')} | ID: {acc.get('id')} | Account: {acc.get('accountId')}")
+        except Exception as e:
+            logs.append(f"[Step 1.5/4] ❌ Failed to fetch accounts: {str(e)}")
+            # Don't stop here, try get_history anyway to see if it's the same error
+        
+        # 2. Get account history (last 50 trades)
+        logs.append(f"[Step 2/4] Fetching history for account {request.account_id}...")
+        history = client.get_history(request.account_id)
+        logs.append(f"[Step 2/4] ✅ Retrieved {len(history)} trades")
+        
+        # 3. Calculate consecutive losses
+        logs.append("[Step 3/4] Calculating consecutive losses...")
+        losses_data = client.calculate_consecutive_losses(history)
+        logs.append(f"[Step 3/4] ✅ Max consecutive losses: {losses_data['maxConsecutiveLosses']}")
+        
+        # 4. Logout (clean session)
+        logs.append("[Step 4/4] Logging out...")
+        client.logout()
+        logs.append("[Step 4/4] ✅ Logout successful")
+        
+        # 5. Prepare response
+        response = {
+            "success": True,
+            "accountId": request.account_id,
+            "tradesCount": len(history),
+            "consecutiveLosses": losses_data,
+            "message": f"Retrieved {len(history)} trades. Max consecutive losses: {losses_data['maxConsecutiveLosses']}",
+            "debug_logs": "\n".join(logs)
+        }
+        
+        print(f"[Myfxbook Endpoint] Sync successful: {response['message']}")
+        return response
+        
+    except MyfxbookAPIError as e:
+        error_msg = str(e)
+        logs.append(f"❌ API Error: {error_msg}")
+        print(f"[Myfxbook Endpoint] ❌ API Error: {error_msg}")
+        
+        # Return detailed error for frontend debugging
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error_type": "MyfxbookAPIError",
+                "detail": error_msg,
+                "debug_info": {
+                    "email": request.email,
+                    "account_id": request.account_id,
+                    "error_class": type(e).__name__
+                },
+                "debug_logs": "\n".join(logs)
+            }
+        )
+    except Exception as e:
+        error_msg = str(e)
+        error_type = type(e).__name__
+        logs.append(f"❌ Unexpected error ({error_type}): {error_msg}")
+        print(f"[Myfxbook Endpoint] ❌ Unexpected error ({error_type}): {error_msg}")
+        traceback.print_exc()
+        
+        # Return detailed error for frontend debugging
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error_type": error_type,
+                "detail": error_msg,
+                "debug_info": {
+                    "email": request.email,
+                    "account_id": request.account_id,
+                    "traceback": traceback.format_exc()
+                },
+                "debug_logs": "\n".join(logs)
+            }
+        )
+
