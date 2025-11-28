@@ -7,19 +7,9 @@ let myfxbookModal = null;
 
 export function initMyfxbookUI() {
     console.log('[Myfxbook UI] Initializing...');
-
-    // Attach to existing button in HTML
-    const myfxbookBtn = document.getElementById('myfxbook-connect-btn');
-
-    if (myfxbookBtn) {
-        myfxbookBtn.onclick = openMyfxbookModal;
-        console.log('[Myfxbook UI] Button connected');
-    } else {
-        console.warn('[Myfxbook UI] Button not found in HTML');
-    }
 }
 
-function openMyfxbookModal() {
+export function openMyfxbookModal() {
     console.log('[Myfxbook UI] Opening modal');
 
     // Create modal if it doesn't exist
@@ -196,7 +186,7 @@ async function handleLogin(e) {
     console.log('[Myfxbook UI] Logging in...', { email });
 
     try {
-        const response = await fetch('http://localhost:8001/myfxbook/get-accounts', {
+        const response = await fetch('/myfxbook/get-accounts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
@@ -388,16 +378,126 @@ export function unlinkAccount(portfolioIndex) {
     import('./notifications.js').then(mod => mod.showToast(`Unlinked ${accountName}`, 'info'));
 }
 
-async function fetchLinkedAccountData(portfolio, email, password, accountId) {
-    console.log(`[Myfxbook] Fetching history for linked account ${accountId}...`);
+// Helper para normalizar comentarios (Smart Grouping)
+export const normalizeComment = (comment) => {
+    if (!comment) return '';
+    let normalized = comment;
 
+    // 1. Eliminar sufijos de SL/TP/TP2/etc: [sl 123.45], [tp 123.45], [tp]
+    // Regex: \[ seguido de (sl o tp o tpNumero) seguido de cualquier cosa hasta \]
+    normalized = normalized.replace(/\[(sl|tp|tp\d*).*?\]/gi, '');
+
+    // 2. Eliminar contadores y sufijos comunes recursivamente
+    // _1, _26, _I, _Impr, _V1, _H1_1_5_23
+    // Estrategia: Eliminar cualquier secuencia al final que sea _ seguido de digitos o letras cortas (I, Impr, V5)
+    // Repetimos hasta que no cambie
+    let prev;
+    do {
+        prev = normalized;
+        // Eliminar _1, _26, _I, _Impr, _v5, _H1 (si es sufijo de variante)
+        // Cuidado con H1 si es parte del nombre base. Pero si está al final tras otros sufijos...
+        // Vamos a ser agresivos con patrones que parecen contadores o versiones
+        normalized = normalized.replace(/_(\d+|I|Impr|v\d+|H\d+)\s*$/i, '');
+
+        // Eliminar fechas/versiones complejas tipo _1_5_23
+        normalized = normalized.replace(/_\d+_\d+_\d+\s*$/i, '');
+
+        normalized = normalized.replace(/_+$/, ''); // Remove trailing underscores
+    } while (normalized !== prev);
+
+    // 3. Detectar y eliminar duplicaciones (e.g. "Name_Name")
+    // Si el string contiene la misma secuencia repetida dos veces separada por _ o nada
+    // Ej: "97UsdjpyBuyStPlV5_H1_1_5_23_97UsdjpyBuyStPlV5_H1_1_5_23_"
+    // Normalizamos quitando _ al final primero
+    normalized = normalized.replace(/_+$/, '');
+
+    if (normalized.length > 10) {
+        const half = Math.floor(normalized.length / 2);
+        // Check if the second half starts with the first few chars of first half?
+        // Better: Check if string is "X_X" or "XX"
+        // Try to find the longest repeating prefix
+        for (let len = Math.floor(normalized.length / 2); len > 5; len--) {
+            const prefix = normalized.substring(0, len);
+            const remainder = normalized.substring(len);
+            // Si el resto empieza por _ y luego el prefix, o es igual al prefix
+            if (remainder === prefix || remainder === `_${prefix}`) {
+                normalized = prefix;
+                break;
+            }
+        }
+    }
+
+    return normalized.trim();
+};
+
+// Function to clean existing metrics in memory without re-fetching
+export function cleanMetrics(portfolio) {
+    if (!portfolio.realMetrics || !portfolio.realMetrics.magicStats) return false;
+
+    const oldStats = portfolio.realMetrics.magicStats;
+    const newStats = {};
+    let changed = false;
+
+    Object.entries(oldStats).forEach(([key, stat]) => {
+        const normalizedKey = normalizeComment(key);
+
+        if (normalizedKey !== key) {
+            changed = true;
+        }
+
+        if (!newStats[normalizedKey]) {
+            newStats[normalizedKey] = {
+                ...stat,
+                id: normalizedKey,
+                tradesCount: 0,
+                totalProfit: 0,
+                lots: 0,
+                wonTrades: 0,
+                lostTrades: 0,
+                _exampleRaw: stat._exampleRaw || key // Preserve original example
+            };
+        }
+
+        // Aggregate stats
+        newStats[normalizedKey].tradesCount += stat.tradesCount || 0;
+        newStats[normalizedKey].totalProfit += stat.totalProfit || 0;
+        newStats[normalizedKey].lots += stat.lots || 0;
+        newStats[normalizedKey].wonTrades += stat.wonTrades || 0;
+        newStats[normalizedKey].lostTrades += stat.lostTrades || 0;
+    });
+
+    if (changed) {
+        console.log('[Myfxbook] Metrics cleaned and aggregated.');
+        portfolio.realMetrics.magicStats = newStats;
+        return true;
+    }
+    return false;
+}
+
+export async function fetchLinkedAccountData(portfolio, email = null, password = null, accountId = null) {
+    const finalAccountId = accountId || portfolio.linkedAccountId;
+    const finalEmail = email || (state.myfxbookCredentials ? state.myfxbookCredentials.email : null);
+    const finalPassword = password || (state.myfxbookCredentials ? state.myfxbookCredentials.password : null);
+
+    if (!finalEmail || !finalPassword) {
+        console.warn('[Myfxbook] No credentials available for sync.');
+        import('./notifications.js').then(mod => mod.showToast('Please login to Myfxbook to sync data', 'warning'));
+        return;
+    }
+
+    console.log(`[Myfxbook] Fetching history for linked account ${finalAccountId}...`);
     import('./notifications.js').then(mod => mod.showToast(`Syncing history for ${portfolio.name}...`, 'info'));
 
     try {
-        const response = await fetch('http://localhost:8001/myfxbook/get-history', {
+        const response = await fetch('/myfxbook/get-history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, account_id: accountId })
+            body: JSON.stringify({
+                email: finalEmail,
+                password: finalPassword,
+                account_id: finalAccountId,
+                _t: Date.now()
+            })
         });
 
         const data = await response.json();
@@ -405,25 +505,159 @@ async function fetchLinkedAccountData(portfolio, email, password, accountId) {
         if (response.ok && data.success) {
             console.log(`[Myfxbook] History synced. ${data.count} trades.`);
 
+            const strategyBreakdown = {};
+            const magicMap = state.magicNumberMap || {};
+
+            // 1. Agrupar trades por ID Normalizado
+            const tradesById = {};
+            // Aseguramos que data.history sea un array
+            const history = Array.isArray(data.history) ? data.history : [];
+
+            console.log(`[Myfxbook] Processing ${history.length} trades for normalization...`);
+
+            history.forEach(trade => {
+                // Prioridad: Comentario completo > Magic Number > Magic
+                let rawId = trade.comment || trade.magicNumber || trade.magic;
+
+                if (rawId !== undefined && rawId !== '') {
+                    // Normalizar ID
+                    const idStr = String(rawId);
+                    // Si es un comentario (no solo números), aplicamos normalización inteligente
+                    const isNumeric = /^\d+$/.test(idStr);
+                    const normalizedId = isNumeric ? idStr : normalizeComment(idStr);
+
+                    if (history.length < 50) { // Log first few for debug
+                        console.log(`[Myfxbook] Norm: "${idStr}" -> "${normalizedId}"`);
+                    }
+
+                    if (!tradesById[normalizedId]) {
+                        tradesById[normalizedId] = [];
+                        // Guardamos un ejemplo del ID original para mostrar en tooltips
+                        tradesById[normalizedId]._exampleRaw = idStr;
+                    }
+                    tradesById[normalizedId].push(trade);
+                }
+            });
+
+            // 2. Calcular métricas para cada estrategia mapeada
+            Object.entries(magicMap).forEach(([strategyId, mappedIds]) => {
+                // Soportar tanto string único (legacy) como array de strings (nuevo)
+                const ids = Array.isArray(mappedIds) ? mappedIds : [mappedIds];
+
+                let allTrades = [];
+                ids.forEach(id => {
+                    // Buscar por coincidencia exacta de string normalizado
+                    const idStr = String(id);
+                    if (tradesById[idStr]) {
+                        allTrades = allTrades.concat(tradesById[idStr]);
+                    }
+                });
+
+                // Calcular Consecutive Losses con todos los trades combinados
+                let maxLosses = 0;
+                let currentLosses = 0;
+                // Ordenar por fecha de cierre ascendente
+                allTrades.sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
+
+                allTrades.forEach(t => {
+                    const profit = parseFloat(t.profit);
+                    if (profit < 0) {
+                        currentLosses++;
+                        if (currentLosses > maxLosses) maxLosses = currentLosses;
+                    } else {
+                        currentLosses = 0;
+                    }
+                });
+
+                strategyBreakdown[strategyId] = {
+                    mappedIds: ids, // Guardamos los IDs mapeados para referencia
+                    tradesCount: allTrades.length,
+                    totalProfit: allTrades.reduce((sum, t) => sum + (t.profit || 0), 0),
+                    maxConsecutiveLosses: maxLosses,
+                    currentConsecutiveLosses: currentLosses
+                };
+            });
+
+            // 3. Calcular estadísticas generales por ID Normalizado (para el Mapper)
+            const magicStats = {};
+            Object.keys(tradesById).forEach(id => {
+                const trades = tradesById[id];
+                // Encontrar el símbolo más frecuente
+                const symbols = {};
+                trades.forEach(t => symbols[t.symbol] = (symbols[t.symbol] || 0) + 1);
+                const topSymbol = Object.keys(symbols).sort((a, b) => symbols[b] - symbols[a])[0];
+
+                magicStats[id] = {
+                    id: id, // ID Normalizado
+                    exampleRaw: tradesById[id]._exampleRaw || id, // Ejemplo original
+                    symbol: topSymbol,
+                    totalProfit: trades.reduce((sum, t) => sum + (t.profit || 0), 0),
+                    tradesCount: trades.length,
+                    lastTradeDate: trades.reduce((max, t) => t.closeDate > max ? t.closeDate : max, '')
+                };
+            });
+
+            // Store real metrics
             portfolio.realMetrics = {
                 lastSync: new Date().toISOString(),
                 tradesCount: data.count,
                 consecutiveLosses: data.metrics.consecutiveLosses,
-                totalProfit: data.history.reduce((sum, t) => sum + (t.profit || 0), 0)
+                maxDrawdown: data.metrics.maxDrawdown,
+                totalProfit: history.reduce((sum, t) => sum + (t.profit || 0), 0),
+                strategyBreakdown: strategyBreakdown,
+                magicStats: magicStats,
+                _tradesById: tradesById // Store raw grouped trades for recalculation
             };
 
             import('../ui.js').then(mod => mod.displaySavedPortfoliosList());
-            import('./notifications.js').then(mod => mod.showToast(`Sync complete for ${portfolio.name}`, 'success'));
+            import('./notifications.js').then(mod => mod.showToast(`Sync complete for ${portfolio.name}...`, 'success'));
 
         } else {
             console.error('[Myfxbook] Sync failed:', data);
-            import('./notifications.js').then(mod => mod.showToast(`Sync failed: ${data.detail}`, 'error'));
+            import('./notifications.js').then(mod => mod.showToast(`Sync failed: ${data.detail} `, 'error'));
+            throw new Error(data.detail);
         }
     } catch (error) {
         console.error('[Myfxbook] Network error during sync:', error);
+        throw error;
+    }
+}
+// Check if we need to re-normalize metrics on load
+export function checkAndRenormalizeMetrics(portfolio) {
+    if (!portfolio.realMetrics || !portfolio.realMetrics.magicStats) return;
+
+    const stats = portfolio.realMetrics.magicStats;
+    const keys = Object.keys(stats);
+
+    // Check for "dirty" keys that should have been cleaned OR missing raw trade data
+    const hasDirtyKeys = keys.some(k =>
+        k.includes('[sl') ||
+        k.includes('[tp') ||
+        /_(\d+|I|Impr)$/.test(k) ||
+        k.length > 50 // Suspiciously long keys
+    );
+
+    const missingRawData = !portfolio.realMetrics._tradesById;
+
+    if (hasDirtyKeys || missingRawData) {
+        console.log('[Myfxbook] Detected dirty IDs or missing raw data. Forcing re-sync/normalization...');
+        fetchLinkedAccountData(portfolio);
     }
 }
 
+// Call this when loading portfolios
+document.addEventListener('DOMContentLoaded', () => {
+    // Wait a bit for state to load
+    setTimeout(() => {
+        if (state.savedPortfolios) {
+            state.savedPortfolios.forEach(p => {
+                if (p.linkedAccountId) {
+                    checkAndRenormalizeMetrics(p);
+                }
+            });
+        }
+    }, 2000);
+});
 function showError(message) {
     const resultDiv = document.getElementById('myfxbook-result');
     if (resultDiv) {
@@ -431,4 +665,55 @@ function showError(message) {
         resultDiv.textContent = message;
         resultDiv.classList.remove('hidden');
     }
+}
+
+export function recalculateStrategyBreakdown(portfolio) {
+    if (!portfolio.realMetrics || !portfolio.realMetrics._tradesById) return;
+
+    const tradesById = portfolio.realMetrics._tradesById;
+    const magicMap = state.magicNumberMap || {};
+    const strategyBreakdown = {};
+
+    console.log('[Myfxbook] Recalculating. Available IDs:', Object.keys(tradesById));
+
+    Object.entries(magicMap).forEach(([strategyId, mappedIds]) => {
+        const ids = Array.isArray(mappedIds) ? mappedIds : [mappedIds];
+        // console.log(`[Myfxbook] Strategy ${strategyId} maps to:`, ids);
+
+        let allTrades = [];
+        ids.forEach(id => {
+            const idStr = String(id);
+            if (tradesById[idStr]) {
+                allTrades = allTrades.concat(tradesById[idStr]);
+            } else {
+                // console.warn(`[Myfxbook] ID ${idStr} not found in tradesById`);
+            }
+        });
+
+        // Recalculate metrics
+        let maxLosses = 0;
+        let currentLosses = 0;
+        allTrades.sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
+
+        allTrades.forEach(t => {
+            const profit = parseFloat(t.profit);
+            if (profit < 0) {
+                currentLosses++;
+                if (currentLosses > maxLosses) maxLosses = currentLosses;
+            } else {
+                currentLosses = 0;
+            }
+        });
+
+        strategyBreakdown[strategyId] = {
+            mappedIds: ids,
+            tradesCount: allTrades.length,
+            totalProfit: allTrades.reduce((sum, t) => sum + (t.profit || 0), 0),
+            maxConsecutiveLosses: maxLosses,
+            currentConsecutiveLosses: currentLosses
+        };
+    });
+
+    portfolio.realMetrics.strategyBreakdown = strategyBreakdown;
+    console.log('[Myfxbook] Strategy breakdown recalculated based on new mapping.');
 }

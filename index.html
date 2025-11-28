@@ -155,7 +155,7 @@
                 <span class="sidebar-tooltip">Análisis & Gráficos</span>
             </button>
 
-            <button id="myfxbook-connect-btn"
+            <button id="nav-monitor"
                 class="sidebar-item relative w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 transition-all"
                 title="Health Monitor">
                 <span class="text-xl">🩺</span>
@@ -181,10 +181,33 @@
     </aside>
 
     <!-- MAIN CONTENT AREA -->
-    <div class="flex-1 flex flex-col min-w-0 bg-gray-900">
+    <div class="flex-1 flex flex-col min-w-0 bg-gray-900 relative">
+
+        <!-- LIVE MONITOR VIEW -->
+        <div id="live-monitor-view" class="hidden absolute inset-0 z-30 flex flex-col bg-gray-900 overflow-hidden">
+            <header
+                class="h-14 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-6 flex-shrink-0">
+                <h1 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>🩺</span> Live Monitor
+                </h1>
+                <div class="flex gap-2">
+                    <button id="monitor-link-btn"
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 transition-colors">
+                        <span>🔗</span> Link Account
+                    </button>
+                    <button id="monitor-refresh-btn"
+                        class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 transition-colors">
+                        <span>🔄</span> Refresh All
+                    </button>
+                </div>
+            </header>
+            <div id="live-monitor-content" class="flex-1 overflow-y-auto bg-gray-900">
+                <!-- Cards go here -->
+            </div>
+        </div>
 
         <!-- TOP BAR (Global Controls & Status) -->
-        <header
+        <header id="main-header"
             class="h-14 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4 flex-shrink-0 z-10">
             <div class="flex items-center gap-4">
                 <h1 class="text-lg font-bold text-sky-400 truncate">Dashboard Comparativo</h1>

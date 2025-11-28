@@ -264,3 +264,46 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
     // Show modal
     modal.classList.remove('hidden');
 };
+
+/**
+ * Loads a portfolio into the strategy selection view (Editor) for modification.
+ * @param {number} portfolioIndex - Index of the portfolio in state.savedPortfolios
+ */
+export const loadPortfolioIntoEditor = (portfolioIndex) => {
+    const portfolio = state.savedPortfolios[portfolioIndex];
+    if (!portfolio) return;
+
+    console.log(`[PortfolioBuilder] Loading portfolio ${portfolio.name} into editor...`);
+
+    // Import dynamically to avoid circular dependencies if possible, or just assume it's available
+    import('./strategiesTable.js').then(({ selectedStrategies, renderStrategiesTable }) => {
+        // 1. Clear current selection
+        selectedStrategies.clear();
+
+        // 2. Select strategies from portfolio
+        // Note: portfolio.indices refers to indices in state.rawStrategiesData (or loadedStrategyFiles)
+        // We assume these indices are still valid. If files were removed/reordered, this might be wrong.
+        // Ideally we should match by ID.
+        if (portfolio.indices) {
+            portfolio.indices.forEach(index => {
+                selectedStrategies.add(index);
+            });
+        }
+
+        // 3. Update Table UI
+        renderStrategiesTable();
+
+        // 4. Switch to Analysis View (Main App)
+        const navAnalysis = document.getElementById('nav-analysis');
+        if (navAnalysis) navAnalysis.click();
+
+        // 5. Switch to Strategies Tab within Analysis View
+        const strategiesTab = document.querySelector('[data-target="strategies-content"]');
+        if (strategiesTab) strategiesTab.click();
+
+        // 6. Notify user
+        import('../modules/notifications.js').then(mod => {
+            mod.showToast(`Loaded "${portfolio.name}" for editing. Select/Deselect strategies and re-analyze.`, 'info');
+        });
+    });
+};

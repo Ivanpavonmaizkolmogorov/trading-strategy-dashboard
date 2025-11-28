@@ -58,4 +58,29 @@ export const state = {
     },
     activeViews: { databank: 'default', saved: 'default' },
     currentEditingViewSet: 'databank', // 'databank' or 'saved'
+
+    // --- NUEVO: Mapeo de Magic Numbers ---
+    magicNumberMap: {}, // { strategyId (or filename): magicNumber }
+};
+
+// Funciones de persistencia para Magic Numbers
+export const loadMagicNumbers = () => {
+    try {
+        const stored = localStorage.getItem('magicNumberMap');
+        if (stored) {
+            state.magicNumberMap = JSON.parse(stored);
+            console.log('[State] Magic Numbers loaded:', Object.keys(state.magicNumberMap).length);
+        }
+    } catch (e) {
+        console.error('[State] Error loading Magic Numbers:', e);
+    }
+};
+
+export const saveMagicNumbers = () => {
+    try {
+        localStorage.setItem('magicNumberMap', JSON.stringify(state.magicNumberMap));
+        console.log('[State] Magic Numbers saved.');
+    } catch (e) {
+        console.error('[State] Error saving Magic Numbers:', e);
+    }
 };

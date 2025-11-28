@@ -759,6 +759,7 @@ async def myfxbook_get_history(request: MyfxbookHistoryRequest):
         
         # Calculate basic metrics on the backend
         losses_data = client.calculate_consecutive_losses(history)
+        dd_data = client.calculate_max_drawdown(history)
         
         client.logout()
         
@@ -768,7 +769,8 @@ async def myfxbook_get_history(request: MyfxbookHistoryRequest):
             "history": history,
             "count": len(history),
             "metrics": {
-                "consecutiveLosses": losses_data
+                "consecutiveLosses": losses_data,
+                "maxDrawdown": dd_data
             }
         }
     except MyfxbookAPIError as e:

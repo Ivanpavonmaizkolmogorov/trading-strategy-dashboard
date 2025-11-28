@@ -1,0 +1,466 @@
+import { state, saveMagicNumbers } from '../state.js';
+import { showToast } from './notifications.js';
+import { renderLiveMonitor } from './liveMonitor.js';
+import { fetchLinkedAccountData, normalizeComment, cleanMetrics, recalculateStrategyBreakdown } from './myfxbookUI.js';
+
+let mapperModal = null;
+let currentPortfolio = null;
+let selectedStrategyId = null;
+let tempMapping = {};
+let searchTerm = '';
+
+export function openMagicMapper(portfolio) {
+    currentPortfolio = portfolio;
+
+    // Ensure metrics are clean before displaying
+    if (cleanMetrics(currentPortfolio)) {
+        showToast('Optimized trade identifiers for better grouping', 'info');
+        // Trigger a save of the portfolios if possible, or just rely on memory for now
+        // Ideally we would emit an event to save
+        document.dispatchEvent(new CustomEvent('requestSavePortfolios'));
+    }
+
+    // Initialize tempMapping from state
+    tempMapping = {};
+    Object.keys(state.magicNumberMap).forEach(key => {
+        const val = state.magicNumberMap[key];
+        tempMapping[key] = Array.isArray(val) ? [...val] : (val ? [String(val)] : []);
+    });
+
+    // Enforce uniqueness on load (clean up existing conflicts)
+    const seenIds = new Set();
+    Object.keys(tempMapping).forEach(stratId => {
+        const ids = tempMapping[stratId];
+        const uniqueIds = [];
+        ids.forEach(id => {
+            if (!seenIds.has(id)) {
+                seenIds.add(id);
+                uniqueIds.push(id);
+            }
+        });
+        tempMapping[stratId] = uniqueIds;
+    });
+
+    if (!mapperModal) {
+        mapperModal = createMapperModal();
+        document.body.appendChild(mapperModal);
+    }
+
+    // Select first strategy by default
+    if (portfolio.indices.length > 0) {
+        const firstStrat = state.loadedStrategyFiles[portfolio.indices[0]];
+        if (firstStrat) {
+            selectedStrategyId = firstStrat.strategyId || firstStrat.name;
+        }
+    }
+
+    searchTerm = '';
+    const searchInput = mapperModal.querySelector('#mapper-search-input');
+    if (searchInput) searchInput.value = '';
+
+    renderMapperContent();
+    mapperModal.classList.remove('hidden');
+}
+
+function closeMapperModal() {
+    if (mapperModal) {
+        mapperModal.classList.add('hidden');
+    }
+}
+
+function createMapperModal() {
+    const modal = document.createElement('div');
+    modal.id = 'magic-mapper-modal';
+    modal.className = 'fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4';
+
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-[95vw] max-w-7xl shadow-2xl h-[85vh] flex flex-col">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-6 border-b border-gray-700">
+                <div>
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                        <span>🔗</span>
+                        <span>Link Strategies to Myfxbook IDs</span>
+                    </h2>
+                    <p class="text-gray-400 text-sm mt-1">Select a strategy on the left, then check the corresponding Myfxbook IDs on the right.</p>
+                </div>
+                <button id="close-mapper-modal" class="text-gray-400 hover:text-white text-3xl">×</button>
+            </div>
+            
+            <!-- Content -->
+            <div class="flex flex-1 overflow-hidden">
+                <!-- Left Column: Strategies -->
+                <div class="w-1/4 border-r border-gray-700 flex flex-col bg-gray-900/30 min-w-[300px]">
+                    <div class="p-3 border-b border-gray-700 font-bold text-gray-400 text-xs uppercase tracking-wider">
+                        Strategies
+                    </div>
+                    <div id="mapper-strategies-list" class="overflow-y-auto flex-1 p-2 space-y-1">
+                        <!-- Strategies list -->
+                    </div>
+                </div>
+
+                <!-- Right Column: Available IDs -->
+                <div class="flex-1 flex flex-col bg-gray-800">
+                    <div class="p-3 border-b border-gray-700 flex justify-between items-center gap-4 bg-gray-800 z-10">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="relative flex-1 max-w-md">
+                                <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">🔍</span>
+                                <input type="text" id="mapper-search-input" 
+                                    class="w-full bg-gray-700 border border-gray-600 rounded-lg pl-9 pr-3 py-1.5 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    placeholder="Search IDs, symbols...">
+                            </div>
+                            <div class="flex gap-2">
+                                <button id="mapper-auto-link-all" class="text-xs text-green-400 hover:text-green-300 font-medium px-2 py-1 rounded hover:bg-gray-700 border border-green-900/50 flex items-center gap-1" title="Automatically link strategies to best matching IDs">
+                                    <span>✨</span> Auto-Link
+                                </button>
+                                <div class="w-px bg-gray-700 mx-1"></div>
+                                <button id="mapper-select-all" class="text-xs text-blue-400 hover:text-blue-300 font-medium px-2 py-1 rounded hover:bg-gray-700">Select All</button>
+                                <button id="mapper-deselect-all" class="text-xs text-gray-400 hover:text-gray-300 font-medium px-2 py-1 rounded hover:bg-gray-700">Deselect All</button>
+                            </div>
+                        </div>
+                        <span class="text-xs font-normal text-gray-500">Sorted by Similarity & Trades</span>
+                    </div>
+                    
+                    <div id="mapper-ids-list" class="overflow-y-auto flex-1 p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 content-start">
+                        <!-- IDs grid -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div class="p-6 border-t border-gray-700 flex justify-end gap-3 bg-gray-800/50">
+                <button id="cancel-mapper-btn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-semibold transition-colors">
+                    Cancel
+                </button>
+                <button id="save-mapper-btn" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-lg shadow-blue-900/20 transition-all transform hover:scale-105">
+                    Save Mappings
+                </button>
+            </div>
+        </div>
+    `;
+
+    modal.querySelector('#close-mapper-modal').onclick = closeMapperModal;
+    modal.querySelector('#cancel-mapper-btn').onclick = closeMapperModal;
+
+    modal.querySelector('#save-mapper-btn').onclick = () => {
+        state.magicNumberMap = JSON.parse(JSON.stringify(tempMapping));
+        saveMagicNumbers();
+
+        // Recalculate metrics based on new mapping
+        recalculateStrategyBreakdown(currentPortfolio);
+
+        showToast('Mappings saved successfully', 'success');
+        renderLiveMonitor();
+        closeMapperModal();
+    };
+
+    const searchInput = modal.querySelector('#mapper-search-input');
+    searchInput.addEventListener('input', (e) => {
+        searchTerm = e.target.value.toLowerCase();
+        renderIdsList();
+    });
+
+    modal.querySelector('#mapper-auto-link-all').onclick = () => {
+        const magicStats = currentPortfolio.realMetrics?.magicStats || {};
+        const potentialMatches = [];
+
+        // 1. Find all potential matches
+        currentPortfolio.indices.forEach(idx => {
+            const strategy = state.loadedStrategyFiles[idx];
+            if (!strategy) return;
+
+            const strategyId = strategy.strategyId || strategy.name;
+            const strategyName = strategy.name;
+
+            Object.values(magicStats).forEach(stat => {
+                const score = calculateSimilarity(strategyName, String(stat.id));
+                if (score > 0.6) {
+                    potentialMatches.push({ strategyId, id: String(stat.id), score });
+                }
+            });
+        });
+
+        // 2. Sort by score descending to prioritize best matches
+        potentialMatches.sort((a, b) => b.score - a.score);
+
+        // 3. Assign exclusively (First-Come-First-Served based on score)
+        // We respect existing mappings, so we first mark currently mapped IDs as taken
+        const assignedIds = new Set();
+        Object.values(tempMapping).forEach(ids => {
+            if (Array.isArray(ids)) {
+                ids.forEach(id => assignedIds.add(id));
+            }
+        });
+
+        let linkedCount = 0;
+        potentialMatches.forEach(match => {
+            if (!assignedIds.has(match.id)) {
+                if (!tempMapping[match.strategyId]) tempMapping[match.strategyId] = [];
+                // Double check if we are not adding duplicates (though Set handles it)
+                if (!tempMapping[match.strategyId].includes(match.id)) {
+                    tempMapping[match.strategyId].push(match.id);
+                    assignedIds.add(match.id);
+                    linkedCount++;
+                }
+            }
+        });
+
+        renderMapperContent();
+        if (linkedCount > 0) {
+            showToast(`Auto-linked ${linkedCount} strategies based on name similarity`, 'success');
+        } else {
+            showToast('No new high-confidence matches found', 'info');
+        }
+    };
+
+    modal.querySelector('#mapper-select-all').onclick = () => {
+        if (!selectedStrategyId) return;
+        const visibleIds = getVisibleIds();
+        if (!tempMapping[selectedStrategyId]) tempMapping[selectedStrategyId] = [];
+
+        visibleIds.forEach(stat => {
+            const idStr = String(stat.id);
+            if (!tempMapping[selectedStrategyId].includes(idStr)) {
+                tempMapping[selectedStrategyId].push(idStr);
+            }
+        });
+        renderMapperContent();
+    };
+
+    modal.querySelector('#mapper-deselect-all').onclick = () => {
+        if (!selectedStrategyId || !tempMapping[selectedStrategyId]) return;
+        const visibleIds = getVisibleIds().map(s => String(s.id));
+
+        tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(id => !visibleIds.includes(id));
+        renderMapperContent();
+    };
+
+    modal.onclick = (e) => {
+        if (e.target === modal) closeMapperModal();
+    };
+
+    return modal;
+}
+
+// Helper: Calculate similarity between two strings (0 to 1)
+function calculateSimilarity(s1, s2) {
+    const longer = s1.length > s2.length ? s1 : s2;
+    const shorter = s1.length > s2.length ? s2 : s1;
+    if (longer.length === 0) return 1.0;
+
+    const editDistance = (s1, s2) => {
+        s1 = s1.toLowerCase();
+        s2 = s2.toLowerCase();
+        const costs = new Array();
+        for (let i = 0; i <= s1.length; i++) {
+            let lastValue = i;
+            for (let j = 0; j <= s2.length; j++) {
+                if (i == 0) costs[j] = j;
+                else {
+                    if (j > 0) {
+                        let newValue = costs[j - 1];
+                        if (s1.charAt(i - 1) != s2.charAt(j - 1))
+                            newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                        costs[j - 1] = lastValue;
+                        lastValue = newValue;
+                    }
+                }
+            }
+            if (i > 0) costs[s2.length] = lastValue;
+        }
+        return costs[s2.length];
+    }
+
+    return (longer.length - editDistance(longer, shorter)) / longer.length;
+}
+
+function getVisibleIds() {
+    const magicStats = currentPortfolio.realMetrics?.magicStats || {};
+    let availableIds = Object.values(magicStats);
+
+    // Filter by search term
+    if (searchTerm) {
+        availableIds = availableIds.filter(stat =>
+            String(stat.id).toLowerCase().includes(searchTerm) ||
+            String(stat.symbol).toLowerCase().includes(searchTerm)
+        );
+    }
+
+    // Sort by similarity to selected strategy if available
+    if (selectedStrategyId) {
+        // Find strategy name
+        const strategyIdx = currentPortfolio.indices.find(idx => {
+            const s = state.loadedStrategyFiles[idx];
+            return (s.strategyId || s.name) === selectedStrategyId;
+        });
+        const strategyName = strategyIdx ? state.loadedStrategyFiles[strategyIdx].name : '';
+
+        availableIds.sort((a, b) => {
+            const simA = calculateSimilarity(strategyName, String(a.id));
+            const simB = calculateSimilarity(strategyName, String(b.id));
+            // Sort descending by similarity
+            if (Math.abs(simA - simB) > 0.1) return simB - simA;
+            // Fallback to trade count
+            return b.tradesCount - a.tradesCount;
+        });
+
+        // Add similarity score to objects for highlighting
+        availableIds.forEach(stat => {
+            stat._similarity = calculateSimilarity(strategyName, String(stat.id));
+        });
+    } else {
+        // Default sort by trade count
+        availableIds.sort((a, b) => b.tradesCount - a.tradesCount);
+    }
+
+    return availableIds;
+}
+
+function renderIdsList() {
+    const idsList = mapperModal.querySelector('#mapper-ids-list');
+    idsList.innerHTML = '';
+
+    if (!selectedStrategyId) {
+        idsList.innerHTML = `
+            <div class="col-span-full text-center py-10 text-gray-500">
+                <p>Select a strategy on the left to start mapping.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const availableIds = getVisibleIds();
+
+    if (availableIds.length === 0) {
+        idsList.innerHTML = `
+            <div class="col-span-full text-center py-10 text-gray-500">
+                <div class="text-4xl mb-4">📭</div>
+                <h3 class="text-xl font-bold text-gray-300">No IDs Found</h3>
+                <p>${searchTerm ? 'Try a different search term.' : 'Sync your Myfxbook account first.'}</p>
+            </div>
+        `;
+        return;
+    }
+
+    const currentMappedIds = tempMapping[selectedStrategyId] || [];
+
+    availableIds.forEach(stat => {
+        const idStr = String(stat.id);
+        const isChecked = currentMappedIds.includes(idStr);
+        const isRecommended = stat._similarity > 0.6; // Threshold for recommendation
+
+        // Check if this ID is owned by another strategy
+        let ownerStrategyId = null;
+        let ownerName = null;
+
+        if (!isChecked) {
+            ownerStrategyId = Object.keys(tempMapping).find(sId =>
+                sId !== selectedStrategyId &&
+                tempMapping[sId] &&
+                tempMapping[sId].includes(idStr)
+            );
+
+            if (ownerStrategyId) {
+                // Find name
+                const strategyIdx = currentPortfolio.indices.find(idx => {
+                    const s = state.loadedStrategyFiles[idx];
+                    return (s.strategyId || s.name) === ownerStrategyId;
+                });
+                ownerName = strategyIdx !== undefined ? state.loadedStrategyFiles[strategyIdx].name : ownerStrategyId;
+            }
+        }
+
+        const label = document.createElement('label');
+        // Add visual indication if owned by another (e.g., opacity, or different border)
+        const isOwnedByOther = !!ownerName;
+
+        label.className = `flex flex-col bg-gray-700/30 border border-gray-600 rounded-lg p-3 hover:bg-gray-700/50 transition-colors cursor-pointer h-full relative 
+            ${isChecked ? 'border-blue-500 bg-blue-900/10 ring-1 ring-blue-500/50' : ''} 
+            ${isRecommended && !isChecked && !isOwnedByOther ? 'border-green-500/50 bg-green-900/10' : ''}
+            ${isOwnedByOther ? 'opacity-75 border-dashed border-gray-600' : ''}`;
+
+        label.innerHTML = `
+            <div class="flex items-start gap-3 mb-2">
+                <input type="checkbox" class="mt-1 form-checkbox h-4 w-4 text-blue-600 rounded border-gray-500 bg-gray-700 focus:ring-blue-500 focus:ring-offset-gray-800" ${isChecked ? 'checked' : ''}>
+                <div class="min-w-0 flex-1">
+                    <div class="flex justify-between items-start">
+                        <div class="font-mono text-xs font-bold text-white break-words leading-tight" title="${stat.exampleRaw || stat.id}">${stat.id}</div>
+                        ${isRecommended && !isOwnedByOther ? '<span class="text-[10px] bg-green-900 text-green-300 px-1 rounded border border-green-700 ml-1">Match</span>' : ''}
+                        ${isOwnedByOther ? `<span class="text-[10px] bg-gray-700 text-gray-300 px-1 rounded border border-gray-600 ml-1 truncate max-w-[80px]" title="Linked to: ${ownerName}">Linked: ${ownerName}</span>` : ''}
+                    </div>
+                </div>
+            </div>
+            <div class="mt-auto pt-2 border-t border-gray-600/50 flex justify-between items-center text-xs text-gray-400">
+                <span class="font-medium text-gray-300">${stat.symbol}</span>
+                <div class="flex gap-2">
+                    <span class="${stat.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'} font-mono">$${stat.totalProfit.toFixed(0)}</span>
+                    <span class="bg-gray-700 px-1.5 rounded text-[10px]">${stat.tradesCount}</span>
+                </div>
+            </div>
+        `;
+
+        const checkbox = label.querySelector('input');
+        checkbox.onchange = (e) => {
+            if (e.target.checked) {
+                // Steal from others
+                Object.keys(tempMapping).forEach(sId => {
+                    if (sId !== selectedStrategyId && tempMapping[sId]) {
+                        if (tempMapping[sId].includes(idStr)) {
+                            tempMapping[sId] = tempMapping[sId].filter(id => id !== idStr);
+                        }
+                    }
+                });
+
+                if (!tempMapping[selectedStrategyId]) tempMapping[selectedStrategyId] = [];
+                if (!tempMapping[selectedStrategyId].includes(idStr)) {
+                    tempMapping[selectedStrategyId].push(idStr);
+                }
+            } else {
+                if (tempMapping[selectedStrategyId]) {
+                    tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(id => id !== idStr);
+                }
+            }
+            // Re-render to update "Linked to..." status on other items if needed, 
+            // and update strategy counts
+            renderStrategiesList();
+            renderIdsList();
+        };
+
+        idsList.appendChild(label);
+    });
+}
+
+function renderStrategiesList() {
+    const strategiesList = mapperModal.querySelector('#mapper-strategies-list');
+    strategiesList.innerHTML = '';
+
+    currentPortfolio.indices.forEach(idx => {
+        const strategy = state.loadedStrategyFiles[idx];
+        if (!strategy) return;
+
+        const strategyId = strategy.strategyId || strategy.name;
+        const mappedIds = tempMapping[strategyId] || [];
+        const isSelected = strategyId === selectedStrategyId;
+
+        const div = document.createElement('div');
+        div.className = `p-3 rounded-lg cursor-pointer transition-colors flex flex-col gap-1 border border-transparent ${isSelected ? 'bg-blue-600 text-white border-blue-400 shadow-lg' : 'hover:bg-gray-700 text-gray-300 border-gray-700/50'}`;
+        div.innerHTML = `
+            <div class="font-medium text-sm leading-tight break-words">${strategy.name}</div>
+            <div class="flex justify-between items-center mt-1">
+                <span class="text-xs opacity-70">${strategy.symbol || 'Unknown'}</span>
+                ${mappedIds.length > 0 ? `<span class="text-xs bg-black/30 px-2 py-0.5 rounded-full font-mono">${mappedIds.length} linked</span>` : ''}
+            </div>
+        `;
+        div.onclick = () => {
+            selectedStrategyId = strategyId;
+            renderStrategiesList();
+            renderIdsList();
+        };
+        strategiesList.appendChild(div);
+    });
+}
+
+function renderMapperContent() {
+    renderStrategiesList();
+    renderIdsList();
+}

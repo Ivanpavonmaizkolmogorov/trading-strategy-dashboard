@@ -259,3 +259,44 @@ class MyfxbookClient:
         print(f"[Myfxbook] Current streak: {current_consecutive if last_was_loss else 0}")
         
         return result
+
+    def calculate_max_drawdown(self, trades: List[Dict]) -> Dict:
+        """
+        Calculate Max Drawdown in Dollars from trade history.
+        
+        Args:
+            trades: List of trade dictionaries
+            
+        Returns:
+            Dictionary with:
+            - maxDrawdownDollars: Maximum peak-to-valley drop in currency
+        """
+        print(f"[Myfxbook] Calculating Max Drawdown from {len(trades)} trades")
+        
+        if not trades:
+            return {"maxDrawdownDollars": 0.0}
+            
+        # Sort by close date
+        sorted_trades = sorted(trades, key=lambda x: x.get("closeDate", ""))
+        
+        equity = 0.0
+        max_equity = 0.0
+        max_dd_dollars = 0.0
+        
+        for trade in sorted_trades:
+            # Profit includes swap and commission for accurate equity
+            profit = float(trade.get("profit", 0)) + float(trade.get("swap", 0)) + float(trade.get("commission", 0))
+            equity += profit
+            
+            if equity > max_equity:
+                max_equity = equity
+            
+            drawdown = max_equity - equity
+            if drawdown > max_dd_dollars:
+                max_dd_dollars = drawdown
+                
+        print(f"[Myfxbook] Max Drawdown ($): {max_dd_dollars}")
+        
+        return {
+            "maxDrawdownDollars": max_dd_dollars
+        }

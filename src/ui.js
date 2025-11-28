@@ -574,15 +574,19 @@ export const displaySavedPortfoliosList = () => {
 
         if (hasRealMetrics) {
             if (p.realMetrics) {
-                const realProfit = p.realMetrics.totalProfit || 0;
-                const backtestProfit = p.metrics.totalProfit || 0;
-                const diff = realProfit - backtestProfit;
-                const color = diff >= 0 ? 'text-emerald-400' : 'text-red-400';
+                const realConsLoss = p.realMetrics.consecutiveLosses?.maxConsecutiveLosses || 0;
+                const backtestConsLoss = p.metrics.maxConsecutiveLosses || 0;
+
+                // Colors: Green if Real <= Backtest, Red if Real > Backtest
+                const consLossColor = realConsLoss <= backtestConsLoss ? 'text-emerald-400' : 'text-red-400';
 
                 rowHTML += `<td class="px-4 py-3 text-center">
-                    <div class="flex flex-col items-center">
-                        <div class="text-xs font-bold ${color}">$${realProfit.toFixed(0)}</div>
-                        <div class="text-[10px] text-gray-500">vs $${backtestProfit.toFixed(0)}</div>
+                    <div class="flex flex-col gap-1 text-xs w-32 mx-auto bg-gray-800/50 p-2 rounded border border-gray-700">
+                        <div class="flex justify-between gap-2">
+                            <span class="text-gray-400 w-16 text-left">Cons.L:</span>
+                            <span class="${consLossColor} font-bold w-8 text-right">${realConsLoss}</span>
+                            <span class="text-gray-500 w-8 text-right">(${backtestConsLoss})</span>
+                        </div>
                     </div>
                 </td>`;
             } else {

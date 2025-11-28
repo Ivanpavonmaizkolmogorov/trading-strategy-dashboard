@@ -1,4 +1,4 @@
-import { state } from '../state.js';
+import { state, saveMagicNumbers } from '../state.js';
 import { formatMetricForDisplay } from '../utils.js';
 import { focusMode } from './focusMode.js';
 import { CustomizableTable } from './tableEngine.js';
@@ -23,19 +23,20 @@ const AVAILABLE_COLUMNS = [
     { id: 'sqn', label: 'SQN', minWidth: 80 },
     { id: 'maxDrawdown', label: 'Max DD %', minWidth: 100 }, // Extra but useful
     { id: 'cagr', label: 'CAGR %', minWidth: 80 },
-    { id: 'avgTrade', label: 'Avg Trade', minWidth: 100 }
+    { id: 'avgTrade', label: 'Avg Trade', minWidth: 100 },
+    { id: 'maxConsecutiveLosses', label: 'Max Cons. Losses', minWidth: 100 }
 ];
 
 // Default configuration
 const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn'],
+    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn', 'maxConsecutiveLosses'],
     columnWidths: {}
 };
 
 // Create table instance
 const strategiesTable = new CustomizableTable({
     id: 'strategies',
-    storageKey: 'strategiesTableConfig_v5', // Force reset for new columns
+    storageKey: 'strategiesTableConfig_v7', // Force reset for new columns
     columns: AVAILABLE_COLUMNS,
     defaultConfig: DEFAULT_CONFIG,
     containerId: 'strategies-content',

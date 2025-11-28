@@ -8,8 +8,9 @@ import { openViewManager, closeViewManager, applyView, saveView, deleteView } fr
 import { exportAnalysis, importAnalysis } from './modules/importExport.js';
 import { showToast } from './modules/notifications.js';
 import { initializeLayout } from './modules/layout.js'; // <-- NUEVO
-import { initMyfxbookUI } from './modules/myfxbookUI.js'; // <-- MYFXBOOK
+import { initMyfxbookUI, openMyfxbookModal } from './modules/myfxbookUI.js'; // <-- MYFXBOOK
 import { generateStrategyId } from './utils.js'; // <-- ID GENERATOR
+import { initLiveMonitor, renderLiveMonitor } from './modules/liveMonitor.js'; // <-- LIVE MONITOR
 
 export function initializeEventListeners() {
     // Inicializar el nuevo Layout (Sidebar, Tabs, Resizer)
@@ -17,6 +18,47 @@ export function initializeEventListeners() {
 
     // Inicializar Myfxbook UI
     initMyfxbookUI();
+
+    // --- Live Monitor Navigation ---
+    initLiveMonitor();
+
+    const navMonitor = document.getElementById('nav-monitor');
+    const liveMonitorView = document.getElementById('live-monitor-view');
+    const mainHeader = document.getElementById('main-header');
+    const mainContent = document.querySelector('main');
+
+    if (navMonitor && liveMonitorView) {
+        navMonitor.addEventListener('click', () => {
+            // Switch View
+            document.querySelectorAll('.sidebar-item').forEach(btn => btn.classList.remove('active'));
+            navMonitor.classList.add('active');
+
+            // Hide Main App
+            if (mainHeader) mainHeader.classList.add('hidden');
+            if (mainContent) mainContent.classList.add('hidden');
+
+            // Show Monitor
+            liveMonitorView.classList.remove('hidden');
+            renderLiveMonitor();
+        });
+    }
+
+    // Restore Main View
+    const restoreMainView = (activeBtnId) => {
+        document.querySelectorAll('.sidebar-item').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(activeBtnId)?.classList.add('active');
+
+        if (mainHeader) mainHeader.classList.remove('hidden');
+        if (mainContent) mainContent.classList.remove('hidden');
+        liveMonitorView?.classList.add('hidden');
+    };
+
+    document.getElementById('nav-analysis')?.addEventListener('click', () => restoreMainView('nav-analysis'));
+    document.getElementById('nav-config')?.addEventListener('click', () => restoreMainView('nav-config'));
+
+    // Monitor Actions
+    document.getElementById('monitor-link-btn')?.addEventListener('click', openMyfxbookModal);
+    document.getElementById('monitor-refresh-btn')?.addEventListener('click', renderLiveMonitor);
 
     // --- Controles Principales ---
     dom.analyzeBtn.addEventListener('click', runAnalysis);
