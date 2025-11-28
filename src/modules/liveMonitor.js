@@ -92,6 +92,30 @@ function createMonitorCard(portfolio) {
 
     card.className = `bg-gray-800 rounded-xl border ${borderColor} shadow-lg overflow-hidden flex flex-col transition-transform hover:scale-[1.02] duration-200 relative`;
 
+    const realMaxDD = portfolio.realMetrics?.maxDrawdown?.maxDrawdownDollars || 0;
+    const limitDD = portfolio.metrics?.maxDrawdownInDollars || 0;
+
+    // Current Drawdown from Account Info (if available)
+    // Myfxbook 'drawdown' field is usually a percentage. 'equity' and 'balance' are absolute.
+    // Let's calculate $ DD if possible, or use the % if that's what we have.
+    // Actually, user asked for "DD current" and "percentage that divides current / historical".
+    // If historical is $, we need current in $.
+    // Myfxbook account info usually has: balance, equity, drawdown (%), profit, etc.
+    // Current DD ($) = Balance - Equity (roughly, if Equity < Balance)
+    const accountInfo = portfolio.realMetrics?.currentAccountStatus;
+    let currentDD = 0;
+    if (accountInfo) {
+        const balance = parseFloat(accountInfo.balance || 0);
+        const equity = parseFloat(accountInfo.equity || 0);
+        if (balance > equity) {
+            currentDD = balance - equity;
+        }
+    }
+
+    // Degradation: Current DD ($) / Max Historical DD ($)
+    // If Max Historical DD is 0, avoid division by zero.
+    const degradation = realMaxDD > 0 ? (currentDD / realMaxDD) * 100 : 0;
+
     card.innerHTML = `
         <div class="p-5 flex-1">
             <div class="flex justify-between items-start mb-4">
@@ -108,17 +132,44 @@ function createMonitorCard(portfolio) {
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 mb-6">
-                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Real Max</div>
-                    <div class="text-2xl font-bold text-white">${realMax}</div>
-                    <div class="text-[10px] text-gray-500">Losses</div>
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <!-- Consecutive Losses -->
+                <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-700 text-center" title="Maximum Consecutive Losses in Closed Trades History">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Max Loss (Real)</div>
+                    <div class="text-xl font-bold text-white">${realMax}</div>
+                    <div class="text-[9px] text-gray-500">Trades</div>
                 </div>
-                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center relative overflow-hidden">
+                <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-700 text-center relative overflow-hidden" title="Max Consecutive Losses allowed by Backtest">
                     <div class="absolute inset-0 bg-gradient-to-br from-blue-900/10 to-transparent"></div>
-                    <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Limit (Backtest)</div>
-                    <div class="text-2xl font-bold text-blue-400">${limit}</div>
-                    <div class="text-[10px] text-gray-500">Losses</div>
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Max Loss (Limit)</div>
+                    <div class="text-xl font-bold text-blue-400">${limit}</div>
+                    <div class="text-[9px] text-gray-500">Trades</div>
+                </div>
+
+                <!-- Drawdown -->
+                <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-700 text-center" title="Maximum Drawdown in Closed Trades History ($)">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Max DD (Real)</div>
+                    <div class="text-xl font-bold text-white">$${realMaxDD.toFixed(0)}</div>
+                    <div class="text-[9px] text-gray-500">Closed</div>
+                </div>
+                <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-700 text-center relative overflow-hidden" title="Max Drawdown allowed by Backtest ($)">
+                    <div class="absolute inset-0 bg-gradient-to-br from-blue-900/10 to-transparent"></div>
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Max DD (Limit)</div>
+                    <div class="text-xl font-bold text-blue-400">$${limitDD.toFixed(0)}</div>
+                    <div class="text-[9px] text-gray-500">Backtest</div>
+                </div>
+
+                <!-- Current Drawdown & Degradation -->
+                <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-700 text-center" title="Current Open Drawdown (from Myfxbook)">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Current DD</div>
+                    <div class="text-xl font-bold ${currentDD > 0 ? 'text-red-400' : 'text-emerald-400'}">$${currentDD.toFixed(0)}</div>
+                    <div class="text-[9px] text-gray-500">Open</div>
+                </div>
+                <div class="bg-gray-900/50 p-2 rounded-lg border border-gray-700 text-center relative overflow-hidden" title="Degradation: Current DD / Max Historical DD">
+                    <div class="absolute inset-0 bg-gradient-to-br from-purple-900/10 to-transparent"></div>
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Degradation</div>
+                    <div class="text-xl font-bold ${degradation > 80 ? 'text-red-500 animate-pulse' : (degradation > 50 ? 'text-orange-400' : 'text-purple-400')}">${degradation.toFixed(1)}%</div>
+                    <div class="text-[9px] text-gray-500">of Max DD</div>
                 </div>
             </div>
             
@@ -126,7 +177,7 @@ function createMonitorCard(portfolio) {
             <div class="bg-gray-900/30 rounded-lg p-3 mb-4 border border-gray-700/50">
                 <div class="text-[10px] uppercase text-gray-500 font-bold mb-2 flex justify-between items-end">
                     <span>Strategy Breakdown</span>
-                    <span class="text-[9px] text-gray-600 font-normal" title="Current Streak (Real Max) vs Backtest Limit">Real (Curr/Max) vs Backtest</span>
+                    <span class="text-[9px] text-gray-600 font-normal cursor-help" title="Current Streak / Max Allowed (Backtest)">Real (Curr/Max) vs Backtest ℹ️</span>
                 </div>
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-x-3 gap-y-1 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
                     ${(() => {
@@ -165,12 +216,11 @@ function createMonitorCard(portfolio) {
                     });
                 }
                 if (!metrics) {
-                    console.warn(`[LiveMonitor] No Real Metrics for ${strategy.name} (Magic: ${magicNum})`);
+                    // console.warn(`[LiveMonitor] No Real Metrics for ${strategy.name} (Magic: ${magicNum})`);
                 }
-                // END DEBUG
-
                 const currentStreak = metrics?.currentConsecutiveLosses || 0;
                 const realMax = metrics?.maxConsecutiveLosses || 0;
+                const realMaxDD = metrics?.maxDrawdown || 0;
 
                 const percentage = backtestLimit > 0 ? (currentStreak / backtestLimit) * 100 : 0;
 
@@ -181,6 +231,7 @@ function createMonitorCard(portfolio) {
                     backtestLimit,
                     currentStreak,
                     realMax,
+                    realMaxDD,
                     percentage
                 };
             }).filter(Boolean);
@@ -194,7 +245,7 @@ function createMonitorCard(portfolio) {
             }
 
             return strategyData.map(item => {
-                const { strategy, magicNum, backtestLimit, currentStreak, realMax, percentage } = item;
+                const { strategy, magicNum, backtestLimit, currentStreak, realMax, realMaxDD, percentage } = item;
                 const cappedPercentage = Math.min(percentage, 100);
 
                 let barColor = 'bg-emerald-500';
@@ -205,8 +256,8 @@ function createMonitorCard(portfolio) {
                 return `
                                 <div class="py-2 border-b border-gray-700/50 last:border-0 hover:bg-gray-700/20 px-1 rounded transition-colors">
                                     <div class="flex justify-between items-center text-xs mb-1">
-                                        <span class="text-gray-300 truncate w-32 font-medium" title="${strategy.name}">${strategy.name.replace('.csv', '')}</span>
-                                        <div class="flex items-center gap-1 font-mono">
+                                        <span class="text-gray-300 truncate flex-1 min-w-0 font-medium mr-2" title="${strategy.name}">${strategy.name.replace('.csv', '')}</span>
+                                        <div class="flex items-center gap-1 font-mono shrink-0">
                                             <span class="${percentage >= 80 ? 'text-red-400 font-bold' : 'text-gray-400'}">${currentStreak}</span>
                                             <span class="text-gray-600">/</span>
                                             <span class="text-gray-500">${backtestLimit}</span>
@@ -217,7 +268,10 @@ function createMonitorCard(portfolio) {
                                     </div>
                                     <div class="flex justify-between mt-1">
                                         <span class="text-[9px] text-gray-600 truncate max-w-[80px]" title="Magic: ${magicNum}">#${magicNum}</span>
-                                        <span class="text-[9px] text-gray-600" title="Max Consecutive Losses seen in Real Trading">Max Real: ${realMax}</span>
+                                        <div class="flex gap-2">
+                                            <span class="text-[9px] text-gray-600 cursor-help" title="Max Consecutive Losses seen in Real Trading (Closed Trades)">Max Loss (Closed): ${realMax}</span>
+                                            <span class="text-[9px] text-gray-600 cursor-help" title="Max Drawdown seen in Real Trading (Closed Trades)">Max DD (Closed): $${realMaxDD.toFixed(0)}</span>
+                                        </div>
                                     </div>
                                 </div>
                             `;
@@ -238,18 +292,18 @@ function createMonitorCard(portfolio) {
             </div>
         </div>
 
-    <div class="bg-gray-900/80 p-3 border-t border-gray-700 flex gap-2">
-        <button class="sync-btn flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold py-2 px-3 rounded transition-colors flex items-center justify-center gap-2" data-id="${portfolio.id}" title="Sync Account History">
-            <span>🔄</span> Sync
-        </button>
-        <button class="map-btn flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded transition-colors flex items-center justify-center gap-2" data-id="${portfolio.id}" title="Link Strategies to Magic Numbers">
-            <span>🔗</span> Map
-        </button>
-        <button class="repair-btn flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3 rounded transition-colors flex items-center justify-center gap-2" data-id="${portfolio.id}" title="Repair Portfolio">
-            <span>🛠️</span> Repair
-        </button>
-    </div>
-`;
+        <div class="bg-gray-900/80 p-3 border-t border-gray-700 flex gap-2">
+            <button class="sync-btn flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold py-2 px-3 rounded transition-colors flex items-center justify-center gap-2" data-id="${portfolio.id}" title="Sync Account History">
+                <span>🔄</span> Sync
+            </button>
+            <button class="map-btn flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded transition-colors flex items-center justify-center gap-2" data-id="${portfolio.id}" title="Link Strategies to Magic Numbers">
+                <span>🔗</span> Map
+            </button>
+            <button class="repair-btn flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3 rounded transition-colors flex items-center justify-center gap-2" data-id="${portfolio.id}" title="Repair Portfolio">
+                <span>🛠️</span> Repair
+            </button>
+        </div>
+    `;
 
     // Event Listeners
     const syncBtn = card.querySelector('.sync-btn');
@@ -297,7 +351,7 @@ function createMonitorCard(portfolio) {
 
 function renderEmptyState(container) {
     container.innerHTML = `
-    <div class="flex flex-col items-center justify-center h-full text-gray-500 p-10">
+        <div class="flex flex-col items-center justify-center h-full text-gray-500 p-10">
             <div class="text-6xl mb-4">📡</div>
             <h3 class="text-xl font-bold text-gray-300 mb-2">No Monitored Accounts</h3>
             <p class="text-center max-w-md mb-6">Link your Myfxbook accounts to your portfolios to start monitoring their health here.</p>
@@ -305,7 +359,7 @@ function renderEmptyState(container) {
                 Go to Saved Portfolios
             </button>
         </div>
-    `;
+        `;
 }
 
 function calculateMaxConsecutiveLosses(trades) {

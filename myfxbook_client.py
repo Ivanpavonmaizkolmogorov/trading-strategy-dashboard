@@ -154,6 +154,21 @@ class MyfxbookClient:
             
         except requests.RequestException as e:
             raise MyfxbookAPIError(f"Network error: {str(e)}")
+
+    def get_account_info(self, account_id: int) -> Optional[Dict]:
+        """
+        Get current status for a specific account.
+        Uses get_my_accounts and filters by ID.
+        """
+        try:
+            accounts = self.get_my_accounts()
+            for acc in accounts:
+                if str(acc.get("id")) == str(account_id):
+                    return acc
+            return None
+        except Exception as e:
+            print(f"[Myfxbook] Error fetching account info: {e}")
+            return None
     
     def get_history(self, account_id: int) -> List[Dict]:
         """

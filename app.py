@@ -761,6 +761,9 @@ async def myfxbook_get_history(request: MyfxbookHistoryRequest):
         losses_data = client.calculate_consecutive_losses(history)
         dd_data = client.calculate_max_drawdown(history)
         
+        # Fetch current account status (for Current DD)
+        account_info = client.get_account_info(request.account_id)
+        
         client.logout()
         
         return {
@@ -771,7 +774,8 @@ async def myfxbook_get_history(request: MyfxbookHistoryRequest):
             "metrics": {
                 "consecutiveLosses": losses_data,
                 "maxDrawdown": dd_data
-            }
+            },
+            "accountInfo": account_info
         }
     except MyfxbookAPIError as e:
         return JSONResponse(status_code=400, content={"success": False, "detail": str(e)})

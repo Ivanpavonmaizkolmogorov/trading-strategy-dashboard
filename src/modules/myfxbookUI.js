@@ -526,9 +526,9 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
                     const isNumeric = /^\d+$/.test(idStr);
                     const normalizedId = isNumeric ? idStr : normalizeComment(idStr);
 
-                    if (history.length < 50) { // Log first few for debug
-                        console.log(`[Myfxbook] Norm: "${idStr}" -> "${normalizedId}"`);
-                    }
+                    // if (history.length < 50) { // Log first few for debug
+                    //     console.log(`[Myfxbook] Norm: "${idStr}" -> "${normalizedId}"`);
+                    // }
 
                     if (!tradesById[normalizedId]) {
                         tradesById[normalizedId] = [];
@@ -539,46 +539,7 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
                 }
             });
 
-            // 2. Calcular métricas para cada estrategia mapeada
-            Object.entries(magicMap).forEach(([strategyId, mappedIds]) => {
-                // Soportar tanto string único (legacy) como array de strings (nuevo)
-                const ids = Array.isArray(mappedIds) ? mappedIds : [mappedIds];
-
-                let allTrades = [];
-                ids.forEach(id => {
-                    // Buscar por coincidencia exacta de string normalizado
-                    const idStr = String(id);
-                    if (tradesById[idStr]) {
-                        allTrades = allTrades.concat(tradesById[idStr]);
-                    }
-                });
-
-                // Calcular Consecutive Losses con todos los trades combinados
-                let maxLosses = 0;
-                let currentLosses = 0;
-                // Ordenar por fecha de cierre ascendente
-                allTrades.sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
-
-                allTrades.forEach(t => {
-                    const profit = parseFloat(t.profit);
-                    if (profit < 0) {
-                        currentLosses++;
-                        if (currentLosses > maxLosses) maxLosses = currentLosses;
-                    } else {
-                        currentLosses = 0;
-                    }
-                });
-
-                strategyBreakdown[strategyId] = {
-                    mappedIds: ids, // Guardamos los IDs mapeados para referencia
-                    tradesCount: allTrades.length,
-                    totalProfit: allTrades.reduce((sum, t) => sum + (t.profit || 0), 0),
-                    maxConsecutiveLosses: maxLosses,
-                    currentConsecutiveLosses: currentLosses
-                };
-            });
-
-            // 3. Calcular estadísticas generales por ID Normalizado (para el Mapper)
+            // 2. Calcular estadísticas generales por ID Normalizado (para el Mapper)
             const magicStats = {};
             Object.keys(tradesById).forEach(id => {
                 const trades = tradesById[id];
@@ -603,11 +564,21 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
                 tradesCount: data.count,
                 consecutiveLosses: data.metrics.consecutiveLosses,
                 maxDrawdown: data.metrics.maxDrawdown,
+                currentAccountStatus: data.accountInfo, // Store current account status (DD, Equity, etc.)
                 totalProfit: history.reduce((sum, t) => sum + (t.profit || 0), 0),
-                strategyBreakdown: strategyBreakdown,
+                strategyBreakdown: {}, // Will be populated by recalculate
                 magicStats: magicStats,
                 _tradesById: tradesById // Store raw grouped trades for recalculation
             };
+
+            // Calculate strategy breakdown using the shared function (ensures consistency)
+            recalculateStrategyBreakdown(portfolio);
+
+            // Force save to localStorage
+            import('../state.js').then(mod => {
+                // Assuming savePortfolios exists or we trigger it via event
+                document.dispatchEvent(new CustomEvent('requestSavePortfolios'));
+            });
 
             import('../ui.js').then(mod => mod.displaySavedPortfoliosList());
             import('./notifications.js').then(mod => mod.showToast(`Sync complete for ${portfolio.name}...`, 'success'));
@@ -677,7 +648,15 @@ export function recalculateStrategyBreakdown(portfolio) {
     console.log('[Myfxbook] Recalculating. Available IDs:', Object.keys(tradesById));
 
     Object.entries(magicMap).forEach(([strategyId, mappedIds]) => {
-        const ids = Array.isArray(mappedIds) ? mappedIds : [mappedIds];
+        let ids = [];
+        if (Array.isArray(mappedIds)) {
+            ids = mappedIds;
+        } else if (typeof mappedIds === 'string') {
+            ids = mappedIds.split(',').map(s => s.trim());
+        } else {
+            ids = [mappedIds];
+        }
+
         // console.log(`[Myfxbook] Strategy ${strategyId} maps to:`, ids);
 
         let allTrades = [];
@@ -693,16 +672,28 @@ export function recalculateStrategyBreakdown(portfolio) {
         // Recalculate metrics
         let maxLosses = 0;
         let currentLosses = 0;
-        allTrades.sort((a, b) => new Date(a.closeDate) - new Date(b.closeDate));
+        let runningBalance = 0;
+        let maxBalance = 0;
+        let maxDD = 0;
+
+        allTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
 
         allTrades.forEach(t => {
             const profit = parseFloat(t.profit);
+
+            // Consecutive Losses
             if (profit < 0) {
                 currentLosses++;
                 if (currentLosses > maxLosses) maxLosses = currentLosses;
             } else {
                 currentLosses = 0;
             }
+
+            // Drawdown Calculation (Approximate based on closed trades)
+            runningBalance += profit;
+            if (runningBalance > maxBalance) maxBalance = runningBalance;
+            const dd = maxBalance - runningBalance;
+            if (dd > maxDD) maxDD = dd;
         });
 
         strategyBreakdown[strategyId] = {
@@ -710,10 +701,12 @@ export function recalculateStrategyBreakdown(portfolio) {
             tradesCount: allTrades.length,
             totalProfit: allTrades.reduce((sum, t) => sum + (t.profit || 0), 0),
             maxConsecutiveLosses: maxLosses,
-            currentConsecutiveLosses: currentLosses
+            currentConsecutiveLosses: currentLosses,
+            maxDrawdown: maxDD
         };
     });
 
     portfolio.realMetrics.strategyBreakdown = strategyBreakdown;
     console.log('[Myfxbook] Strategy breakdown recalculated based on new mapping.');
 }
+
