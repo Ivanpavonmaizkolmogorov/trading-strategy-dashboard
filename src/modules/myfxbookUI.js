@@ -170,7 +170,9 @@ async function handleLogin(e) {
     const password = passwordInput ? passwordInput.value : '';
 
     // Store credentials for later use (linking)
+    // Store credentials for later use (linking)
     currentCredentials = { email, password };
+    state.myfxbookCredentials = { email, password }; // Persist in session state
 
     const resultDiv = form.querySelector('#myfxbook-result') || document.getElementById('myfxbook-result');
     const testBtn = form.querySelector('#test-myfxbook-btn');

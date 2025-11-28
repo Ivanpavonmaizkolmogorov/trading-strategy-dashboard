@@ -19,6 +19,7 @@ export const state = {
 
     // --- NUEVO: Cuentas vinculadas de Myfxbook ---
     linkedAccounts: [], // { myfxbookId, accountId, name, broker, portfolioId, lastSyncDate, metrics: {...} }
+    myfxbookCredentials: null, // { email, password } - Session only, not persisted to localStorage for security (or optional)
 
 
     // Configuraciones de ordenamiento
