@@ -6,7 +6,7 @@ import { displaySavedPortfoliosList } from './ui.js';
 document.addEventListener('DOMContentLoaded', () => {
     // 0. Cargar estado persistente
     loadMagicNumbers();
-    loadSavedPortfolios();
+    // loadSavedPortfolios(); // Disabled by user request for clean slate on reload
 
     // 1. Poblar los selectores de vistas al inicio
     populateViewSelector('databank');

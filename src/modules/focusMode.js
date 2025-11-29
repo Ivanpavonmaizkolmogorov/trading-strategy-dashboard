@@ -1,6 +1,6 @@
 import { state } from '../state.js';
 import { dom } from '../dom.js';
-import { renderEquityChart, renderScatterChart, renderLorenzChart, renderChartsForTab, renderPortfolioComparisonCharts } from '../ui.js';
+import { renderEquityChart, renderScatterChart, renderLorenzChart, renderChartsForTab, renderPortfolioComparisonCharts, renderRealityCheckTab } from '../ui.js';
 import { STRATEGY_COLORS } from '../config.js';
 
 export const focusMode = {
@@ -115,64 +115,9 @@ export const focusMode = {
      * Render the floating banner
      */
     renderBanner() {
-        this.removeBanner(); // Ensure no duplicates
-
-        // Force styles via style tag to override any cache or conflicts
-        const styleId = 'focus-mode-banner-style';
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.textContent = `
-                #focus-mode-banner {
-                    position: fixed !important;
-                    top: 1rem !important;
-                    left: 50% !important;
-                    transform: translateX(-50%) !important;
-                    background-color: rgba(37, 99, 235, 0.95) !important;
-                    backdrop-filter: blur(12px) !important;
-                    color: white !important;
-                    padding: 0.375rem 1rem !important;
-                    border-radius: 9999px !important;
-                    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
-                    z-index: 100 !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    gap: 0.75rem !important;
-                    border: 1px solid rgba(96, 165, 250, 0.3) !important;
-                    transition: all 0.2s ease !important;
-                }
-                #focus-mode-banner:hover {
-                    background-color: rgb(37, 99, 235) !important;
-                }
-            `;
-            document.head.appendChild(style);
-        }
-
-        const count = this.focusedItems.size;
-        const banner = document.createElement('div');
-        banner.id = 'focus-mode-banner';
-        // Classes are kept for fallback, but styles above take precedence
-        banner.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-600/95 backdrop-blur-md text-white px-4 py-1.5 rounded-full shadow-lg z-[100] flex items-center gap-3 animate-bounce-in border border-blue-400/30 transition-all hover:bg-blue-600';
-
-        banner.innerHTML = `
-            <div class="flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-200" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
-                </svg>
-                <span class="font-bold text-xs uppercase tracking-wider text-blue-100">Focus:</span>
-                <span class="text-sm font-medium max-w-xs truncate" id="focus-mode-count">${count} item${count !== 1 ? 's' : ''}</span>
-            </div>
-            <div class="h-4 w-px bg-blue-400/50"></div>
-            <button id="exit-focus-mode" class="bg-blue-500/50 hover:bg-white/20 rounded-full p-0.5 transition-colors" title="Clear all">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                </svg>
-            </button>
-        `;
-
-        document.body.appendChild(banner);
-
-        document.getElementById('exit-focus-mode').addEventListener('click', () => this.disable());
+        // We might not need a banner if the UI is clear enough
+        // For now, let's skip it or implement a subtle indicator
+        this.removeBanner();
     },
 
     /**
@@ -280,16 +225,126 @@ export const focusMode = {
                 savedIndex = state.savedPortfolios.findIndex(p => p.id === item.id);
             }
 
+            // REALITY CHECK FOR STRATEGIES: Attach Real Metrics if available
+            let realMetrics = null;
+            if (item.type === 'strategy' && state.magicNumberMap) {
+                const magicRaw = state.magicNumberMap[item.name];
+                console.log(`[FocusMode] 🔍 Looking up real data for strategy: ${item.name}`);
+                console.log(`[FocusMode] 🔢 Magic Number(s) found: ${magicRaw}`);
+
+                if (magicRaw) {
+                    // Handle comma-separated magic numbers or arrays
+                    let magics = [];
+                    if (typeof magicRaw === 'string') {
+                        magics = magicRaw.split(',').map(m => m.trim()).filter(Boolean);
+                    } else if (Array.isArray(magicRaw)) {
+                        magics = magicRaw;
+                    } else {
+                        magics = [String(magicRaw)];
+                    }
+
+                    // Find a portfolio that has real data for ANY of these magic numbers
+                    const portfolioWithData = state.savedPortfolios.find(p =>
+                        p.realMetrics &&
+                        p.realMetrics._tradesById &&
+                        magics.some(m => p.realMetrics._tradesById[m])
+                    );
+
+                    if (portfolioWithData) {
+                        console.log(`[FocusMode] 📂 Found containing portfolio with data: ${portfolioWithData.name}`);
+
+                        // Aggregate trades from all matching magic numbers
+                        let strategyTrades = [];
+                        let tradesById = {};
+                        magics.forEach(m => {
+                            if (portfolioWithData.realMetrics._tradesById[m]) {
+                                const trades = portfolioWithData.realMetrics._tradesById[m];
+                                strategyTrades = strategyTrades.concat(trades);
+                                tradesById[m] = trades; // Preserve structure for UI lookup
+                            }
+                        });
+
+                        console.log(`[FocusMode] 📊 Trades found: ${strategyTrades.length}`);
+
+                        if (strategyTrades.length > 0) {
+                            // Calculate stats from aggregated trades
+                            const profit = strategyTrades.reduce((sum, t) => sum + (t.profit || 0) + (t.swap || 0) + (t.commission || 0), 0);
+
+                            // Simple drawdown calculation for the aggregated trades (approximation)
+                            // For accurate DD, we'd need to simulate the equity curve.
+                            // For now, let's use the sum of profits as a proxy or 0 if complex.
+                            // Better: Calculate max drawdown from the constructed equity curve of these trades.
+
+                            // Let's construct a simple equity curve to find Max DD
+                            strategyTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+                            let currentEq = 0;
+                            let maxEq = 0;
+                            let maxDD = 0;
+
+                            console.log(`[FocusMode] 📉 Calculating Real DD for ${item.name}`);
+                            console.log(`[FocusMode]    Trades: ${strategyTrades.length}`);
+
+                            strategyTrades.forEach((t, index) => {
+                                const p = (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
+                                currentEq += p;
+                                if (currentEq > maxEq) maxEq = currentEq;
+                                const dd = maxEq - currentEq;
+                                if (dd > maxDD) {
+                                    maxDD = dd;
+                                    console.log(`[FocusMode]    New MaxDD at trade ${index}: ${maxDD} (Eq: ${currentEq}, MaxEq: ${maxEq})`);
+                                }
+                            });
+
+                            console.log(`[FocusMode]    Final MaxDD: ${maxDD}`);
+
+                            realMetrics = {
+                                _tradesById: tradesById, // Use the correctly structured map
+                                profit: profit,
+                                drawdown: maxDD,
+                                trades: strategyTrades.length,
+                                profitFactor: 0, // Hard to calc without gross profit/loss
+                                sharpe: 0, // Complex
+                                lastSync: portfolioWithData.realMetrics.lastSync
+                            };
+                            console.log(`[FocusMode] ✅ Found Real Metrics for strategy ${item.name}`);
+                        } else {
+                            console.warn(`[FocusMode] ⚠️ Portfolio found but no trades for magics: ${magics.join(', ')}`);
+                        }
+                    } else {
+                        console.warn(`[FocusMode] ❌ No portfolio found containing trades for Magics: ${magics.join(', ')}`);
+                        // Debug: Log available portfolios and their magic numbers if possible
+                        state.savedPortfolios.forEach(p => {
+                            if (p.realMetrics && p.realMetrics._tradesById) {
+                                console.log(`[FocusMode] Portfolio ${p.name} has magics: ${Object.keys(p.realMetrics._tradesById).join(', ')}`);
+                            } else {
+                                console.log(`[FocusMode] Portfolio ${p.name} has NO real metrics.`);
+                            }
+                        });
+                    }
+                } else {
+                    console.warn(`[FocusMode] ❌ No Magic Number mapped for ${item.name}`);
+                }
+            } else if (item.type === 'saved' && item.realMetrics) {
+                realMetrics = item.realMetrics;
+            }
+
+
+            // DEBUG: Log item name being processed
+            console.log(`[FocusMode] Processing item: ${item.name} (ID: ${item.id})`);
+
             analyses.push({
                 name: item.name,
                 analysis: analysis,
                 color: item.color,
-                savedIndex: savedIndex // Pass index for UI logic
+                savedIndex: savedIndex, // Pass index for UI logic
+                realMetrics: realMetrics, // Pass attached real metrics
+                strategies: [item.name] // Ensure chart can resolve magic number
             });
         });
 
         // DEBUG: Log what we are trying to update
         console.log(`[FocusMode] Updating main viewer for ${analyses.length} items.`);
+        console.log('[FocusMode] Analyses names:', analyses.map(a => a.name));
 
         // Render using the comparison function which targets the main viewer
         renderPortfolioComparisonCharts(analyses);
@@ -298,11 +353,58 @@ export const focusMode = {
         if (dom.portfolioComparisonChartSection) {
             dom.portfolioComparisonChartSection.classList.remove('hidden');
         }
+
+        // REALITY CHECK PANEL LOGIC
+        const detailsContainer = document.getElementById('strategy-details-container');
+        if (detailsContainer) {
+            if (this.focusedItems.size === 1) {
+                // Get the single item
+                const item = this.focusedItems.values().next().value;
+                // Only show for strategies or saved portfolios that are linked
+                if (item.type === 'strategy') {
+                    // We need the full strategy result object which has 'originalIndex'
+                    // The 'item' here might be the strategy object itself.
+                    // Let's verify if it has 'originalIndex'.
+                    // In strategiesTable.js, we pass 'strategy' which is an element of window.analysisResults
+                    // So it should have 'originalIndex' if we added it, or we can find it.
+                    // Actually, window.analysisResults elements usually have 'originalIndex'.
+
+                    // Check if we need to find the full result object
+                    let fullResult = item;
+
+                    // We need to ensure originalIndex is present for renderRealityCheckTab to work
+                    if (fullResult.originalIndex === undefined) {
+                        const idx = window.analysisResults.findIndex(r => r.name === item.name);
+                        if (idx !== -1) {
+                            // Create a shallow copy with originalIndex if it's missing on the original object
+                            fullResult = { ...window.analysisResults[idx], originalIndex: idx };
+                        }
+                    }
+
+                    console.log('[FocusMode] Rendering Reality Check for:', fullResult.name, 'Index:', fullResult.originalIndex);
+
+                    // REALITY CHECK LOGIC DISABLED BY USER REQUEST (Step 1316)
+                    // The user wants a chart extension and comparison table instead of an overlay.
+                    /*
+                    if (fullResult && fullResult.originalIndex !== undefined) {
+                        renderRealityCheckTab(fullResult, 'strategy-details-container');
+                        detailsContainer.classList.remove('hidden'); 
+                    } else {
+                        console.warn('[FocusMode] Could not find originalIndex for strategy:', item.name);
+                        detailsContainer.classList.add('hidden');
+                    }
+                    */
+                    detailsContainer.classList.add('hidden'); // Always hide for now
+                } else {
+                    detailsContainer.classList.add('hidden');
+                }
+            } else {
+                detailsContainer.classList.add('hidden');
+            }
+        }
+
     },
 
-    /**
-     * Restore charts to their normal state
-     */
     /**
      * Restore charts to their normal state
      */
@@ -359,7 +461,7 @@ export const focusMode = {
         console.log('[FocusMode] Found', rows.length, 'rows of type:', type);
 
         if (rows.length > 20) {
-            if (!confirm(`¿Seguro que quieres seleccionar ${rows.length} elementos? Puede ser lento.`)) {
+            if (!confirm(`¿Seguro que quieres seleccionar ${rows.length} elementos ? Puede ser lento.`)) {
                 return;
             }
         }
@@ -369,22 +471,22 @@ export const focusMode = {
 
         rows.forEach((row, rowIdx) => {
             const index = row.dataset.rowIndex || row.dataset.originalIndex;
-            console.log(`[FocusMode] Row ${rowIdx}: index=${index}, dataset=`, row.dataset);
+            console.log(`[FocusMode] Row ${rowIdx}: index = ${index}, dataset = `, row.dataset);
 
             if (index !== undefined) {
                 let item = null;
                 if (type === 'strategy') {
                     const originalIndex = parseInt(index, 10);
                     item = window.analysisResults?.find(r => r.originalIndex === originalIndex && !r.isPortfolio);
-                    console.log(`[FocusMode] Strategy ${originalIndex}:`, item ? 'FOUND' : 'NOT FOUND');
+                    console.log(`[FocusMode] Strategy ${originalIndex}: `, item ? 'FOUND' : 'NOT FOUND');
                 } else if (type === 'databank') {
                     const idx = parseInt(index, 10);
                     item = state.databankPortfolios[idx];
-                    console.log(`[FocusMode] Databank ${idx}:`, item ? 'FOUND' : 'NOT FOUND');
+                    console.log(`[FocusMode] Databank ${idx}: `, item ? 'FOUND' : 'NOT FOUND');
                 } else if (type === 'saved') {
                     const idx = parseInt(index, 10);
                     item = state.savedPortfolios[idx];
-                    console.log(`[FocusMode] Saved ${idx}:`, item ? 'FOUND' : 'NOT FOUND');
+                    console.log(`[FocusMode] Saved ${idx}: `, item ? 'FOUND' : 'NOT FOUND');
                 }
 
                 if (item) {
@@ -410,11 +512,11 @@ export const focusMode = {
                     }
                 } else {
                     failCount++;
-                    console.warn(`[FocusMode] ❌ Could not find item for row index ${index}`);
+                    console.warn(`[FocusMode] ❌ Could not find item for row index ${index} `);
                 }
             } else {
                 failCount++;
-                console.warn(`[FocusMode] ❌ Row has no index attribute:`, row);
+                console.warn(`[FocusMode] ❌ Row has no index attribute: `, row);
             }
         });
 
@@ -470,6 +572,9 @@ export const focusMode = {
         document.removeEventListener('keydown', this.handleEscKey);
     }
 };
+
+// Expose globally for UI coordination
+window.focusMode = focusMode;
 
 // Initialize global listeners for toolbar buttons
 document.addEventListener('DOMContentLoaded', () => {

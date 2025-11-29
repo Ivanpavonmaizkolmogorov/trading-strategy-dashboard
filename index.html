@@ -250,7 +250,13 @@
                 <!-- Chart Header / Toolbar -->
                 <div
                     class="h-10 bg-gray-800/50 border-b border-gray-700 flex items-center justify-between px-4 flex-shrink-0">
-                    <span class="text-sm font-semibold text-gray-300">Visor Principal</span>
+                    <div class="flex space-x-4">
+                        <button id="tab-backtest"
+                            class="text-sm font-semibold text-white border-b-2 border-sky-500 pb-1 transition-colors">Backtest</button>
+                        <button id="tab-reality-check"
+                            class="text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors">Reality
+                            Check</button>
+                    </div>
                     <div id="chart-actions-group" class="flex items-center text-xs">
                         <button id="select-all-btn"
                             class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-l border-r border-gray-600"
@@ -285,6 +291,10 @@
                         style="min-height: 80px; max-height: 120px;">
                         <canvas id="portfolioDrawdownChart"></canvas>
                     </div>
+                    <!-- Comparison Table Container -->
+                    <div id="comparison-table-container"
+                        class="hidden border-t border-gray-700 bg-gray-900 p-2 overflow-auto transition-all duration-300"
+                        style="max-height: 150px;"></div>
                 </div>
             </div>
 

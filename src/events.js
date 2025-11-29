@@ -1,7 +1,7 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
 import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable } from './analysis.js';
-import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal } from './ui.js';
+import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal, switchViewMode } from './ui.js';
 import { findDatabankPortfolios, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay } from './modules/databank.js';
 import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
 import { openViewManager, closeViewManager, applyView, saveView, deleteView } from './modules/viewManager.js';
@@ -571,6 +571,16 @@ export function initializeEventListeners() {
             const backdrop = chartClickModal.querySelector('#chart-click-modal-backdrop');
             if (cancelBtn) cancelBtn.addEventListener('click', closeChartClickModal);
             if (backdrop) backdrop.addEventListener('click', closeChartClickModal);
+        }
+        // --- NUEVO: Listeners para pestañas de vista (Backtest / Reality Check) ---
+        const tabBacktest = document.getElementById('tab-backtest');
+        const tabRealityCheck = document.getElementById('tab-reality-check');
+
+        if (tabBacktest) {
+            tabBacktest.addEventListener('click', () => switchViewMode('backtest'));
+        }
+        if (tabRealityCheck) {
+            tabRealityCheck.addEventListener('click', () => switchViewMode('reality-check'));
         }
     }
 }

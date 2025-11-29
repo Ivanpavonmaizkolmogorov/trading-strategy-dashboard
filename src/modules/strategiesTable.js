@@ -67,6 +67,7 @@ export const renderStrategiesTable = () => {
     if (!tableBody || !tableHead) return;
 
     console.log('[StrategiesTable] Rendering table with', window.analysisResults?.length || 0, 'strategies');
+    console.log('[StrategiesTable] Current View Mode:', state.activeViewMode);
 
     const config = strategiesTable.getConfig();
 
@@ -142,6 +143,13 @@ export const renderStrategiesTable = () => {
     let strategies = window.analysisResults.filter(r =>
         !r.is_saved_portfolio && !r.is_databank_portfolio && !r.isSavedPortfolio && !r.isPortfolio
     );
+
+    // FILTER: Reality Check Mode
+    if (state.activeViewMode === 'reality-check') {
+        const totalStrategies = strategies.length;
+        strategies = strategies.filter(s => state.magicNumberMap && state.magicNumberMap[s.name]);
+        console.log(`[StrategiesTable] 🔍 Reality Check Filter: Showing ${strategies.length} / ${totalStrategies} strategies (Linked to Myfxbook)`);
+    }
 
     // Update count badge
     const countBadge = document.getElementById('strategies-count');

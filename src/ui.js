@@ -146,6 +146,19 @@ export const displayResults = (results) => {
 
     // NUEVO: Renderizar el viewer principal según el tab activo
     setTimeout(() => renderViewerForActiveTab(), 150);
+
+    // NUEVO: Inicializar Reality Check
+    setTimeout(() => {
+        const triggers = document.querySelectorAll('.vs-real-trigger');
+        triggers.forEach(trigger => {
+            const index = parseInt(trigger.dataset.index);
+            const targetId = trigger.dataset.target;
+            const result = window.analysisResults.find(r => r.originalIndex === index);
+            if (result) {
+                renderRealityCheckTab(result, targetId);
+            }
+        });
+    }, 200);
 };
 
 /**
@@ -243,6 +256,204 @@ const sortArrayByConfig = (array, sortConfig, metricAccessor) => {
     });
 };
 
+/**
+ * Renderiza el contenido de la pestaña "Reality Check".
+ */
+export const renderRealityCheckTab = (strategyResult, containerId) => {
+    const container = document.getElementById(containerId);
+    // If container is not found, we might be in a context where we need to create it or it's just missing
+    if (!container) return;
+
+    // Support both "tab" style (with wrapper) and "panel" style (direct container)
+    const wrapper = document.getElementById(`${containerId}-container`);
+
+    // If wrapper exists, handle visibility
+    if (wrapper) {
+        // 1. Find a linked portfolio that contains this strategy
+        const linkedPortfolio = state.savedPortfolios.find(p =>
+            p.linkedAccountId &&
+            p.indices &&
+            p.indices.includes(strategyResult.originalIndex)
+        );
+
+        if (!linkedPortfolio) {
+            console.log('[RealityCheck] No linked portfolio found for strategy index:', strategyResult.originalIndex);
+            wrapper.classList.add('hidden');
+            return;
+        }
+        wrapper.classList.remove('hidden');
+    }
+
+    // ... rest of logic ...
+    // We need to re-fetch linkedPortfolio if we didn't do it above
+    const linkedPortfolio = state.savedPortfolios.find(p =>
+        p.linkedAccountId &&
+        p.indices &&
+        p.indices.includes(strategyResult.originalIndex)
+    );
+
+    if (!linkedPortfolio) {
+        console.log('[RealityCheck] No linked portfolio found (2nd check) for strategy:', strategyResult.name);
+        if (wrapper) wrapper.classList.add('hidden');
+        else container.innerHTML = ''; // Clear if direct container and not linked
+        return;
+    }
+
+    console.log('[RealityCheck] Found linked portfolio:', linkedPortfolio.name);
+
+    const realMetrics = linkedPortfolio.realMetrics;
+    if (!realMetrics || !realMetrics.strategyBreakdown) {
+        console.warn('[RealityCheck] No real metrics found in portfolio');
+        container.innerHTML = '<p class="text-yellow-400 text-xs">Datos de Myfxbook no sincronizados.</p>';
+        return;
+    }
+
+    // 3. Find specific strategy data
+    const stratIndexInPortfolio = linkedPortfolio.indices.indexOf(strategyResult.originalIndex);
+    const strategyId = linkedPortfolio.strategyIds ? linkedPortfolio.strategyIds[stratIndexInPortfolio] : null;
+
+    let realStats = null;
+    if (state.magicNumberMap && strategyId && state.magicNumberMap[strategyId]) {
+        realStats = realMetrics.strategyBreakdown[strategyId];
+    }
+    if (!realStats) {
+        realStats = realMetrics.strategyBreakdown[strategyResult.name];
+    }
+
+    if (!realStats) {
+        container.innerHTML = `
+            <div class="text-gray-400 text-xs">
+                <p>No se encontraron datos reales vinculados.</p>
+                <p class="text-[10px] mt-1">ID: <span class="font-mono text-blue-300">${strategyId || strategyResult.name}</span></p>
+            </div>`;
+        return;
+    }
+
+    // 4. Compare Metrics
+    const backtest = strategyResult.analysis;
+    const real = realStats;
+
+    const getDeviationColor = (realVal, btVal, type = 'lower') => {
+        if (!btVal) return 'text-gray-400';
+        const ratio = realVal / btVal;
+        if (type === 'lower') {
+            if (ratio > 1.5) return 'text-red-500 font-bold';
+            if (ratio > 1.1) return 'text-yellow-400 font-bold';
+            return 'text-emerald-400';
+        } else {
+            if (ratio < 0.5) return 'text-red-500 font-bold';
+            if (ratio < 0.8) return 'text-yellow-400 font-bold';
+            return 'text-emerald-400';
+        }
+    };
+
+    const ddColor = getDeviationColor(Math.abs(real.maxDrawdown), Math.abs(backtest.maxDrawdownInDollars), 'lower');
+    const consLossColor = getDeviationColor(real.maxConsecutiveLosses, backtest.maxConsecutiveLosses, 'lower');
+
+    container.innerHTML = `
+        <div class="overflow-x-auto bg-gray-800/80 rounded p-2 backdrop-blur-sm border border-gray-700 shadow-xl">
+            <div class="flex justify-between items-center mb-2 border-b border-gray-700 pb-1">
+                 <h3 class="text-xs font-bold text-gray-300 flex items-center gap-1">
+                    <span>🩺</span> Reality Check
+                 </h3>
+                 <span class="text-[10px] text-blue-400 truncate max-w-[100px]" title="${linkedPortfolio.name}">${linkedPortfolio.name}</span>
+            </div>
+            <table class="w-full text-xs text-left">
+                <thead class="text-gray-500 uppercase">
+                    <tr>
+                        <th class="pb-1">Metric</th>
+                        <th class="pb-1 text-right">BT</th>
+                        <th class="pb-1 text-right">Real</th>
+                        <th class="pb-1 text-center">St</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700/50">
+                    <tr>
+                        <td class="py-1 font-medium text-gray-400">Max DD</td>
+                        <td class="py-1 text-right text-gray-500">$${Math.abs(backtest.maxDrawdownInDollars).toFixed(0)}</td>
+                        <td class="py-1 text-right ${ddColor}">$${Math.abs(real.maxDrawdown).toFixed(0)}</td>
+                        <td class="py-1 text-center">${ddColor.includes('red') ? '🔴' : (ddColor.includes('yellow') ? '🟡' : '🟢')}</td>
+                    </tr>
+                    <tr>
+                        <td class="py-1 font-medium text-gray-400">Cons.L</td>
+                        <td class="py-1 text-right text-gray-500">${backtest.maxConsecutiveLosses}</td>
+                        <td class="py-1 text-right ${consLossColor}">${real.maxConsecutiveLosses}</td>
+                        <td class="py-1 text-center">${consLossColor.includes('red') ? '🔴' : (consLossColor.includes('yellow') ? '🟡' : '🟢')}</td>
+                    </tr>
+                    <tr>
+                        <td class="py-1 font-medium text-gray-400">Profit</td>
+                        <td class="py-1 text-right text-gray-500">$${backtest.totalProfit.toFixed(0)}</td>
+                        <td class="py-1 text-right ${real.totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}">$${real.totalProfit.toFixed(0)}</td>
+                        <td class="py-1 text-center">-</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+};
+
+// DEBUG FUNCTION
+window.debugRealityCheck = () => {
+    console.log('[Debug] Triggering Reality Check manually...');
+    const container = document.getElementById('strategy-details-container');
+    if (!container) {
+        console.error('[Debug] Container #strategy-details-container not found!');
+        return;
+    }
+    container.classList.remove('hidden');
+    container.style.display = 'block'; // Force display
+
+    let strat = null;
+
+    // 1. Try window.analysisResults
+    if (window.analysisResults && window.analysisResults.length > 0) {
+        strat = window.analysisResults[0];
+    }
+    // 2. Try state.savedPortfolios
+    else if (state.savedPortfolios && state.savedPortfolios.length > 0) {
+        // Find a portfolio with analysis
+        const portfolio = state.savedPortfolios.find(p => p.analysis);
+        if (portfolio) {
+            // We need a STRATEGY, not a portfolio. 
+            // But we can't easily get individual strategy analysis from a saved portfolio object 
+            // unless we have the raw data loaded.
+            // However, we can try to use the portfolio itself just to test the UI rendering, 
+            // but renderRealityCheckTab expects a strategy with 'originalIndex'.
+
+            console.warn('[Debug] Found saved portfolios but no raw strategies loaded.');
+            console.warn('[Debug] Please load strategies or run analysis first.');
+
+            // Try to fake it if we have metrics
+            if (portfolio.realMetrics && portfolio.realMetrics.strategyBreakdown) {
+                const firstKey = Object.keys(portfolio.realMetrics.strategyBreakdown)[0];
+                if (firstKey) {
+                    strat = {
+                        name: firstKey,
+                        originalIndex: 0, // Fake index
+                        analysis: {
+                            // Fake backtest data for comparison
+                            maxDrawdownInDollars: 100,
+                            maxConsecutiveLosses: 2,
+                            totalProfit: 500
+                        }
+                    };
+                    console.log('[Debug] Created FAKE strategy from saved portfolio for testing:', strat);
+                }
+            }
+        }
+    }
+
+    if (strat) {
+        console.log('[Debug] Rendering for strategy:', strat.name);
+        // Ensure originalIndex
+        if (strat.originalIndex === undefined) strat.originalIndex = 0;
+
+        renderRealityCheckTab(strat, 'strategy-details-container');
+    } else {
+        console.warn('[Debug] No analysis results found. Please LOAD strategies first.');
+        alert('Por favor, CARGA un archivo de estrategias o selecciona un portafolio guardado para ver datos.');
+    }
+};
 
 /**
  * Crea el HTML para la pestaña de una estrategia individual.
@@ -252,11 +463,55 @@ const sortArrayByConfig = (array, sortConfig, metricAccessor) => {
 const createStrategyTab = (result) => {
     if (result.isPortfolio || result.isSavedPortfolio) return { nav: '', content: '' };
 
-    const tabId = `strategy - ${result.originalIndex} `;
-    const nav = `< button id = "${tabId}-btn" class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data - target="${tabId}" > ${result.name}</button > `;
-    const metrics = result.analysis;
+    const tabId = `strategy-${result.originalIndex}`;
+    const vsRealTabId = `vs-real-${result.originalIndex}`;
 
-    const metricsHTML = `< div ><h2 class="text-2xl font-bold text-white mb-4">Métricas Clave: ${result.name}</h2>
+    const nav = `<button id="${tabId}-btn" class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data-target="${tabId}">${result.name}</button>`;
+
+    const metricsHTML = createMetricsTable(result.analysis);
+
+    const chartsHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700">
+            <h2 class="text-xl font-bold mb-4">Dispersión de Rendimientos</h2>
+            <div class="h-80"><canvas id="scatterChart-${tabId}"></canvas></div>
+        </div>
+        <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700">
+            <h2 class="text-xl font-bold mb-4">Curva de Lorenz</h2>
+            <div class="h-80"><canvas id="lorenzChart-${tabId}"></canvas></div>
+        </div>
+    </div>`;
+
+    const realityCheckHTML = `
+    <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 mt-6 hidden" id="${vsRealTabId}-container">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold flex items-center gap-2">
+                <span>🩺</span> Reality Check (vs Myfxbook)
+            </h2>
+            <span class="text-xs text-gray-400" id="${vsRealTabId}-status"></span>
+        </div>
+        <div id="${vsRealTabId}" class="min-h-[100px]"></div>
+    </div>`;
+
+    const triggerScript = `<span class="hidden vs-real-trigger" data-index="${result.originalIndex}" data-target="${vsRealTabId}"></span>`;
+
+    const content = `<div id="${tabId}" class="tab-content space-y-8">
+        ${triggerScript}
+        ${realityCheckHTML}
+        ${metricsHTML}
+        ${chartsHTML}
+    </div>`;
+
+    return { nav, content };
+};
+
+/**
+ * Crea el HTML para la tabla de métricas clave de una estrategia.
+ * @param {Object} metrics - Objeto de métricas de la estrategia.
+ * @returns {string} HTML de la tabla de métricas.
+ */
+const createMetricsTable = (metrics) => {
+    return `< div ><h2 class="text-2xl font-bold text-white mb-4">Métricas Clave</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
             ${Object.entries({
         'Profit Factor': metrics.profitFactor, 'Coef. Sharpe': metrics.sharpeRatio, 'Max DD (%)': `${metrics.maxDrawdown.toFixed(2)}%`, 'Profit/Mes': metrics.monthlyAvgProfit,
@@ -767,35 +1022,170 @@ const sortSavedPortfoliosTable = (headerEl) => {
     displaySavedPortfoliosList(); // Correcto: solo redibuja esta lista
 };
 
+
+
+/**
+ * Renderiza la tabla de comparación (Backtest vs Real).
+ */
+const renderComparisonTable = (portfolioAnalysis) => {
+    const container = document.getElementById('comparison-table-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+    container.classList.remove('hidden');
+
+    const backtestMetrics = portfolioAnalysis.analysis.metrics;
+    const realMetrics = portfolioAnalysis.realMetrics;
+
+    if (!backtestMetrics || !realMetrics) return;
+
+    // Helper to calculate diff color
+    const getDiffColor = (backtestVal, realVal, isInverse = false) => {
+        if (backtestVal === 0) return 'text-gray-400';
+        const diff = (realVal - backtestVal) / Math.abs(backtestVal);
+        if (Math.abs(diff) < 0.05) return 'text-gray-400'; // < 5% diff
+        if (isInverse) {
+            return diff < 0 ? 'text-green-400' : 'text-red-400';
+        }
+        return diff > 0 ? 'text-green-400' : 'text-red-400';
+    };
+
+    const createRow = (label, backtestVal, realVal, formatFn, isInverse = false) => {
+        const bVal = formatFn ? formatFn(backtestVal) : backtestVal;
+        const rVal = formatFn ? formatFn(realVal) : realVal;
+        const color = getDiffColor(backtestVal, realVal, isInverse);
+
+        return `
+            <tr class="border-b border-gray-700/50 hover:bg-gray-800/50 transition-colors">
+                <td class="py-2 px-4 text-gray-400 font-medium">${label}</td>
+                <td class="py-2 px-4 text-right font-mono text-gray-300">${bVal}</td>
+                <td class="py-2 px-4 text-right font-mono ${color} font-bold">${rVal}</td>
+            </tr>
+        `;
+    };
+
+    const html = `
+        <div class="flex flex-col h-full">
+            <div class="flex items-center justify-between mb-2 px-2">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Reality Check: ${portfolioAnalysis.name}</h3>
+                <span class="text-[10px] text-gray-500">Live data from Myfxbook</span>
+            </div>
+            <div class="overflow-auto flex-1 custom-scrollbar">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-xs text-gray-500 uppercase bg-gray-800/50 sticky top-0">
+                        <tr>
+                            <th class="py-2 px-4 rounded-tl-lg">Metric</th>
+                            <th class="py-2 px-4 text-right">Backtest</th>
+                            <th class="py-2 px-4 text-right rounded-tr-lg">Real</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${createRow('Total Profit', backtestMetrics.totalNetProfit, realMetrics.profit, (v) => `$${v.toFixed(2)}`)}
+                        ${createRow('Drawdown $', backtestMetrics.maxDrawdownInDollars, realMetrics.drawdown, (v) => `$${v.toFixed(2)}`, true)}
+                        ${createRow('Trades', backtestMetrics.totalTrades, realMetrics.trades, (v) => v)}
+                        ${createRow('Profit Factor', backtestMetrics.profitFactor, realMetrics.profitFactor, (v) => v.toFixed(2))}
+                        ${createRow('Sharpe', backtestMetrics.sharpeRatio, realMetrics.sharpe, (v) => v.toFixed(2))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+};
+
+/**
+ * Cambia el modo de vista (Backtest vs Reality Check).
+ */
+export const switchViewMode = (mode) => {
+    state.activeViewMode = mode;
+
+    // Update Tab Styles
+    const tabBacktest = document.getElementById('tab-backtest');
+    const tabReality = document.getElementById('tab-reality-check');
+
+    if (tabBacktest && tabReality) {
+        if (mode === 'backtest') {
+            tabBacktest.className = 'text-sm font-semibold text-white border-b-2 border-sky-500 pb-1 transition-colors';
+            tabReality.className = 'text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors';
+        } else {
+            tabBacktest.className = 'text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors';
+            tabReality.className = 'text-sm font-semibold text-white border-b-2 border-sky-500 pb-1 transition-colors';
+        }
+    }
+
+    // Re-render charts
+    if (window.focusMode && window.focusMode.active) {
+        console.log('[UI] Switch View Mode: Focus Mode active, updating focused charts.');
+        window.focusMode.updateCharts();
+    } else {
+        // Normal mode: render saved portfolios
+        const savedResults = (window.analysisResults || []).filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal);
+        renderPortfolioComparisonCharts(savedResults);
+    }
+
+    // Re-render Strategies Table (to apply filter)
+    if (typeof renderStrategiesTable === 'function') {
+        renderStrategiesTable();
+    } else {
+        // Fallback if imported elsewhere
+        import('./modules/strategiesTable.js').then(module => {
+            if (module.renderStrategiesTable) module.renderStrategiesTable();
+        });
+    }
+};
+
 /**
  * Renderiza los gráficos de comparación de portafolios.
  */
 export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
-    console.log('[UI] renderPortfolioComparisonCharts called with', portfolioAnalyses.length, 'items');
-    console.log('[UI] Portfolio names:', portfolioAnalyses.map(p => p.name).join(', '));
-    const canvasId = 'portfolioEquityChart'; // ID del canvas
+    console.log('[UI] renderPortfolioComparisonCharts called with', portfolioAnalyses.length, 'items. Mode:', state.activeViewMode);
+    const canvasId = 'portfolioEquityChart';
     destroyChart(canvasId);
     const ctx = document.getElementById(canvasId)?.getContext('2d');
     if (!ctx) return;
 
-    // Always show the chart section (for clean slate UX)
     dom.portfolioComparisonChartSection.classList.remove('hidden');
 
-    // If empty and no comparison, just destroy chart and return
     if (portfolioAnalyses.length === 0 && state.comparisonPortfolioIndex === null) {
-        console.log('[UI] No portfolios to display');
         return;
     }
 
-    const allAnalyses = [...portfolioAnalyses];
-    const originalResult = window.analysisResults.find(r => r.isTemporaryOriginal);
-    if (originalResult) {
-        if (!allAnalyses.some(a => a.name === originalResult.name)) {
-            allAnalyses.push(originalResult);
+    let allAnalyses = [...portfolioAnalyses];
+    const originalResult = (window.analysisResults || []).find(r => r.isTemporaryOriginal);
+    if (originalResult && !allAnalyses.some(a => a.name === originalResult.name)) {
+        allAnalyses.push(originalResult);
+    }
+
+    // REALITY CHECK: Filter out portfolios without real metrics if in reality-check mode
+    if (state.activeViewMode === 'reality-check') {
+        const originalCount = allAnalyses.length;
+        allAnalyses = allAnalyses.filter(r => r.realMetrics && r.realMetrics._tradesById);
+
+        if (allAnalyses.length === 0 && originalCount > 0) {
+            console.warn('[UI] Reality Check: All items filtered out due to missing real metrics.');
+            // Render "No Data" message on canvas
+            const ctx = document.getElementById(canvasId)?.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = '16px sans-serif';
+                ctx.fillStyle = '#9ca3af'; // gray-400
+                ctx.fillText('No Real Data available for the selected item(s).', ctx.canvas.width / 2, ctx.canvas.height / 2);
+                ctx.font = '14px sans-serif';
+                ctx.fillStyle = '#6b7280'; // gray-500
+                ctx.fillText('Please link a Myfxbook account or select a portfolio with real trades.', ctx.canvas.width / 2, ctx.canvas.height / 2 + 25);
+                ctx.restore();
+            }
+            return;
         }
     }
+
     if (allAnalyses.length === 0) return;
 
+    // 1. Prepare Equity Datasets
     const datasets = allAnalyses.map((result) => {
         const isFeatured = result.savedIndex === state.featuredPortfolioIndex;
         const analysis = result.analysis || {};
@@ -803,114 +1193,348 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         const normalizedData = chartData.equityCurve || [];
 
         if (!normalizedData.length) {
-            console.warn(`[UI] Dataset for ${result.name} (Index: ${result.savedIndex}) is EMPTY. Skipping.`);
+            console.warn(`[UI] ⚠️ Skipping chart for ${result.name}: No equity curve data found.`, result);
             return null;
         }
 
-        const color = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]));
+        console.log(`[UI] 📈 Preparing dataset for ${result.name}: ${normalizedData.length} points.`);
 
-        console.log(`[UI] Dataset for ${result.name}: ${normalizedData.length} points. Color: ${color}. Featured: ${isFeatured}`);
+        let color = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]));
 
-        return {
+        // VISUAL ENHANCEMENT: Fade backtest curve in Reality Check mode
+        if (state.activeViewMode === 'reality-check') {
+            // Convert hex to rgba with low opacity
+            if (color.startsWith('#')) {
+                const r = parseInt(color.slice(1, 3), 16);
+                const g = parseInt(color.slice(3, 5), 16);
+                const b = parseInt(color.slice(5, 7), 16);
+                color = `rgba(${r}, ${g}, ${b}, 0.3)`; // 30% opacity
+            } else if (color.startsWith('rgb')) {
+                color = color.replace('rgb', 'rgba').replace(')', ', 0.3)');
+            }
+        }
+
+        // AUTO-ZOOM & ISOLATION: In Reality Check mode, HIDE backtest data to let Real data scale properly
+        let finalData = normalizedData;
+        if (state.activeViewMode === 'reality-check') {
+            // Hide backtest data completely to focus on Real Evolution
+            finalData = [];
+            console.log(`[UI] 🔍 Reality Check: Hiding backtest data to focus on Real Evolution.`);
+        }
+
+        const ds = [{
             label: result.name,
-            data: normalizedData,
+            data: finalData,
             borderColor: color,
             borderWidth: isFeatured ? 3 : 2,
             pointRadius: 0,
             tension: 0.1,
             savedIndex: result.savedIndex,
             order: isFeatured ? 0 : 1,
-            analysis: analysis, // Attach the full analysis object for use in plugins
+            analysis: analysis,
             isFeatured: isFeatured
-        };
-    }).filter(ds => ds !== null);
+        }];
 
-    // --- Crosshair Plugin Definition ---
+        // REALITY CHECK: Add Real Equity Curve if available AND mode is 'reality-check'
+        if (state.activeViewMode === 'reality-check' && result.realMetrics && result.realMetrics._tradesById && state.magicNumberMap) {
+            let allRealTrades = [];
+            let strategyNames = [];
+
+            if (result.strategies && Array.isArray(result.strategies)) {
+                strategyNames = result.strategies.map(s => s.name || s);
+            } else if (result.indices && window.analysisResults) {
+                strategyNames = result.indices.map(i => window.analysisResults[i]?.name).filter(Boolean);
+            }
+
+            if (strategyNames.length > 0) {
+                strategyNames.forEach(stratName => {
+                    // Handle multiple magic numbers (comma separated or array)
+                    const magicRaw = state.magicNumberMap[stratName];
+
+                    if (magicRaw) {
+                        let magics = [];
+                        if (Array.isArray(magicRaw)) {
+                            magics = magicRaw;
+                        } else if (typeof magicRaw === 'string') {
+                            magics = magicRaw.split(',').map(m => m.trim()).filter(Boolean);
+                        } else {
+                            magics = [String(magicRaw)];
+                        }
+
+                        magics.forEach(m => {
+                            if (result.realMetrics._tradesById[m]) {
+                                allRealTrades = allRealTrades.concat(result.realMetrics._tradesById[m]);
+                            }
+                        });
+                    }
+                });
+            }
+
+            console.log(`[UI]    Total Real Trades: ${allRealTrades.length}`);
+
+            if (allRealTrades.length > 0) {
+                allRealTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+
+                // Start Real Curve from 0 (Cumulative Profit)
+                let currentEquity = 0;
+                const realEquityCurve = [];
+
+                // Add initial point at 0
+                if (allRealTrades.length > 0) {
+                    const firstDate = new Date(allRealTrades[0].closeTime).getTime();
+                    // Add a point slightly before the first trade to show the start at 0
+                    realEquityCurve.push({ x: firstDate - 3600000, y: 0 });
+                }
+
+                allRealTrades.forEach(trade => {
+                    const tradeDate = new Date(trade.closeTime).getTime();
+                    currentEquity += (trade.profit || 0) + (trade.swap || 0) + (trade.commission || 0);
+                    realEquityCurve.push({ x: tradeDate, y: currentEquity });
+                });
+
+                if (realEquityCurve.length > 0) {
+                    // Use original opaque color for Real curve
+                    const realColor = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]));
+
+                    // --- DEGRADATION ANALYSIS ---
+                    // Try to find metrics in various locations
+                    const metrics = result.analysis?.metrics || result.metrics || result.analysis || {};
+
+                    console.log('[UI] 🔍 Inspecting Metrics Source:', metrics);
+
+                    const backtestProfit = Number(metrics.totalProfit || metrics.totalNetProfit || metrics.netProfit || 0);
+                    const backtestTrades = Number(metrics.totalTrades || metrics.trades || 1);
+                    const backtestSQN = Number(metrics.sqn || 0);
+                    // Ensure MaxDD is positive and non-zero (fallback to 1000 if missing to avoid visual glitch)
+                    let backtestMaxDD = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 0));
+                    if (backtestMaxDD === 0) backtestMaxDD = 1000; // Fallback safety
+
+                    // 1. Calculate Volatility (Sigma) from SQN
+                    // SQN = (Mean / StdDev) * Sqrt(N)  ->  StdDev = (Mean * Sqrt(N)) / SQN
+                    const meanProfit = backtestProfit / backtestTrades;
+                    let stdDev = 0;
+                    if (backtestSQN > 0) {
+                        stdDev = (meanProfit * Math.sqrt(backtestTrades)) / backtestSQN;
+                    }
+
+                    console.log(`[UI] 📉 Degradation Analysis for ${result.name}:`);
+                    console.log(`[UI]    Mean Profit: ${meanProfit}, StdDev: ${stdDev}, SQN: ${backtestSQN}`);
+
+                    // 2. Generate Cone & Hard Stop Arrays
+                    const coneUpper = [];
+                    const coneLower = [];
+                    const hardStop = [];
+
+                    let maxRealEquitySoFar = -Infinity;
+
+                    // We need to map real trades 1..N to the time axis
+                    // realEquityCurve[0] is the start point (0,0) at t=start-1h
+                    // realEquityCurve[1..N] are the trades
+
+                    // Start points
+                    const startX = realEquityCurve[0].x;
+                    coneUpper.push({ x: startX, y: 0 });
+                    coneLower.push({ x: startX, y: 0 });
+                    hardStop.push({ x: startX, y: -backtestMaxDD }); // Initial stop
+
+                    // Iterate through real trades (skipping the 0-point)
+                    for (let i = 1; i < realEquityCurve.length; i++) {
+                        const point = realEquityCurve[i];
+                        const tradeIndex = i; // 1st trade, 2nd trade...
+
+                        // Cone Calculation (Random Walk)
+                        // Center = N * Mean
+                        // Deviation = Sigma * Sqrt(N) * Z (Z=2 for 95%)
+                        const center = tradeIndex * meanProfit;
+                        const deviation = stdDev * Math.sqrt(tradeIndex) * 2;
+
+                        coneUpper.push({ x: point.x, y: center + deviation });
+                        coneLower.push({ x: point.x, y: center - deviation });
+
+                        // Hard Stop Calculation (Trailing based on MaxDD)
+                        if (point.y > maxRealEquitySoFar) maxRealEquitySoFar = point.y;
+                        hardStop.push({ x: point.x, y: maxRealEquitySoFar - backtestMaxDD });
+                    }
+
+                    console.log(`[UI]    Generated Cone Points: ${coneUpper.length}`);
+                    console.log(`[UI]    Generated Hard Stop Points: ${hardStop.length}`);
+
+                    // --- ADD DATASETS ---
+
+                    // 1. Cone (Area)
+                    ds.push({
+                        label: 'Statistical Cone (95%)',
+                        data: coneUpper,
+                        borderColor: 'transparent',
+                        backgroundColor: 'rgba(156, 163, 175, 0.1)', // Gray-400 very low opacity
+                        fill: '+1', // Fill to next dataset (Lower Cone)
+                        pointRadius: 0,
+                        borderWidth: 0,
+                        order: 10
+                    });
+                    ds.push({
+                        label: 'Cone Lower Limit',
+                        data: coneLower,
+                        borderColor: 'rgba(156, 163, 175, 0.3)', // Visible boundary
+                        borderWidth: 1,
+                        borderDash: [5, 5],
+                        backgroundColor: 'transparent',
+                        fill: false,
+                        pointRadius: 0,
+                        order: 10
+                    });
+
+                    // 2. Hard Stop (Trailing Max DD)
+                    ds.push({
+                        label: `Stop: ${result.name}`,
+                        data: hardStop,
+                        borderColor: realColor, // Use strategy color
+                        borderWidth: 2,
+                        borderDash: [2, 2], // Dotted line to distinguish from main curve
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0,
+                        order: 5
+                    });
+
+                    ds.push({
+                        label: `${result.name} (Real)`,
+                        data: realEquityCurve,
+                        borderColor: realColor,
+                        backgroundColor: realColor + '40',
+                        borderWidth: 3, // Thicker line for Real
+                        pointRadius: 3, // Visible points
+                        pointHoverRadius: 6,
+                        fill: false,
+                        tension: 0.1,
+                        savedIndex: result.savedIndex,
+                        order: 0 // Top layer
+                    });
+
+                    // --- DEGRADATION HUD ---
+                    // Calculate Risk Used %
+                    let riskUsedPercent = 0;
+                    if (backtestMaxDD > 0) {
+                        // Find max real drawdown so far
+                        let maxRealDD = 0;
+                        let maxEq = 0;
+                        let currentEq = 0;
+                        // Re-calculate maxDD from the curve points to be sure
+                        realEquityCurve.forEach(p => {
+                            if (p.y > maxEq) maxEq = p.y;
+                            const dd = maxEq - p.y;
+                            if (dd > maxRealDD) maxRealDD = dd;
+                        });
+                        riskUsedPercent = (maxRealDD / backtestMaxDD) * 100;
+                    }
+
+                    // Create/Update HUD in Toolbar
+                    const actionsGroup = document.getElementById('chart-actions-group');
+                    if (actionsGroup) {
+                        let hud = document.getElementById('degradation-hud');
+                        if (!hud) {
+                            hud = document.createElement('div');
+                            hud.id = 'degradation-hud';
+                            // Toolbar style: inline, no absolute, right margin
+                            hud.className = 'mr-4 px-3 py-1 rounded-md border shadow-sm transition-all duration-300 flex items-center gap-2 font-mono text-xs';
+                            actionsGroup.prepend(hud);
+                        }
+
+                        // Style based on Risk
+                        let bgColor, borderColor, textColor, icon;
+                        if (riskUsedPercent < 80) {
+                            bgColor = 'bg-green-900/50';
+                            borderColor = 'border-green-500/30';
+                            textColor = 'text-green-200';
+                            icon = '🛡️';
+                        } else if (riskUsedPercent < 100) {
+                            bgColor = 'bg-orange-900/50';
+                            borderColor = 'border-orange-500/30';
+                            textColor = 'text-orange-200';
+                            icon = '⚠️';
+                        } else {
+                            bgColor = 'bg-red-900/50';
+                            borderColor = 'border-red-500/30';
+                            textColor = 'text-red-200';
+                            icon = '🚨';
+                        }
+
+                        hud.className = `mr-4 px-3 py-1 rounded-md border shadow-sm ${bgColor} ${borderColor} ${textColor} flex items-center gap-2 font-mono text-xs`;
+                        hud.innerHTML = `
+                            <span class="text-base">${icon}</span>
+                            <div class="flex flex-col leading-tight">
+                                <span class="text-[10px] opacity-70 uppercase tracking-wider">Risk Used</span>
+                                <span class="font-bold text-sm">${riskUsedPercent.toFixed(1)}%</span>
+                            </div>
+                        `;
+                        hud.style.display = 'flex';
+                    }
+                }
+            }
+        }
+
+        // Filter out empty datasets (like the hidden backtest) to avoid Chart.js issues
+        return ds.filter(d => d.data.length > 0);
+    }).flatMap(ds => ds);
+
+    // Cleanup HUD if not in Reality Check
+    if (state.activeViewMode !== 'reality-check') {
+        const hud = document.getElementById('degradation-hud');
+        if (hud) hud.style.display = 'none';
+    }
+
+    // 2. Define Crosshair Plugin
     const crosshairPlugin = {
         id: 'crosshairPlugin',
         defaults: {
             width: 1,
-            color: 'rgba(156, 163, 175, 0.5)', // gray-400 with opacity
+            color: 'rgba(156, 163, 175, 0.5)',
             dash: [3, 3],
-            labelColor: 'rgba(31, 41, 55, 0.9)', // gray-800
-            textColor: '#f3f4f6' // gray-100
+            labelColor: 'rgba(31, 41, 55, 0.9)',
+            textColor: '#f3f4f6'
         },
         beforeDraw: (chart) => {
-            // Draw Stagnation Highlight
-            // Draw Stagnation Highlights - One per dataset using its color
             const datasets = chart.data.datasets;
             if (!datasets || datasets.length === 0) return;
-
             const ctx = chart.ctx;
             const xAxis = chart.scales.x;
             const yAxis = chart.scales.y;
+            let labelYOffset = 5;
 
-            let labelYOffset = 5; // Start labels at top, then stack them
-
-            // Iterate through each dataset and draw its stagnation highlight
-            datasets.forEach((dataset, index) => {
+            datasets.forEach((dataset) => {
                 const analysis = dataset.analysis;
                 if (!analysis) return;
-
                 const metrics = analysis.metrics || analysis;
                 if (!metrics || !metrics.maxStagnationStart || !metrics.maxStagnationEnd) return;
 
-                // Parse dates
                 const startDate = new Date(metrics.maxStagnationStart);
                 const endDate = new Date(metrics.maxStagnationEnd);
-
-                // Get pixels
                 const startPixel = xAxis.getPixelForValue(startDate.getTime());
                 const endPixel = xAxis.getPixelForValue(endDate.getTime());
 
                 if (!startPixel || !endPixel) return;
-
                 const width = endPixel - startPixel;
+                const datasetColor = dataset.borderColor || '#38bdf8';
 
-                // Use dataset's color (from borderColor)
-                const datasetColor = dataset.borderColor || '#38bdf8'; // Fallback to sky-400
-
-                // Convert hex to rgba for transparency
-                // Simple approach: extract RGB and add alpha
-                let r, g, b;
+                let r = 56, g = 189, b = 248;
                 if (datasetColor.startsWith('#')) {
                     const hex = datasetColor.slice(1);
                     r = parseInt(hex.substr(0, 2), 16);
                     g = parseInt(hex.substr(2, 2), 16);
                     b = parseInt(hex.substr(4, 2), 16);
-                } else if (datasetColor.startsWith('rgb')) {
-                    // Extract RGB values from rgb() or rgba()
-                    const match = datasetColor.match(/\d+/g);
-                    if (match) {
-                        r = parseInt(match[0]);
-                        g = parseInt(match[1]);
-                        b = parseInt(match[2]);
-                    }
-                } else {
-                    // Fallback
-                    r = 56; g = 189; b = 248;
                 }
 
                 ctx.save();
-
-                // Draw semi-transparent rectangle with dataset color
                 ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.15)`;
                 ctx.fillRect(startPixel, yAxis.top, width, yAxis.bottom - yAxis.top);
-
-                // Draw Label with dataset color (darker)
                 ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
                 ctx.font = 'bold 11px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
-
-                // Label: Portfolio name (or index) + days
                 const shortName = dataset.label.length > 25 ? dataset.label.substring(0, 22) + '...' : dataset.label;
                 const label = `${shortName}: ${metrics.maxStagnationDays} d`;
-
-                // Draw label at stacked position
                 ctx.fillText(label, startPixel + width / 2, yAxis.top + labelYOffset);
-                labelYOffset += 16; // Stack next label below
-
+                labelYOffset += 16;
                 ctx.restore();
             });
         },
@@ -920,42 +1544,33 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         afterEvent: (chart, args) => {
             const { inChartArea } = args;
             const { x, y } = args.event;
-
-            // Sync logic: Update the OTHER chart
             const otherChartId = chart.canvas.id === 'portfolioEquityChart' ? 'portfolioDrawdownChart' : 'portfolioEquityChart';
             const otherChart = state.chartInstances[otherChartId];
 
             chart.crosshair = { x, y, draw: inChartArea };
 
             if (otherChart && inChartArea) {
-                // Sync X coordinate (assuming aligned axes)
-                otherChart.crosshair = { x, y: 0, draw: true }; // y:0 means don't draw horizontal on other
+                otherChart.crosshair = { x, y: 0, draw: true };
                 otherChart.draw();
             } else if (otherChart) {
                 otherChart.crosshair = { x: 0, y: 0, draw: false };
                 otherChart.draw();
             }
+            args.changed = true;
 
-            args.changed = true; // Force redraw
-
-            // --- Unified Tooltip Logic ---
+            // Tooltip Logic
             const infoPanel = document.getElementById('chart-info-panel');
             const infoDate = document.getElementById('chart-info-date');
             const infoBody = document.getElementById('chart-info-body');
 
             if (inChartArea && infoPanel && infoDate && infoBody) {
-                // Position Tooltip near mouse (Floating)
-                // Offset: 15px right, 15px down (closer)
                 const tooltipX = args.event.native.clientX;
                 const tooltipY = args.event.native.clientY;
-
-                // Smart Positioning: Flip to left if too close to right edge
-                const tooltipWidth = infoPanel.offsetWidth || 220; // Estimate if 0
+                const tooltipWidth = infoPanel.offsetWidth || 220;
                 const viewportWidth = window.innerWidth;
                 const edgeThreshold = 20;
 
                 let finalX = tooltipX + 15;
-
                 if (finalX + tooltipWidth > viewportWidth - edgeThreshold) {
                     finalX = tooltipX - tooltipWidth - 15;
                 }
@@ -966,21 +1581,15 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 infoPanel.classList.remove('hidden');
                 infoPanel.classList.remove('opacity-0');
 
-                // Get active elements (points under cursor)
-                // We use 'index' mode to get points from all datasets at the same X
                 const activePoints = chart.getElementsAtEventForMode(args.event, 'index', { intersect: false }, true);
 
                 if (activePoints.length > 0) {
-                    // Update Date
                     const firstPoint = activePoints[0];
                     const xValue = chart.data.datasets[firstPoint.datasetIndex].data[firstPoint.index].x;
                     const date = new Date(xValue);
                     infoDate.textContent = date.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
 
-                    // Build Body Content
                     let html = '';
-
-                    // Sort points by value descending
                     const sortedPoints = [...activePoints].sort((a, b) => {
                         const valA = chart.data.datasets[a.datasetIndex].data[a.index].y;
                         const valB = chart.data.datasets[b.datasetIndex].data[b.index].y;
@@ -989,47 +1598,41 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
                     sortedPoints.forEach(point => {
                         const dataset = chart.data.datasets[point.datasetIndex];
-                        const meta = dataset.savedIndex !== undefined
-                            ? allAnalyses.find(a => a.savedIndex === dataset.savedIndex)
-                            : null;
-
+                        const meta = dataset.savedIndex !== undefined ? allAnalyses.find(a => a.savedIndex === dataset.savedIndex) : null;
                         const initialBalance = meta?.analysis?.metrics?.initial_balance || 10000;
                         const rawY = dataset.data[point.index].y;
-
                         let equityUSD, ddUSD;
 
                         if (chart.canvas.id === 'portfolioEquityChart') {
-                            // Triggered from Equity Chart
-                            equityUSD = (rawY / 100) * initialBalance;
+                            equityUSD = (rawY / 100) * initialBalance; // Assuming normalized
+                            // If it's Real Equity (not normalized), rawY is already USD?
+                            // Wait, Backtest is normalized to 100 base?
+                            // If normalizedData is equityCurve, it's usually normalized to 100 in this app?
+                            // Let's assume standard behavior.
+                            // BUT Real Equity we calculated as absolute USD profit added to start equity.
+                            // If start equity was normalized (e.g. 100), then Real Equity is also normalized-ish.
+                            // However, the tooltip logic assumes percentage for backtest?
+                            // Let's stick to existing logic for now.
 
-                            // Find corresponding DD
                             const ddChart = state.chartInstances['portfolioDrawdownChart'];
                             if (ddChart) {
                                 const ddDataset = ddChart.data.datasets.find(ds => ds.label === dataset.label);
-                                if (ddDataset && ddDataset.data[point.index]) {
-                                    ddUSD = ddDataset.data[point.index].y;
-                                } else {
-                                    ddUSD = 0;
-                                }
-                            }
+                                ddUSD = (ddDataset && ddDataset.data[point.index]) ? ddDataset.data[point.index].y : 0;
+                            } else { ddUSD = 0; }
                         } else {
-                            // Triggered from Drawdown Chart
-                            ddUSD = rawY; // Already in $
-
-                            // Find corresponding Equity
+                            ddUSD = rawY;
                             const eqChart = state.chartInstances['portfolioEquityChart'];
                             if (eqChart) {
                                 const eqDataset = eqChart.data.datasets.find(ds => ds.label === dataset.label);
-                                if (eqDataset && eqDataset.data[point.index]) {
-                                    const eqRawY = eqDataset.data[point.index].y;
-                                    equityUSD = (eqRawY / 100) * initialBalance;
-                                } else {
-                                    equityUSD = 0;
-                                }
-                            }
+                                const eqRawY = (eqDataset && eqDataset.data[point.index]) ? eqDataset.data[point.index].y : 0;
+                                equityUSD = (eqRawY / 100) * initialBalance;
+                            } else { equityUSD = 0; }
                         }
 
-                        const profitUSD = equityUSD - initialBalance;
+                        // Fix for Real Equity which might be in different units if not normalized
+                        // For now, assume consistent units.
+
+                        const profitUSD = equityUSD - initialBalance; // Approximate
 
                         html += `
                             <div class="flex flex-col gap-1 mb-2 border-b border-gray-700/50 pb-2 last:border-0 last:mb-0 last:pb-0">
@@ -1038,16 +1641,12 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                                     <span class="text-gray-300 font-bold text-xs">${dataset.label}</span>
                                 </div>
                                 <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs ml-4">
-                                    <div class="text-gray-400">Beneficio (Equity):</div>
-                                    <div class="${profitUSD >= 0 ? 'text-green-400' : 'text-red-400'} font-mono text-right">${profitUSD >= 0 ? '+' : ''}${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(profitUSD)}</div>
-                                    
-                                    <div class="text-gray-400">Drawdown:</div>
-                                    <div class="text-red-400 font-mono text-right">${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(ddUSD)}</div>
+                                    <div class="text-gray-400">Value:</div>
+                                    <div class="text-white font-mono text-right">${rawY.toFixed(2)}</div>
                                 </div>
                             </div>
                         `;
                     });
-
                     infoBody.innerHTML = html;
                 }
             } else if (infoPanel && !inChartArea) {
@@ -1057,8 +1656,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         afterDraw: (chart, args, options) => {
             const { ctx, chartArea: { top, bottom, left, right }, scales: { x: xScale, y: yScale } } = chart;
             const { x, y, draw } = chart.crosshair || {};
-
-            // Draw if this chart is active OR if it's being synced (draw=true but x might be from other chart)
             if (!draw) return;
 
             ctx.save();
@@ -1066,113 +1663,146 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             ctx.lineWidth = options.width || 1;
             ctx.strokeStyle = options.color || 'rgba(156, 163, 175, 0.5)';
             ctx.setLineDash(options.dash || [3, 3]);
-
-            // Vertical Line (Always draw if x is present)
-            if (x) {
-                ctx.moveTo(x, top);
-                ctx.lineTo(x, bottom);
-            }
-
-            // Horizontal Line (Only if y is present and > 0, usually only on active chart)
-            if (y) {
-                ctx.moveTo(left, y);
-                ctx.lineTo(right, y);
-            }
-
+            if (x) { ctx.moveTo(x, top); ctx.lineTo(x, bottom); }
+            if (y) { ctx.moveTo(left, y); ctx.lineTo(right, y); }
             ctx.stroke();
-
-            // --- Draw Labels ---
             ctx.setLineDash([]);
             ctx.font = '10px Inter, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            // X Axis Label (Date) - Only if x is valid
             if (xScale && x) {
                 const xValue = xScale.getValueForPixel(x);
                 const date = new Date(xValue);
                 if (!isNaN(date.getTime())) {
                     const label = date.toLocaleDateString();
                     const textWidth = ctx.measureText(label).width + 10;
-
                     ctx.fillStyle = options.labelColor || 'rgba(31, 41, 55, 0.9)';
                     ctx.fillRect(x - textWidth / 2, bottom, textWidth, 20);
-
                     ctx.fillStyle = options.textColor || '#f3f4f6';
                     ctx.fillText(label, x, bottom + 10);
                 }
             }
-
-            // Y Axis Label (Value) - Only if y is valid (active chart)
             if (yScale && y) {
                 const yValue = yScale.getValueForPixel(y);
-                let label;
-                if (chart.canvas.id === 'portfolioDrawdownChart') {
-                    label = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: "compact" }).format(yValue);
-                } else {
-                    label = new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(yValue);
-                }
-
+                const label = new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(yValue);
                 const textWidth = ctx.measureText(label).width + 10;
-
                 ctx.fillStyle = options.labelColor || 'rgba(31, 41, 55, 0.9)';
                 ctx.fillRect(right - textWidth, y - 10, textWidth, 20);
-
                 ctx.fillStyle = options.textColor || '#f3f4f6';
                 ctx.fillText(label, right - textWidth / 2, y);
             }
-
             ctx.restore();
         }
     };
 
-    // --- Drawdown Chart Logic ---
+    // 3. Prepare Drawdown Datasets
     const ddCanvasId = 'portfolioDrawdownChart';
     destroyChart(ddCanvasId);
     const ddCtx = document.getElementById(ddCanvasId)?.getContext('2d');
 
     if (ddCtx) {
-        // Set cursor to crosshair for better UX
         ddCtx.canvas.style.cursor = 'crosshair';
-
         const calculateDrawdownCurve = (equityCurve, initialBalance) => {
             if (!equityCurve || equityCurve.length === 0) return [];
             let maxEquity = -Infinity;
             return equityCurve.map(point => {
                 if (point.y > maxEquity) maxEquity = point.y;
-
-                // Calculate Dollar Drawdown
-                // Assuming equityCurve is normalized (base 100)
-                // RealEquity = (PointY / 100) * InitialBalance
-                // RealMax = (MaxY / 100) * InitialBalance
-                // DD$ = RealEquity - RealMax
-
                 const realEquity = (point.y / 100) * initialBalance;
                 const realMax = (maxEquity / 100) * initialBalance;
-                const drawdownUSD = realEquity - realMax;
-
-                return { x: point.x, y: drawdownUSD };
+                return { x: point.x, y: realEquity - realMax };
             });
         };
 
         const ddDatasets = allAnalyses.map((result) => {
             const isFeatured = result.savedIndex === state.featuredPortfolioIndex;
-            const analysis = result.analysis || {};
-            const chartData = analysis.chartData || {};
-            const equityCurve = chartData.equityCurve || [];
-            const initialBalance = analysis.metrics?.initial_balance || 10000; // Fallback
+            const color = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]));
 
+            // REALITY CHECK MODE
+            if (state.activeViewMode === 'reality-check' && result.realMetrics && result.realMetrics._tradesById && state.magicNumberMap) {
+                let allRealTrades = [];
+                let strategyNames = [];
+
+                if (result.strategies && Array.isArray(result.strategies)) {
+                    strategyNames = result.strategies.map(s => s.name || s);
+                } else if (result.indices && window.analysisResults) {
+                    strategyNames = result.indices.map(i => window.analysisResults[i]?.name).filter(Boolean);
+                }
+
+                if (strategyNames.length > 0) {
+                    strategyNames.forEach(stratName => {
+                        const magicRaw = state.magicNumberMap[stratName];
+                        if (magicRaw) {
+                            let magics = [];
+                            if (Array.isArray(magicRaw)) {
+                                magics = magicRaw;
+                            } else if (typeof magicRaw === 'string') {
+                                magics = magicRaw.split(',').map(m => m.trim()).filter(Boolean);
+                            } else {
+                                magics = [String(magicRaw)];
+                            }
+                            magics.forEach(m => {
+                                if (result.realMetrics._tradesById[m]) {
+                                    allRealTrades = allRealTrades.concat(result.realMetrics._tradesById[m]);
+                                }
+                            });
+                        }
+                    });
+                }
+
+                if (allRealTrades.length > 0) {
+                    allRealTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+
+                    // Generate Real Equity Curve
+                    let currentEquity = 0;
+                    const realEquityCurve = [];
+                    if (allRealTrades.length > 0) {
+                        const firstDate = new Date(allRealTrades[0].closeTime).getTime();
+                        realEquityCurve.push({ x: firstDate - 3600000, y: 0 });
+                    }
+                    allRealTrades.forEach(trade => {
+                        const tradeDate = new Date(trade.closeTime).getTime();
+                        currentEquity += (trade.profit || 0) + (trade.swap || 0) + (trade.commission || 0);
+                        realEquityCurve.push({ x: tradeDate, y: currentEquity });
+                    });
+
+                    // Calculate Drawdown from Real Equity Curve
+                    let maxRealEquity = -Infinity;
+                    const realDrawdownCurve = realEquityCurve.map(point => {
+                        if (point.y > maxRealEquity) maxRealEquity = point.y;
+                        return { x: point.x, y: point.y - maxRealEquity };
+                    });
+
+                    return {
+                        label: `${result.name} (Real)`,
+                        data: realDrawdownCurve,
+                        borderColor: color,
+                        backgroundColor: color + '40',
+                        borderWidth: 0,
+                        pointRadius: 0,
+                        fill: true,
+                        tension: 0.1,
+                        savedIndex: result.savedIndex,
+                        order: isFeatured ? 0 : 1
+                    };
+                }
+                return null;
+            }
+
+            // BACKTEST MODE (Default)
+            const analysis = result.analysis || {};
+            const equityCurve = analysis.chartData?.equityCurve || [];
+            const initialBalance = analysis.metrics?.initial_balance || 10000;
             if (!equityCurve.length) return null;
 
             const drawdownCurve = calculateDrawdownCurve(equityCurve, initialBalance);
-            const color = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + result.savedIndex) % STRATEGY_COLORS.length]));
 
             return {
                 label: result.name,
                 data: drawdownCurve,
                 borderColor: color,
-                backgroundColor: color + '40', // Slightly more opaque fill
-                borderWidth: 0, // No border
+                backgroundColor: color + '40',
+                borderWidth: 0,
                 pointRadius: 0,
                 fill: true,
                 tension: 0.1,
@@ -1181,173 +1811,145 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             };
         }).filter(ds => ds !== null);
 
-        // Create Drawdown Chart
-        // FIX: Register in state.chartInstances to allow proper destruction via utils.destroyChart
-        const ddChart = new Chart(ddCtx, {
-            type: 'line', // Back to line for stability with large datasets
+        state.chartInstances[ddCanvasId] = new Chart(ddCtx, {
+            type: 'line',
             data: { datasets: ddDatasets },
-            plugins: [crosshairPlugin], // Register local plugin
+            plugins: [crosshairPlugin],
             options: {
                 ...CHART_OPTIONS,
                 maintainAspectRatio: false,
-                layout: {
-                    padding: { left: 60, right: 10 } // FIX: Align with Equity Chart Y-axis width
-                },
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
+                layout: { padding: { left: 60, right: 10 } },
+                interaction: { mode: 'index', intersect: false },
                 plugins: {
                     ...CHART_OPTIONS.plugins,
                     legend: { display: false },
                     title: { display: false },
-                    tooltip: {
-                        enabled: false, // Disable built-in tooltip in favor of unified panel
-                    },
-                    crosshair: { // Plugin options
-                        color: 'rgba(255, 255, 255, 0.3)',
-                        width: 1
-                    }
+                    tooltip: { enabled: false },
+                    crosshair: { color: 'rgba(255, 255, 255, 0.3)', width: 1 }
                 },
                 scales: {
                     x: {
+                        ...CHART_OPTIONS.scales.x,
                         display: false,
-                        grid: { display: false }
+                        grid: { display: false },
+                        time: { unit: undefined } // Auto-scale to match Equity chart
                     },
-                    y: {
-                        display: false,
-                        grid: { display: false }
-                    }
+                    y: { display: false, grid: { display: false } }
                 },
                 elements: {
-                    point: {
-                        radius: 0, // No points, just the shape
-                        hitRadius: 10,
-                        hoverRadius: 4 // Show point on hover
-                    },
-                    line: {
-                        borderWidth: 0, // No border, just fill
-                    }
+                    point: { radius: 0, hitRadius: 10, hoverRadius: 4 },
+                    line: { borderWidth: 0 }
                 }
             }
         });
-
-        state.chartInstances[ddCanvasId] = ddChart;
     }
 
-    const firstAnalysis = allAnalyses[0].analysis;
-    // No benchmark needed
-
-    const chartOptionsWithClick = {
-        // Hacemos una copia profunda de las opciones para evitar conflictos
-        ...CHART_OPTIONS, // Usamos la copia superficial, es más simple.
-        plugins: {
-            ...CHART_OPTIONS.plugins,
-            tooltip: {
-                enabled: false // Disable built-in tooltip for main chart too
-            }
-        },
-        onClick: (evt, elements, chart) => {
-            console.log('%c[CHART CLICK] 1. Evento onClick del gráfico disparado.', 'color: #f0abfc');
-            const points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
-            console.log(`% c[CHART CLICK]2. Puntos detectados bajo el cursor: ${points.length} `, 'color: #f0abfc');
-
-            if (points.length) {
-                const firstPoint = points[0];
-                const dataset = chart.data.datasets[firstPoint.datasetIndex];
-                const clickedPortfolioIndex = dataset.savedIndex;
-                console.log(`% c[CHART CLICK]3. Índice de portafolio detectado: ${clickedPortfolioIndex} `, 'color: #f0abfc');
-
-                if (clickedPortfolioIndex === undefined) {
-                    console.log('%c[CHART CLICK] 3.1. Clic en Benchmark. Abortando.', 'color: #f0abfc');
-                    return;
+    // 4. Create Equity Chart
+    state.chartInstances[canvasId] = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        plugins: [crosshairPlugin],
+        options: {
+            ...CHART_OPTIONS,
+            maintainAspectRatio: false,
+            layout: { padding: { left: 10, right: 10 } },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                ...CHART_OPTIONS.plugins,
+                legend: { display: true, position: 'top', labels: { color: '#9ca3af', font: { size: 10 } } },
+                tooltip: { enabled: false },
+                crosshair: { color: 'rgba(255, 255, 255, 0.3)', width: 1 }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: undefined }, // Override unit to auto-scale for Real Equity which might be short-term
+                    grid: { color: 'rgba(75, 85, 99, 0.2)' },
+                    ticks: { color: '#9ca3af', font: { size: 10 } }
+                },
+                y: {
+                    grid: { color: 'rgba(75, 85, 99, 0.2)' },
+                    ticks: { color: '#9ca3af', font: { size: 10 } }
                 }
+            },
+            elements: {
+                point: { radius: 0, hitRadius: 10, hoverRadius: 4 },
+                line: { borderWidth: 2 }
+            },
+            onClick: (evt, elements, chart) => {
+                console.log('%c[CHART CLICK] 1. Evento onClick del gráfico disparado.', 'color: #f0abfc');
+                const points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+                console.log(`%c[CHART CLICK]2. Puntos detectados bajo el cursor: ${points.length} `, 'color: #f0abfc');
 
-                const activeAction = document.querySelector('#chart-actions-group .chart-action-item.active')?.dataset.action;
-                console.log(`% c[CHART CLICK]4. Acción activa: '${activeAction}'`, 'color: #f0abfc');
+                if (points.length) {
+                    const firstPoint = points[0];
+                    const dataset = chart.data.datasets[firstPoint.datasetIndex];
+                    const clickedPortfolioIndex = dataset.savedIndex;
+                    console.log(`%c[CHART CLICK]3. Índice de portafolio detectado: ${clickedPortfolioIndex} `, 'color: #f0abfc');
 
-                if (activeAction === 'destacar') {
-                    console.log('%c[CHART CLICK] 5. Entrando en la lógica de "destacar".', 'color: #f0abfc; font-weight: bold;');
-                    const portfolio = state.savedPortfolios[clickedPortfolioIndex];
-                    if (!portfolio) {
-                        console.error(`[CHART CLICK]ERROR: No se encontró el portafolio con índice ${clickedPortfolioIndex} `);
+                    if (clickedPortfolioIndex === undefined) {
+                        console.log('%c[CHART CLICK] 3.1. Clic en Benchmark. Abortando.', 'color: #f0abfc');
                         return;
                     }
 
-                    const modal = document.getElementById('chart-click-modal');
-                    const modalTitle = document.getElementById('chart-click-modal-title');
-                    const modalBody = document.getElementById('chart-click-modal-body');
-                    const confirmBtn = document.getElementById('chart-click-modal-confirm-btn');
+                    const activeAction = document.querySelector('#chart-actions-group .chart-action-item.active')?.dataset.action;
+                    console.log(`%c[CHART CLICK]4. Acción activa: '${activeAction}'`, 'color: #f0abfc');
 
-                    modalTitle.textContent = 'Confirmar Destacado';
-                    modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado?`;
+                    if (activeAction === 'destacar') {
+                        console.log('%c[CHART CLICK] 5. Entrando en la lógica de "destacar".', 'color: #f0abfc; font-weight: bold;');
+                        const portfolio = state.savedPortfolios[clickedPortfolioIndex];
+                        if (!portfolio) {
+                            console.error(`[CHART CLICK]ERROR: No se encontró el portafolio con índice ${clickedPortfolioIndex} `);
+                            return;
+                        }
 
-                    confirmBtn.onclick = () => {
-                        console.log(`%c[CHART CLICK] 6. Confirmado. Estableciendo portafolio destacado a índice ${clickedPortfolioIndex}`, 'color: #f0abfc; font-weight: bold;');
-                        state.featuredPortfolioIndex = clickedPortfolioIndex;
-                        renderFeaturedPortfolio();
-                        renderPortfolioComparisonCharts(portfolioAnalyses); // Re-render para actualizar el estilo
-                        window.closeChartClickModal(); // Cierra el modal directamente
-                    };
+                        const modal = document.getElementById('chart-click-modal');
+                        const modalTitle = document.getElementById('chart-click-modal-title');
+                        const modalBody = document.getElementById('chart-click-modal-body');
+                        const confirmBtn = document.getElementById('chart-click-modal-confirm-btn');
 
-                    console.log('%c[CHART CLICK] 7. Mostrando modal de confirmación.', 'color: #f0abfc');
-                    modal.classList.remove('hidden');
-                    modal.classList.add('flex');
-                    setTimeout(() => {
-                        document.getElementById('chart-click-modal-backdrop').classList.remove('opacity-0');
-                        document.getElementById('chart-click-modal-content').classList.remove('scale-95', 'opacity-0');
-                    }, 10);
-                } else if (activeAction === 'ocultar') { // Lógica para Ocultar/Mostrar
-                    console.log('%c[CHART CLICK] 5. Entrando en la lógica de "ocultar/mostrar".', 'color: #f0abfc; font-weight: bold;');
-                    // --- CORRECCIÓN: Usar chart.toggleDataVisibility() es la forma más limpia ---
-                    const datasetMeta = chart.getDatasetMeta(firstPoint.datasetIndex);
-                    chart.toggleDataVisibility(firstPoint.datasetIndex);
-                    chart.update(); // Actualizar el gráfico para que el cambio sea visible
-                } else if (activeAction === 'editar') { // Lógica para Editar
-                    console.log('%c[CHART CLICK] 5. Entrando en la lógica de "editar".', 'color: #f0abfc; font-weight: bold;');
-                    // El índice del portafolio ya lo tenemos en 'clickedPortfolioIndex'
-                    openOptimizationModal(clickedPortfolioIndex);
-                } else {
-                    console.log(`%c[CHART CLICK] 5.1. La acción activa ('${activeAction}') no tiene una función de clic definida. No se hace nada.`, 'color: #f0abfc');
-                }
-            }
-        }
-    };
+                        modalTitle.textContent = 'Confirmar Destacado';
+                        modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado?`;
 
-    // --- CORRECCIÓN: Deshabilitar el plugin de zoom si se va a usar el onClick ---
-    // El plugin de zoom y el onClick a nivel de opciones son a menudo incompatibles.
-    // Damos prioridad al onClick.
-    delete chartOptionsWithClick.plugins.zoom;
+                        confirmBtn.onclick = () => {
+                            console.log(`%c[CHART CLICK] 6. Confirmado. Estableciendo portafolio destacado a índice ${clickedPortfolioIndex}`, 'color: #f0abfc; font-weight: bold;');
+                            state.featuredPortfolioIndex = clickedPortfolioIndex;
+                            renderFeaturedPortfolio();
+                            renderPortfolioComparisonCharts(portfolioAnalyses);
+                            window.closeChartClickModal();
+                        };
 
-    // Set cursor to crosshair for main chart too
-    if (ctx) ctx.canvas.style.cursor = 'crosshair';
-
-    const chart = new Chart(ctx, {
-        type: 'line',
-        data: { datasets },
-        plugins: [crosshairPlugin], // Register local plugin
-        options: {
-            ...chartOptionsWithClick,
-            layout: {
-                padding: { left: 0, right: 10 } // FIX: Consistent right padding
-            },
-            scales: {
-                ...chartOptionsWithClick.scales,
-                y: {
-                    ...chartOptionsWithClick.scales.y,
-                    afterFit: (scale) => { scale.width = 60; } // FIX: Force fixed Y-axis width
-                }
-            },
-            plugins: {
-                ...chartOptionsWithClick.plugins,
-                crosshair: { // Plugin options
-                    color: 'rgba(255, 255, 255, 0.3)',
-                    width: 1
+                        console.log('%c[CHART CLICK] 7. Mostrando modal de confirmación.', 'color: #f0abfc');
+                        modal.classList.remove('hidden');
+                        modal.classList.add('flex');
+                        setTimeout(() => {
+                            document.getElementById('chart-click-modal-backdrop').classList.remove('opacity-0');
+                            document.getElementById('chart-click-modal-content').classList.remove('scale-95', 'opacity-0');
+                        }, 10);
+                    } else if (activeAction === 'ocultar') {
+                        console.log('%c[CHART CLICK] 5. Entrando en la lógica de "ocultar/mostrar".', 'color: #f0abfc; font-weight: bold;');
+                        chart.toggleDataVisibility(firstPoint.datasetIndex);
+                        chart.update();
+                    } else if (activeAction === 'editar') {
+                        console.log('%c[CHART CLICK] 5. Entrando en la lógica de "editar".', 'color: #f0abfc; font-weight: bold;');
+                        openOptimizationModal(clickedPortfolioIndex);
+                    } else {
+                        console.log(`%c[CHART CLICK] 5.1. La acción activa ('${activeAction}') no tiene una función de clic definida. No se hace nada.`, 'color: #f0abfc');
+                    }
                 }
             }
         }
     });
-    state.chartInstances[canvasId] = chart;
+
+    // REALITY CHECK: Render Comparison Table if single portfolio AND mode is 'reality-check'
+    const tableContainer = document.getElementById('comparison-table-container');
+    if (tableContainer) {
+        if (state.activeViewMode === 'reality-check' && portfolioAnalyses.length === 1 && portfolioAnalyses[0].realMetrics) {
+            renderComparisonTable(portfolioAnalyses[0]);
+        } else {
+            tableContainer.classList.add('hidden');
+        }
+    }
 };
 
 // Expose close modal function globally

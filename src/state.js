@@ -62,6 +62,9 @@ export const state = {
 
     // --- NUEVO: Mapeo de Magic Numbers ---
     magicNumberMap: {}, // { strategyId (or filename): magicNumber }
+
+    // --- NUEVO: Modo de Vista (Backtest vs Reality Check) ---
+    activeViewMode: 'backtest', // 'backtest' | 'reality-check'
 };
 
 // Funciones de persistencia para Magic Numbers
@@ -87,6 +90,8 @@ export const saveMagicNumbers = () => {
 };
 
 export const loadSavedPortfolios = () => {
+    // Disabled by user request for clean slate on reload
+    /*
     try {
         const stored = localStorage.getItem('savedPortfolios');
         if (stored) {
@@ -101,6 +106,8 @@ export const loadSavedPortfolios = () => {
     } catch (e) {
         console.error('[State] Error loading Saved Portfolios:', e);
     }
+    */
+    console.log('[State] Saved Portfolios auto-load disabled.');
 };
 
 export const saveSavedPortfolios = () => {
