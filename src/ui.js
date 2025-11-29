@@ -9,6 +9,8 @@ import { focusMode } from './modules/focusMode.js';
 import { renderStrategiesTable as renderStrategiesTableModule } from './modules/strategiesTable.js';
 import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig } from './modules/savedPortfoliosTable.js';
 import { unlinkAccount } from './modules/myfxbookUI.js';
+import { openSlaveAccountsModal } from './modules/slaveAccounts.js';
+import { openStrategyRiskModal } from './modules/strategyRiskViewer.js';
 
 
 /**
@@ -552,14 +554,21 @@ export const displaySavedPortfoliosList = () => {
             if (!colInfo) return;
 
             if (key === 'name') {
-                let nameHtml = `<p class="font-semibold text-sky-300 flex items-center gap-2">
-                    ${p.name}
-                    ${p.linkedAccountId ? `<span class="inline-flex items-center gap-1 bg-blue-900 text-blue-200 text-[10px] px-1.5 py-0.5 rounded border border-blue-700 group">
+                let nameHtml = `
+                <div class="flex flex-col gap-1" data-portfolio-index="${originalIndex}">
+                    <div class="flex items-center gap-2 group portfolio-name-container">
+                        <p class="font-semibold text-sky-300 flex items-center gap-2 portfolio-name-display cursor-pointer" title="Click to edit">
+                            <span class="portfolio-name-text hover:text-sky-200 transition-colors">${p.name}</span>
+                            <span class="text-gray-500 opacity-0 group-hover:opacity-100 hover:text-sky-400 transition-all duration-200 text-xs edit-portfolio-name-btn p-1 rounded hover:bg-gray-700">✏️</span>
+                        </p>
+                        <input type="text" class="hidden portfolio-name-input bg-gray-700 text-white border border-gray-600 rounded px-2 py-1 text-xs w-full max-w-[200px] focus:outline-none focus:border-sky-500 shadow-sm" value="${p.name}">
+                    </div>
+                    ${p.linkedAccountId ? `<span class="inline-flex items-center gap-1 bg-blue-900/40 text-blue-200 text-[10px] px-1.5 py-0.5 rounded border border-blue-800/50 w-fit">
                         <span title="Linked to Myfxbook: ${p.linkedAccountName}">🔗 Myfxbook</span>
-                        <button class="hover:text-red-400 unlink-portfolio-btn ml-1 font-bold" data-index="${originalIndex}" title="Unlink">×</button>
+                        <button class="hover:text-red-400 unlink-portfolio-btn ml-1 font-bold transition-colors" data-index="${originalIndex}" title="Unlink">×</button>
                     </span>` : ''}
-                </p>`;
-                rowHTML += `<td class="px-4 py-3">${nameHtml}<p class="text-gray-400 text-xs">${weightsText}</p></td>`;
+                </div>`;
+                rowHTML += `<td class="px-4 py-3">${nameHtml}<p class="text-gray-500 text-[10px] mt-0.5">${weightsText}</p></td>`;
             } else if (key === 'strategyCount') {
                 const value = p.indices ? p.indices.length : 0;
                 rowHTML += `<td class="px-4 py-3 text-gray-300 text-right">${value}</td>`;
@@ -597,6 +606,13 @@ export const displaySavedPortfoliosList = () => {
         rowHTML += `<td class="px-4 py-3 text-center whitespace-nowrap">
             <button data-index="${originalIndex}" class="feature-portfolio-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isFeatured ? 'featured' : ''}" title="Destacar/Acciones">&#9733;</button>
             ${p.weights ? `<button data-index="${originalIndex}" class="compare-original-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isCompared ? 'active' : ''}" title="Comparar con Original">🔄</button>` : ''}
+            <button data-index="${originalIndex}" class="manage-slave-accounts-btn text-gray-400 hover:text-sky-400 text-lg px-1 relative" title="Gestionar Cuentas Esclavas">
+                👥
+                ${p.slaveAccounts && p.slaveAccounts.length > 0 ? `<span class="absolute -top-1 -right-1 bg-sky-600 text-white text-[9px] font-bold px-1 rounded-full">${p.slaveAccounts.length}</span>` : ''}
+            </button>
+            <button data-index="${originalIndex}" class="view-strategy-risk-btn text-gray-400 hover:text-sky-400 text-lg px-1" title="Ver Riesgo Base Estrategias">
+                👁️
+            </button>
             <button data-index="${originalIndex}" class="view-edit-portfolio-btn bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-3 rounded-lg text-xs inline-flex items-center gap-1 transition-all">
                 <span class="text-sm">⚙️</span>
                 <span>Optimizar</span>

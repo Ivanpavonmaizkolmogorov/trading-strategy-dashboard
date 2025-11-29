@@ -85,3 +85,29 @@ export const saveMagicNumbers = () => {
         console.error('[State] Error saving Magic Numbers:', e);
     }
 };
+
+export const loadSavedPortfolios = () => {
+    try {
+        const stored = localStorage.getItem('savedPortfolios');
+        if (stored) {
+            state.savedPortfolios = JSON.parse(stored);
+            console.log('[State] Saved Portfolios loaded:', state.savedPortfolios.length);
+            // Ensure nextPortfolioId is updated
+            if (state.savedPortfolios.length > 0) {
+                const maxId = Math.max(...state.savedPortfolios.map(p => p.id || 0));
+                state.nextPortfolioId = maxId + 1;
+            }
+        }
+    } catch (e) {
+        console.error('[State] Error loading Saved Portfolios:', e);
+    }
+};
+
+export const saveSavedPortfolios = () => {
+    try {
+        localStorage.setItem('savedPortfolios', JSON.stringify(state.savedPortfolios));
+        console.log('[State] Saved Portfolios saved.');
+    } catch (e) {
+        console.error('[State] Error saving Saved Portfolios:', e);
+    }
+};

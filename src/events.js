@@ -11,6 +11,8 @@ import { initializeLayout } from './modules/layout.js'; // <-- NUEVO
 import { initMyfxbookUI, openMyfxbookModal } from './modules/myfxbookUI.js'; // <-- MYFXBOOK
 import { generateStrategyId } from './utils.js'; // <-- ID GENERATOR
 import { initLiveMonitor, renderLiveMonitor } from './modules/liveMonitor.js'; // <-- LIVE MONITOR
+import { openSlaveAccountsModal } from './modules/slaveAccounts.js'; // <-- SLAVE ACCOUNTS
+import { openStrategyRiskModal } from './modules/strategyRiskViewer.js'; // <-- STRATEGY RISK VIEWER
 
 export function initializeEventListeners() {
     // Inicializar el nuevo Layout (Sidebar, Tabs, Resizer)
@@ -277,6 +279,86 @@ export function initializeEventListeners() {
                 }
 
                 // await reAnalyzeAllData(); // <-- ELIMINADO: Innecesario
+            }
+            // --- Manage Slave Accounts ---
+            const manageAccountsBtn = e.target.closest('.manage-slave-accounts-btn');
+            if (manageAccountsBtn) {
+                const index = parseInt(manageAccountsBtn.dataset.index, 10);
+                openSlaveAccountsModal(index);
+                e.stopPropagation();
+            }
+
+            // --- View Strategy Risk ---
+            const viewRiskBtn = e.target.closest('.view-strategy-risk-btn');
+            if (viewRiskBtn) {
+                const index = parseInt(viewRiskBtn.dataset.index, 10);
+                openStrategyRiskModal(index);
+                e.stopPropagation();
+            }
+
+            // --- Edit Portfolio Name in List ---
+            const nameContainer = e.target.closest('.portfolio-name-container');
+            if (nameContainer && (e.target.closest('.portfolio-name-display') || e.target.closest('.edit-portfolio-name-btn'))) {
+                const displayEl = nameContainer.querySelector('.portfolio-name-display');
+                const inputEl = nameContainer.querySelector('.portfolio-name-input');
+                const nameTextEl = nameContainer.querySelector('.portfolio-name-text');
+                const wrapper = nameContainer.closest('[data-portfolio-index]');
+                const index = wrapper ? parseInt(wrapper.dataset.portfolioIndex, 10) : -1;
+
+                if (displayEl && inputEl && index !== -1) {
+                    // Enable Edit
+                    displayEl.classList.add('hidden');
+                    inputEl.classList.remove('hidden');
+                    inputEl.focus();
+                    inputEl.select();
+
+                    const saveName = () => {
+                        const newName = inputEl.value.trim();
+                        const portfolio = state.savedPortfolios[index];
+                        if (newName && portfolio && newName !== portfolio.name) {
+                            portfolio.name = newName;
+                            nameTextEl.textContent = newName;
+                            showToast('Portfolio renamed', 'success');
+
+                            // Update Live Monitor if it's the one being monitored
+                            if (document.getElementById('live-monitor-view')?.classList.contains('hidden') === false) {
+                                // If live monitor is visible, we might want to refresh it to show new name
+                                import('./modules/liveMonitor.js').then(({ renderLiveMonitor }) => renderLiveMonitor());
+                            }
+                        }
+                        displayEl.classList.remove('hidden');
+                        inputEl.classList.add('hidden');
+                    };
+
+                    const onKeydown = (ev) => {
+                        if (ev.key === 'Enter') {
+                            saveName();
+                            inputEl.removeEventListener('keydown', onKeydown);
+                            inputEl.removeEventListener('blur', onBlur);
+                        } else if (ev.key === 'Escape') {
+                            inputEl.value = state.savedPortfolios[index].name;
+                            displayEl.classList.remove('hidden');
+                            inputEl.classList.add('hidden');
+                            inputEl.removeEventListener('keydown', onKeydown);
+                            inputEl.removeEventListener('blur', onBlur);
+                        }
+                    };
+
+                    const onBlur = () => {
+                        // Delay to allow Enter to fire first
+                        setTimeout(() => {
+                            saveName();
+                            inputEl.removeEventListener('keydown', onKeydown);
+                            inputEl.removeEventListener('blur', onBlur);
+                        }, 100);
+                    };
+
+                    inputEl.addEventListener('keydown', onKeydown);
+                    inputEl.addEventListener('blur', onBlur);
+
+                    // Prevent bubbling to row click
+                    e.stopPropagation();
+                }
             }
         });
 

@@ -138,9 +138,11 @@ function generateShortHash(str) {
 
 /**
  * Generates unique ID for strategies (format: STRAT_XXXX)
+ * NOW DETERMINISTIC: Depends only on fileName to allow persistence across sessions.
  */
-export function generateStrategyId(fileName, timestamp = Date.now()) {
-    const input = `${fileName}_${timestamp}`;
+export function generateStrategyId(fileName) {
+    // Removed timestamp to ensure stability across reloads for the same file
+    const input = `${fileName}`;
     const hash = generateShortHash(input);
     return `STRAT_${hash}`;
 }

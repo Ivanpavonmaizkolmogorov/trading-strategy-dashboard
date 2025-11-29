@@ -1,5 +1,8 @@
 import { state } from '../state.js';
 import { fetchLinkedAccountData, recalculateStrategyBreakdown } from './myfxbookUI.js';
+import { openMyfxbookModal } from './myfxbookUI.js';
+import { openSlaveAccountsModal } from './slaveAccounts.js';
+import { openStrategyRiskModal } from './strategyRiskViewer.js';
 import { showToast } from './notifications.js';
 import { loadPortfolioIntoEditor } from './portfolioBuilder.js';
 import { openMagicMapper } from './magicMapper.js'; // We need to export this or similar
@@ -119,12 +122,26 @@ function createMonitorCard(portfolio) {
     card.innerHTML = `
         <div class="p-5 flex-1">
             <div class="flex justify-between items-start mb-4">
-                <div>
-                    <h3 class="font-bold text-lg text-white truncate w-48" title="${portfolio.name}">${portfolio.name}</h3>
+                <div class="flex-1 mr-2 relative">
+                    <!-- Display Mode -->
+                    <div class="flex items-center gap-2 group cursor-pointer" id="p-name-display-${portfolio.id}">
+                        <h3 class="font-bold text-lg text-white truncate max-w-[12rem]" title="Click to edit">${portfolio.name}</h3>
+                        <span class="text-gray-400 text-sm hover:text-white transition-colors">✏️</span>
+                    </div>
+                    <!-- Edit Mode -->
+                    <input type="text" id="p-name-input-${portfolio.id}" class="hidden bg-gray-700 text-white border border-gray-600 rounded px-2 py-1 text-sm w-full focus:outline-none focus:border-sky-500" value="${portfolio.name}">
+
                     <div class="flex items-center gap-2 mt-1">
                         <span class="text-xs bg-blue-900/50 text-blue-200 px-2 py-0.5 rounded border border-blue-800">
                             🔗 ${portfolio.linkedAccountName || 'Myfxbook'}
                         </span>
+                        <button class="manage-slave-accounts-btn-card text-gray-400 hover:text-sky-400 text-sm px-1 relative" title="Gestionar Cuentas Esclavas" data-portfolio-id="${portfolio.id}">
+                            👥
+                            ${portfolio.slaveAccounts && portfolio.slaveAccounts.length > 0 ? `<span class="absolute -top-2 -right-2 bg-sky-600 text-white text-[8px] font-bold px-1 rounded-full">${portfolio.slaveAccounts.length}</span>` : ''}
+                        </button>
+                        <button class="view-strategy-risk-btn-card text-gray-400 hover:text-sky-400 text-sm px-1" title="Ver Riesgo Base Estrategias" data-portfolio-id="${portfolio.id}">
+                            👁️
+                        </button>
                     </div>
                 </div>
                 <div class="${statusColor} text-white text-xs font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">
@@ -179,9 +196,8 @@ function createMonitorCard(portfolio) {
                     <span>Strategy Breakdown</span>
                     <span class="text-[9px] text-gray-600 font-normal cursor-help" title="Current Streak / Max Allowed (Backtest)">Real (Curr/Max) vs Backtest ℹ️</span>
                 </div>
-                <div class="grid grid-cols-1 xl:grid-cols-2 gap-x-3 gap-y-1 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+                <div class="grid grid-cols-1 gap-y-1 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
                     ${(() => {
-            // 1. Collect and calculate data for all strategies
             const strategyData = portfolio.indices.map(idx => {
                 const strategy = state.loadedStrategyFiles[idx];
                 if (!strategy) return null;
@@ -199,82 +215,47 @@ function createMonitorCard(portfolio) {
                     metrics = portfolio.realMetrics?.strategyBreakdown?.[strategyId];
                 }
 
-                let backtestLimit = strategy.metrics?.maxConsecutiveLosses || strategy.analysis?.metrics?.maxConsecutiveLosses || 0;
+                if (!metrics) return null;
 
-                // Fallback: Calculate on the fly if missing using raw data
-                const rawData = state.rawStrategiesData?.[idx];
-                if (backtestLimit === 0 && rawData && Array.isArray(rawData)) {
-                    backtestLimit = calculateMaxConsecutiveLosses(rawData);
-                }
-
-                // DEBUG LOG
-                if (backtestLimit === 0) {
-                    console.warn(`[LiveMonitor] Zero Backtest Limit for ${strategy.name}`, {
-                        metrics: strategy.metrics,
-                        analysisMetrics: strategy.analysis?.metrics,
-                        hasRawData: !!rawData
-                    });
-                }
-                if (!metrics) {
-                    // console.warn(`[LiveMonitor] No Real Metrics for ${strategy.name} (Magic: ${magicNum})`);
-                }
-                const currentStreak = metrics?.currentConsecutiveLosses || 0;
-                const realMax = metrics?.maxConsecutiveLosses || 0;
-                const realMaxDD = metrics?.maxDrawdown || 0;
-
-                const percentage = backtestLimit > 0 ? (currentStreak / backtestLimit) * 100 : 0;
+                const limitLosses = strategy.metrics?.maxConsecutiveLosses || 0;
+                const realMaxLosses = metrics.maxConsecutiveLosses || 0;
+                const currentLosses = metrics.currentConsecutiveLosses || 0;
+                const realMaxDDStrat = metrics.maxDrawdown || 0;
 
                 return {
-                    strategy,
-                    magicNum,
-                    metrics,
-                    backtestLimit,
-                    currentStreak,
-                    realMax,
-                    realMaxDD,
-                    percentage
+                    name: strategy.name.replace('.csv', '').substring(0, 15),
+                    limitLosses,
+                    realMaxLosses,
+                    currentLosses,
+                    realMaxDDStrat,
+                    magicNum
                 };
             }).filter(Boolean);
 
-            // 2. Sort by Risk Percentage (Descending)
-            strategyData.sort((a, b) => b.percentage - a.percentage);
+            // 2. Render rows
+            if (strategyData.length === 0) return '<div class="text-gray-500 text-xs italic p-2">No strategies mapped</div>';
 
-            // 3. Render
-            if (strategyData.length === 0) {
-                return '<div class="text-xs text-gray-500 text-center italic py-2">No strategies linked to Magic Numbers</div>';
-            }
-
-            return strategyData.map(item => {
-                const { strategy, magicNum, backtestLimit, currentStreak, realMax, realMaxDD, percentage } = item;
-                const cappedPercentage = Math.min(percentage, 100);
-
-                let barColor = 'bg-emerald-500';
-                if (percentage >= 100) barColor = 'bg-red-600 animate-pulse';
-                else if (percentage >= 80) barColor = 'bg-orange-500';
-                else if (percentage >= 50) barColor = 'bg-yellow-500';
+            return strategyData.map(s => {
+                const isNearLimit = s.currentLosses >= s.limitLosses * 0.8;
+                const isBroken = s.currentLosses > s.limitLosses;
+                const rowColor = isBroken ? 'text-red-400' : (isNearLimit ? 'text-orange-400' : 'text-gray-300');
 
                 return `
-                                <div class="py-2 border-b border-gray-700/50 last:border-0 hover:bg-gray-700/20 px-1 rounded transition-colors">
-                                    <div class="flex justify-between items-center text-xs mb-1">
-                                        <span class="text-gray-300 truncate flex-1 min-w-0 font-medium mr-2" title="${strategy.name}">${strategy.name.replace('.csv', '')}</span>
-                                        <div class="flex items-center gap-1 font-mono shrink-0">
-                                            <span class="${percentage >= 80 ? 'text-red-400 font-bold' : 'text-gray-400'}">${currentStreak}</span>
-                                            <span class="text-gray-600">/</span>
-                                            <span class="text-gray-500">${backtestLimit}</span>
-                                        </div>
-                                    </div>
-                                    <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden relative">
-                                        <div class="h-full ${barColor} transition-all duration-500" style="width: ${cappedPercentage}%"></div>
-                                    </div>
-                                    <div class="flex justify-between mt-1">
-                                        <span class="text-[9px] text-gray-600 truncate max-w-[80px]" title="Magic: ${magicNum}">#${magicNum}</span>
-                                        <div class="flex gap-2">
-                                            <span class="text-[9px] text-gray-600 cursor-help" title="Max Consecutive Losses seen in Real Trading (Closed Trades)">Max Loss (Closed): ${realMax}</span>
-                                            <span class="text-[9px] text-gray-600 cursor-help" title="Max Drawdown seen in Real Trading (Closed Trades)">Max DD (Closed): $${realMaxDD.toFixed(0)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
+                    <div class="flex justify-between items-center text-xs py-1 border-b border-gray-700/50 last:border-0">
+                        <span class="text-gray-400 truncate w-24" title="${s.name} (#${s.magicNum})">${s.name}</span>
+                        <div class="flex gap-3">
+                            <span class="${rowColor} font-mono" title="Current / Max Real">
+                                ${s.currentLosses}<span class="text-gray-600">/</span>${s.realMaxLosses}
+                            </span>
+                            <span class="text-gray-500 font-mono border-l border-gray-700 pl-2" title="Backtest Limit">
+                                ${s.limitLosses}
+                            </span>
+                            <span class="text-gray-500 font-mono border-l border-gray-700 pl-2 w-12 text-right" title="Real Max DD">
+                                $${s.realMaxDDStrat.toFixed(0)}
+                            </span>
+                        </div>
+                    </div>
+                `;
             }).join('');
         })()}
                 </div>
@@ -346,6 +327,79 @@ function createMonitorCard(portfolio) {
         });
     });
 
+    // --- Edit Portfolio Name Logic ---
+    const nameDisplay = card.querySelector(`#p-name-display-${portfolio.id}`);
+    const nameInput = card.querySelector(`#p-name-input-${portfolio.id}`);
+    const nameText = nameDisplay?.querySelector('h3');
+
+    if (nameDisplay && nameInput && nameText) {
+        const enableEdit = () => {
+            nameDisplay.classList.add('hidden');
+            nameInput.classList.remove('hidden');
+            nameInput.focus();
+            nameInput.select();
+        };
+
+        const saveName = () => {
+            const newName = nameInput.value.trim();
+            if (newName && newName !== portfolio.name) {
+                portfolio.name = newName;
+                nameText.textContent = newName;
+                nameInput.value = newName;
+
+                // Update Saved Portfolios List if visible
+                // Update Saved Portfolios List if visible
+                import('../ui.js').then(({ displaySavedPortfoliosList }) => {
+                    if (typeof displaySavedPortfoliosList === 'function') displaySavedPortfoliosList();
+                });
+
+                showToast('Portfolio renamed', 'success');
+            }
+            nameDisplay.classList.remove('hidden');
+            nameInput.classList.add('hidden');
+        };
+
+        const cancelEdit = () => {
+            nameInput.value = portfolio.name;
+            nameDisplay.classList.remove('hidden');
+            nameInput.classList.add('hidden');
+        };
+
+        nameDisplay.addEventListener('click', enableEdit);
+
+        nameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                saveName();
+                nameInput.blur(); // Trigger blur to ensure clean state
+            } else if (e.key === 'Escape') {
+                cancelEdit();
+                nameInput.blur();
+            }
+        });
+
+        nameInput.addEventListener('blur', (e) => {
+            // Delay slightly to allow Enter key to process first if needed, though usually not an issue
+            saveName();
+        });
+
+        // Prevent click propagation to card (if card has click listener)
+        nameInput.addEventListener('click', (e) => e.stopPropagation());
+        nameDisplay.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    // Slave Accounts Button Listener
+    const slaveBtn = card.querySelector('.manage-slave-accounts-btn-card');
+    if (slaveBtn) {
+        slaveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Find index by ID
+            const index = state.savedPortfolios.findIndex(p => p.id === portfolio.id);
+            if (index !== -1) {
+                openSlaveAccountsModal(index);
+            }
+        });
+    }
+
     return card;
 }
 
@@ -355,11 +409,11 @@ function renderEmptyState(container) {
             <div class="text-6xl mb-4">📡</div>
             <h3 class="text-xl font-bold text-gray-300 mb-2">No Monitored Accounts</h3>
             <p class="text-center max-w-md mb-6">Link your Myfxbook accounts to your portfolios to start monitoring their health here.</p>
-            <button onclick="document.querySelector(&quot;.tab-btn[data-target='saved-portfolios-content']&quot;)?.click()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full transition-colors">
+            <button onclick="document.querySelector('.tab-btn[data-target=\\'saved-portfolios-content\\']')?.click()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full transition-colors">
                 Go to Saved Portfolios
             </button>
         </div>
-        `;
+    `;
 }
 
 function calculateMaxConsecutiveLosses(trades) {

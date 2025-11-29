@@ -241,14 +241,16 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
         const names = indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '').substring(0, 5)).join('+');
         const strategyIds = indices.map(i => state.loadedStrategyFiles[i].strategyId);
 
+        // Save portfolio with strategyIds for robust restoration
         state.savedPortfolios.push({
             name: `Manual (${names})`,
             indices: indices,
+            strategyIds: strategyIds, // <--- SAVE STRATEGY IDs
             id: generatePortfolioId(`Manual (${names})`, strategyIds),
             weights: null,
             metrics: portfolio.metrics, // Save pre-calculated metrics
             analysis: portfolio.metrics, // Save chart data and analysis (metrics contains chartData)
-            comments: `Creado manualmente. ${validation.passed ? 'Cumple filtros.' : 'No cumple filtros.'}`
+            comments: document.getElementById('portfolio-comment').value || ''
         });
 
         displaySavedPortfoliosList();
@@ -281,29 +283,40 @@ export const loadPortfolioIntoEditor = (portfolioIndex) => {
         selectedStrategies.clear();
 
         // 2. Select strategies from portfolio
-        // Note: portfolio.indices refers to indices in state.rawStrategiesData (or loadedStrategyFiles)
-        // We assume these indices are still valid. If files were removed/reordered, this might be wrong.
-        // Ideally we should match by ID.
-        if (portfolio.indices) {
-            portfolio.indices.forEach(index => {
-                selectedStrategies.add(index);
+        // ROBUST: Try to match by strategyId first, then fallback to indices
+        let indicesToSelect = [];
+
+        if (portfolio.strategyIds && portfolio.strategyIds.length > 0) {
+            // Find current indices for these IDs
+            portfolio.strategyIds.forEach(id => {
+                const currentIndex = state.loadedStrategyFiles.findIndex(f => f.strategyId === id);
+                if (currentIndex !== -1) {
+                    indicesToSelect.push(currentIndex);
+                } else {
+                    console.warn(`[PortfolioBuilder] Strategy with ID ${id} not found in loaded files.`);
+                }
             });
+        } else if (portfolio.indices) {
+            // Fallback for legacy portfolios
+            indicesToSelect = portfolio.indices;
         }
+
+        indicesToSelect.forEach(index => {
+            // Verify index is within bounds
+            if (state.loadedStrategyFiles[index]) {
+                selectedStrategies.add(index);
+            }
+        });
 
         // 3. Update Table UI
         renderStrategiesTable();
 
-        // 4. Switch to Analysis View (Main App)
-        const navAnalysis = document.getElementById('nav-analysis');
-        if (navAnalysis) navAnalysis.click();
+        // 4. Scroll to strategies table
+        document.getElementById('strategies-content')?.scrollIntoView({ behavior: 'smooth' });
 
-        // 5. Switch to Strategies Tab within Analysis View
-        const strategiesTab = document.querySelector('[data-target="strategies-content"]');
-        if (strategiesTab) strategiesTab.click();
-
-        // 6. Notify user
-        import('../modules/notifications.js').then(mod => {
-            mod.showToast(`Loaded "${portfolio.name}" for editing. Select/Deselect strategies and re-analyze.`, 'info');
+        // 5. Show toast
+        import('../modules/notifications.js').then(({ showToast }) => {
+            showToast(`Loaded "${portfolio.name}" into editor`, 'success');
         });
     });
 };

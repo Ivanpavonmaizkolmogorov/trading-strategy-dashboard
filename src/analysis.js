@@ -203,31 +203,33 @@ export const reAnalyzeAllData = async () => {
 
     // 4. Mapear los resultados del backend al formato que espera el frontend.
     let allAnalysisResults = [];
-    // --- OPTIMIZACIÓN: NO borrar métricas existentes si no se han recalculado ---
-    // state.savedPortfolios.forEach(p => { delete p.metrics; delete p.analysis; }); 
 
-    // Limpiar métricas antiguas de los portafolios del databank (estos siempre se recalculan si se envían, o se borran si no)
-    // En este caso, como databankPortfolios siempre se envía completo si hay algo, está bien.
-    // SOLO si no estamos en modo normalización (porque si lo estamos, no los enviamos y no queremos borrar sus datos viejos aunque no se muestren)
-    // SOLO si no estamos en modo normalización (porque si lo estamos, no los enviamos y no queremos borrar sus datos viejos aunque no se muestren)
-    // if (!isRiskNormalized) {
-    //    state.databankPortfolios.forEach(p => { delete p.metrics; });
-    // }
+    // Separar resultados de estrategias y portafolios
+    // El backend garantiza que los primeros N resultados corresponden a las N estrategias enviadas, en orden.
+    const numStrategies = state.loadedStrategyFiles.length;
+    const strategyResults = backendAnalyses.slice(0, numStrategies);
+    const portfolioResults = backendAnalyses.slice(numStrategies);
 
-    // Contadores para mapear estrategias individuales
-    const strategyAnalyses = [];
+    // Procesar Estrategias (Mapeo 1:1 garantizado)
+    strategyResults.forEach((result, i) => {
+        // Incluso si result es null (falló el análisis), creamos una entrada para mantener el índice
+        // y que la tabla muestre la fila (aunque sea con ceros/vacía) en lugar de desalinear todo.
+        allAnalysisResults.push({
+            name: state.loadedStrategyFiles[i].name,
+            analysis: result ? (result.metrics || result) : {}, // Si es null, objeto vacío
+            originalIndex: i
+        });
+    });
 
-    for (const result of backendAnalyses) {
+    // Procesar Portafolios
+    for (const result of portfolioResults) {
         if (!result) continue;
 
         if (result.is_saved_portfolio) {
             if (result.metrics && Object.keys(result.metrics).length > 0) {
-                // El backend ahora usa saved_index para identificar portafolios guardados.
-                // Es más fiable que el ID durante el ciclo de vida de la app.
                 const portfolioInState = state.savedPortfolios[result.saved_index];
                 console.log(`%c[FRONTEND-LOG] 5. Asignando métricas al portafolio guardado (índice ${result.saved_index})`, 'color: lightgreen;');
                 if (portfolioInState) {
-                    console.log(`[FRONTEND-LOG] 5.1. Métricas recibidas para portafolio '${portfolioInState.name}': Ret/DD=${result.metrics?.profitMaxDD_Ratio?.toFixed(2)}, MaxDD$=${result.metrics?.maxDrawdownInDollars?.toFixed(2)}`);
                     portfolioInState.metrics = result.metrics;
                     portfolioInState.analysis = result.metrics;
                 }
@@ -241,37 +243,8 @@ export const reAnalyzeAllData = async () => {
             }
         } else if (result.is_current_portfolio) {
             allAnalysisResults.push({ name: 'Portafolio Actual', analysis: result.metrics, isCurrentPortfolio: true });
-        } else {
-            // Si no es ningún tipo de portafolio, es una estrategia individual.
-            // Esto es más robusto que la condición anterior.
-            strategyAnalyses.push(result);
         }
     }
-
-    // Ahora, procesamos las estrategias individuales en orden.
-    // El backend devuelve las estrategias en el mismo orden que se enviaron,
-    // pero filtradas si fallaron. Sin embargo, 'strategyAnalyses' solo contiene las que tuvieron éxito.
-    // Debemos tener cuidado de no desalinear los índices.
-
-    // MEJORA: Asumimos que el backend devuelve las estrategias en orden secuencial
-    // correspondiente a state.loadedStrategyFiles.
-    // Si el backend devuelve menos resultados que estrategias, significa que algunas fallaron.
-    // Lo ideal sería que el backend devolviera el índice original, pero por ahora
-    // haremos un mapeo directo asumiendo orden, y si faltan, se quedarán sin métricas.
-
-    strategyAnalyses.forEach((analysis, i) => {
-        // Si el backend devuelve 'original_index' o similar, usarlo.
-        // Si no, asumimos orden secuencial 0, 1, 2...
-        const targetIndex = i;
-
-        if (state.loadedStrategyFiles[targetIndex]) {
-            allAnalysisResults.push({
-                name: state.loadedStrategyFiles[targetIndex].name,
-                analysis: analysis.metrics || analysis, // Support both structures
-                originalIndex: targetIndex
-            });
-        }
-    });
 
     // Después de enriquecer, añadimos los portafolios guardados a los resultados para los gráficos.
     state.savedPortfolios.forEach((p, i) => {

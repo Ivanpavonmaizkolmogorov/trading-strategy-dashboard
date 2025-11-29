@@ -1,6 +1,6 @@
 import { dom } from '../dom.js';
 import { state } from '../state.js';
-import { displayError } from '../utils.js';
+import { displayError, generateStrategyId } from '../utils.js';
 import { reAnalyzeAllData } from '../analysis.js';
 import { updateTradesFilesList, resetUI } from '../ui.js';
 import { populateViewSelector } from '../modules/viewManager.js';
@@ -129,7 +129,11 @@ export const importAnalysis = (e) => {
 const restoreState = async (importedState) => {
     resetUI();
 
-    state.loadedStrategyFiles = importedState.loadedStrategyFiles.map(f => ({ name: f.name, isPlaceholder: true }));
+    state.loadedStrategyFiles = importedState.loadedStrategyFiles.map(f => ({
+        name: f.name,
+        isPlaceholder: true,
+        strategyId: generateStrategyId(f.name) // <--- Assign ID
+    }));
     state.rawStrategiesData = importedState.rawStrategiesData;
     state.savedPortfolios = importedState.savedPortfolios || [];
     state.selectedPortfolioIndices = new Set(importedState.selectedPortfolioIndices || []);
@@ -160,5 +164,11 @@ const restoreState = async (importedState) => {
             dom.databankStatus.innerHTML = `ℹ️ DataBank cargado (${state.databankPortfolios.length} portafolios).`;
         }
         showToast(`DataBank cargado: ${state.databankPortfolios.length} portafolios`, 'success');
+    }
+
+    // Auto-close Config Modal
+    const configModal = document.getElementById('config-modal');
+    if (configModal) {
+        configModal.classList.add('hidden');
     }
 };

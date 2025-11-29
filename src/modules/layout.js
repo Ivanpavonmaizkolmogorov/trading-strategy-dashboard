@@ -1,6 +1,6 @@
 import { dom } from '../dom.js';
 import { renderViewerForActiveTab } from './viewer.js';
-import { renderStrategiesTable } from '../ui.js';
+import { renderStrategiesTable, displaySavedPortfoliosList } from '../ui.js';
 import { initStrategiesTable } from './strategiesTable.js';
 
 /**
@@ -70,6 +70,8 @@ const initBottomPanelTabs = () => {
                 if (targetId === 'strategies-content') {
                     initStrategiesTable(); // Ensure controls are injected and config loaded
                     renderStrategiesTable();
+                } else if (targetId === 'saved-portfolios-content') {
+                    displaySavedPortfoliosList();
                 }
             }
 
