@@ -400,6 +400,18 @@ function createMonitorCard(portfolio) {
         });
     }
 
+    // Strategy Risk Viewer Button Listener
+    const riskBtn = card.querySelector('.view-strategy-risk-btn-card');
+    if (riskBtn) {
+        riskBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = state.savedPortfolios.findIndex(p => p.id === portfolio.id);
+            if (index !== -1) {
+                openStrategyRiskModal(index);
+            }
+        });
+    }
+
     return card;
 }
 

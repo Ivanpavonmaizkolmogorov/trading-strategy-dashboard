@@ -1190,6 +1190,9 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             options: {
                 ...CHART_OPTIONS,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: { left: 60, right: 10 } // FIX: Align with Equity Chart Y-axis width
+                },
                 interaction: {
                     mode: 'index',
                     intersect: false,
@@ -1325,6 +1328,16 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         plugins: [crosshairPlugin], // Register local plugin
         options: {
             ...chartOptionsWithClick,
+            layout: {
+                padding: { left: 0, right: 10 } // FIX: Consistent right padding
+            },
+            scales: {
+                ...chartOptionsWithClick.scales,
+                y: {
+                    ...chartOptionsWithClick.scales.y,
+                    afterFit: (scale) => { scale.width = 60; } // FIX: Force fixed Y-axis width
+                }
+            },
             plugins: {
                 ...chartOptionsWithClick.plugins,
                 crosshair: { // Plugin options
