@@ -1,8 +1,8 @@
 import { dom } from './dom.js';
-import { state } from './state.js';
+import { state, saveSavedPortfolios } from './state.js';
 import { updateDatabankDisplay, savePortfolioFromDatabank, updateDatabankCount } from './modules/databank.js';
 import { renderViewerForActiveTab } from './modules/viewer.js'; // NUEVO
-import { openOptimizationModal } from './modules/optimization.js';
+import { openOptimizationModal, startOptimizationWorkflow } from './modules/optimization.js';
 import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
 import { focusMode } from './modules/focusMode.js';
@@ -867,37 +867,8 @@ export const displaySavedPortfoliosList = () => {
                     <input type="text" class="hidden portfolio-name-input bg-gray-700 text-white border border-gray-600 rounded px-2 py-1 text-xs w-full max-w-[200px] focus:outline-none focus:border-sky-500 shadow-sm" value="${p.name}">
                 `;
 
-                // Edit Name Logic (Delegate or attach here? Attach here for simplicity)
-                const editBtn = nameGroup.querySelector('.edit-portfolio-name-btn');
-                const nameDisplay = nameGroup.querySelector('.portfolio-name-display');
-                const nameInput = nameGroup.querySelector('.portfolio-name-input');
-                const nameText = nameGroup.querySelector('.portfolio-name-text');
-
-                const toggleEdit = (e) => {
-                    e.stopPropagation();
-                    nameDisplay.classList.add('hidden');
-                    nameInput.classList.remove('hidden');
-                    nameInput.focus();
-                };
-
-                editBtn.addEventListener('click', toggleEdit);
-                nameDisplay.addEventListener('click', toggleEdit);
-
-                nameInput.addEventListener('blur', () => {
-                    // Save logic would go here (omitted for brevity, relying on existing global listener or need to reimplement?)
-                    // Existing logic likely targets .portfolio-name-input.
-                    // Let's just toggle visibility back for now.
-                    nameDisplay.classList.remove('hidden');
-                    nameInput.classList.add('hidden');
-                });
-
-                nameInput.addEventListener('click', e => e.stopPropagation());
-                nameInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        // Trigger save (simulate blur or call save function)
-                        nameInput.blur();
-                    }
-                });
+                // Edit Name Logic is handled globally in events.js via delegation
+                // We just render the structure here.
 
                 container.appendChild(nameGroup);
 
@@ -1061,6 +1032,23 @@ export const displaySavedPortfoliosList = () => {
             <button data-index="${originalIndex}" class="delete-portfolio-btn text-gray-400 hover:text-red-400 text-lg px-1" title="Eliminar">🗑️</button>
             <button data-index="${originalIndex}" class="optimize-portfolio-btn text-sky-400 hover:text-sky-300 text-lg px-1" title="Optimizar">⚙️</button>
         `;
+
+        // Margin Log Button (Appended AFTER innerHTML to avoid overwrite)
+        if (p.metrics && p.metrics.maxMarginLog) {
+            const marginBtn = document.createElement('button');
+            marginBtn.className = 'text-yellow-400 hover:text-yellow-300 mx-1 transition-colors text-lg px-1';
+            marginBtn.title = 'View Margin Log';
+            marginBtn.innerHTML = '📊';
+            marginBtn.onclick = (e) => {
+                e.stopPropagation();
+                openMarginLogModal(p.id);
+            };
+            // Insert before the delete button (or at the end)
+            // Let's insert it at the beginning or after the star?
+            // Let's just append it for now, or insert before delete button.
+            // Actually, just appending is fine, it will appear at the end.
+            tdActions.appendChild(marginBtn);
+        }
 
         // Event Listeners for Actions
         const featureBtn = tdActions.querySelector('.feature-portfolio-btn');
@@ -2318,6 +2306,82 @@ export const closeRealTradesModal = () => {
 };
 
 /**
+ * Abre el modal de Log de Margen.
+ */
+export const openMarginLogModal = (portfolioId) => {
+    let portfolio = null;
+    let metrics = null;
+
+    // 1. Try to find in state.savedPortfolios (Primary source for Saved Portfolios table)
+    const savedPortfolio = state.savedPortfolios.find(p => p.id == portfolioId);
+    if (savedPortfolio && savedPortfolio.metrics) {
+        portfolio = savedPortfolio;
+        metrics = savedPortfolio.metrics;
+    }
+
+    // 2. If not found, try window.analysisResults
+    if (!metrics) {
+        const analysisResult = window.analysisResults?.find(r => r.id == portfolioId);
+        if (analysisResult) {
+            portfolio = analysisResult;
+            // Analysis results usually store metrics in .analysis
+            metrics = analysisResult.analysis || analysisResult.metrics;
+        }
+    }
+
+    if (!metrics || !metrics.maxMarginLog) {
+        console.error('Margin Log not found for ID:', portfolioId, 'Metrics:', metrics);
+        alert('No margin log available for this portfolio.');
+        return;
+    }
+
+    const modal = document.getElementById('margin-log-modal');
+    const modalContent = document.getElementById('margin-log-modal-content');
+    const logContent = document.getElementById('margin-log-content');
+
+    if (logContent) {
+        logContent.textContent = metrics.maxMarginLog.join('\n');
+    }
+
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            if (modalContent) modalContent.classList.remove('scale-95');
+        }, 10);
+    }
+};
+
+export const closeMarginLogModal = () => {
+    const modal = document.getElementById('margin-log-modal');
+    const modalContent = document.getElementById('margin-log-modal-content');
+
+    if (modal) {
+        modal.classList.add('opacity-0');
+        if (modalContent) modalContent.classList.add('scale-95');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }, 300);
+    }
+};
+
+export const copyMarginLog = () => {
+    const logContent = document.getElementById('margin-log-content');
+    if (logContent) {
+        navigator.clipboard.writeText(logContent.textContent)
+            .then(() => alert('Log copied to clipboard!'))
+            .catch(err => console.error('Failed to copy:', err));
+    }
+};
+
+// Expose globally
+window.openMarginLogModal = openMarginLogModal;
+window.closeMarginLogModal = closeMarginLogModal;
+window.copyMarginLog = copyMarginLog;
+
+/**
  * Copies the Real Trades table content to clipboard.
  */
 export const copyRealTradesToClipboard = async () => {
@@ -2369,3 +2433,78 @@ export const copyRealTradesToClipboard = async () => {
 window.openRealTradesModal = openRealTradesModal;
 window.closeRealTradesModal = closeRealTradesModal;
 window.copyRealTradesToClipboard = copyRealTradesToClipboard;
+
+/**
+ * Toggles the featured status of a portfolio.
+ * @param {number} index - Index of the portfolio in savedPortfolios.
+ */
+function toggleFeaturedPortfolio(index) {
+    if (state.featuredPortfolioIndex === index) {
+        state.featuredPortfolioIndex = -1; // Deseleccionar
+    } else {
+        state.featuredPortfolioIndex = index;
+    }
+
+    // Guardar estado si es necesario (opcional, por ahora solo en memoria)
+    // Re-renderizar lista para actualizar iconos
+    displaySavedPortfoliosList();
+
+    // Re-renderizar destacado
+    renderFeaturedPortfolio();
+}
+
+/**
+ * Toggles the comparison status of a portfolio.
+ * @param {number} index - Index of the portfolio in savedPortfolios.
+ * @param {boolean} isPortfolio - True if the item is a portfolio, false if a strategy.
+ */
+function toggleComparisonPortfolio(index, isPortfolio) {
+    if (isPortfolio) {
+        if (state.comparisonPortfolioIndex === index) {
+            state.comparisonPortfolioIndex = -1; // Deseleccionar
+        } else {
+            state.comparisonPortfolioIndex = index;
+        }
+        state.comparisonStrategyIndex = -1; // Clear strategy comparison if portfolio is selected
+    } else { // It's a strategy
+        if (state.comparisonStrategyIndex === index) {
+            state.comparisonStrategyIndex = -1; // Deseleccionar
+        } else {
+            state.comparisonStrategyIndex = index;
+        }
+        state.comparisonPortfolioIndex = -1; // Clear portfolio comparison if strategy is selected
+    }
+
+    displaySavedPortfoliosList();
+    displayStrategiesList(); // Also update strategy list for comparison icons
+    renderFeaturedPortfolio(); // Update comparison view
+}
+
+// Expose globally if needed
+window.toggleFeaturedPortfolio = toggleFeaturedPortfolio;
+window.toggleComparisonPortfolio = toggleComparisonPortfolio;
+
+/**
+ * Deletes a saved portfolio.
+ * @param {number} index - Index of the portfolio in savedPortfolios.
+ */
+function deleteSavedPortfolio(index) {
+    if (!confirm('¿Estás seguro de que quieres eliminar este portafolio?')) return;
+
+    state.savedPortfolios.splice(index, 1);
+    saveSavedPortfolios();
+    displaySavedPortfoliosList();
+
+    // Update indices for featured/comparison
+    if (state.featuredPortfolioIndex === index) state.featuredPortfolioIndex = -1;
+    else if (state.featuredPortfolioIndex > index) state.featuredPortfolioIndex--;
+
+    if (state.comparisonPortfolioIndex === index) state.comparisonPortfolioIndex = -1;
+    else if (state.comparisonPortfolioIndex > index) state.comparisonPortfolioIndex--;
+
+    renderFeaturedPortfolio();
+}
+
+// Map optimization button to workflow
+window.openOptimizationTab = startOptimizationWorkflow;
+window.deleteSavedPortfolio = deleteSavedPortfolio;

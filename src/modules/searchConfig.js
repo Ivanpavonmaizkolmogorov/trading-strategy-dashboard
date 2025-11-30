@@ -20,7 +20,8 @@ const METRIC_CONFIG = {
     // Lower is better
     maxDrawdown: { goal: 'minimize', label: 'Max Drawdown %' },
     maxDrawdownInDollars: { goal: 'minimize', label: 'Max Drawdown $' },
-    ulcerIndexInDollars: { goal: 'minimize', label: 'Ulcer Index $' }
+    ulcerIndexInDollars: { goal: 'minimize', label: 'Ulcer Index $' },
+    maxMarginRequired: { goal: 'minimize', label: 'Max Margin Req.' }
 };
 
 // Export for use in other modules
@@ -153,6 +154,7 @@ export const openSearchConfigModal = (selectedIndices = []) => {
                             <option value="profitMaxDD_Ratio">Profit/DD Ratio</option>
                             <option value="monthlyProfitToDollarDD">Monthly Profit/DD</option>
                             <option value="ulcerIndexInDollars">Ulcer Index $</option>
+                            <option value="maxMarginRequired">Max Margin Req.</option>
                         </select>
                     </div>
                 </div>

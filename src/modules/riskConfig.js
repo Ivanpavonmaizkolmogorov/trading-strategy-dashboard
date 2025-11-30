@@ -1,4 +1,4 @@
-import { state } from '../state.js';
+import { state, saveSavedPortfolios } from '../state.js';
 import { formatMetricForDisplay } from '../utils.js';
 import { showToast } from './notifications.js';
 
@@ -22,11 +22,21 @@ export const openRiskConfigModal = (portfolioIndex) => {
         return;
     }
 
-    // Initialize risk values to $100 for all strategies
+    // Initialize risk values
     riskValues = {};
-    portfolio.indices.forEach(idx => {
-        riskValues[idx] = 100;
-    });
+
+    if (portfolio.riskPerStrategy && portfolio.riskPerStrategy.length === portfolio.indices.length) {
+        // Load existing configuration
+        portfolio.indices.forEach((idx, i) => {
+            riskValues[idx] = portfolio.riskPerStrategy[i];
+        });
+        showToast('Loaded existing risk configuration', 'info');
+    } else {
+        // Default to $100
+        portfolio.indices.forEach(idx => {
+            riskValues[idx] = 100;
+        });
+    }
 
     // Create modal if it doesn't exist
     let modal = document.getElementById('risk-config-modal');
@@ -231,15 +241,18 @@ const populateModal = (portfolio) => {
     tbody.innerHTML = '';
 
     portfolio.indices.forEach((strategyIdx, i) => {
-        const strategy = window.analysisResults[strategyIdx];
-        const strategyName = strategy?.fileName || strategy?.name || `Strategy ${strategyIdx + 1}`;
+        // FIX: Use state.loadedStrategyFiles directly as window.analysisResults might be sorted/reordered
+        const strategyFile = state.loadedStrategyFiles[strategyIdx];
+        const strategyName = strategyFile?.name || `Strategy ${strategyIdx + 1}`;
         const currentRisk = riskValues[strategyIdx];
 
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-700/30 transition-colors group';
         row.innerHTML = `
             <td class="px-4 py-3">
-                <div class="text-white font-medium mb-2 text-sm truncate" title="${strategyName}">${strategyName}</div>
+                <div class="text-white font-medium mb-2 text-sm truncate" title="${strategyName}">
+                    ${strategyName}
+                </div>
                 <div class="flex items-center gap-3">
                     <span class="text-[10px] text-gray-500 font-mono w-6 text-right">$0</span>
                     <input type="range" 
@@ -426,6 +439,9 @@ const applyRiskConfig = async (saveMode) => {
         delete portfolio.analysis;
         delete portfolio.chartData;
     }
+
+    // Persist changes
+    saveSavedPortfolios();
 
     // Close modal
     closeRiskConfigModal();

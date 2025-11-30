@@ -2,7 +2,249 @@ import pandas as pd
 import numpy as np
 from itertools import combinations
 
-def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
+def calculate_max_margin(trades_df: pd.DataFrame, broker_config: dict = None) -> float:
+    """
+    Calcula el margen máximo utilizado considerando solapamientos.
+    """
+    if trades_df.empty or not broker_config:
+        return 0.0
+
+    default_leverage = broker_config.get('defaultLeverage', 30)
+    symbols_config = broker_config.get('symbols', {})
+
+    events = []
+    
+    # Iterar sobre los trades para crear eventos
+    for _, trade in trades_df.iterrows():
+        try:
+            symbol = str(trade.get('symbol', '')).upper().replace('/', '').replace('-', '')
+            # Limpieza básica del símbolo para matching
+            
+            # Obtener configuración del broker para el símbolo
+            config = {}
+            if broker_config and 'symbols' in broker_config:
+                # Intento 1: Coincidencia exacta
+                config = broker_config['symbols'].get(symbol, {})
+                
+                # Intento 2: Búsqueda difusa (si la clave está contenida en el símbolo)
+                if not config:
+                    for key, val in broker_config['symbols'].items():
+                        if key in symbol:
+                            config = val
+                            break
+            
+            default_leverage = broker_config.get('defaultLeverage', 30) if broker_config else 30
+            
+            # Usar configuración o valores por defecto
+            leverage = config.get('leverage', default_leverage)
+            contract_size = config.get('contractSize', 100000)
+
+            # Calcular margen inicial
+            # Margin = (Lots * ContractSize * OpenPrice) / Leverage
+            lots = float(trade.get('size', 0)) # 'size' usually holds lots
+            
+            # 'price' is usually exit price in some contexts, but here it seems mapped to 'price' (close) or 'open_price'.
+            # We need OPEN PRICE.
+            # In 'process_strategy_data', we are working with the raw DF.
+            # utils.js maps 'open price' -> 'open_price'.
+            # So we should look for 'open_price'. If not, fallback to 'price' (which might be close price, but close enough for estimation if open missing).
+            price = 0.0
+            if 'open_price' in trade and pd.notna(trade['open_price']):
+                price = float(trade['open_price'])
+            elif 'price' in trade and pd.notna(trade['price']):
+                price = float(trade['price'])
+            
+            if price == 0: continue
+
+            margin = (lots * contract_size * price) / leverage
+            
+            # Simplificación moneda cuenta (USD)
+            if symbol.startswith('USD'):
+                 margin = (lots * contract_size) / leverage
+            
+            # Eventos
+            events.append({
+                'time': trade['entry_date'], 
+                'type': 'OPEN', 
+                'amount': margin,
+                'symbol': symbol,
+                'lots': lots,
+                'price': price,
+                'leverage': leverage,
+                'contract_size': contract_size
+            })
+            events.append({
+                'time': trade['exit_date'], 
+                'type': 'CLOSE', 
+                'amount': margin,
+                'symbol': symbol,
+                'lots': lots
+            })
+            
+        except (ValueError, TypeError):
+            continue
+
+    # Ordenar eventos
+    events.sort(key=lambda x: (x['time'], 0 if x['type'] == 'OPEN' else 1))
+
+    current_margin = 0.0
+    max_margin = 0.0
+    
+    # Diccionario para rastrear precios recientes de pares de conversión
+    latest_prices = {}
+    open_trades_margin = {} # {symbol: [amount_usd_1, amount_usd_2]}
+
+    # Log de eventos para debug
+    debug_log = []
+    debug_log.append(f"Calculation Start. Trades: {len(trades_df)}. Config: {list(broker_config.keys()) if broker_config else 'None'}")
+
+    for event in events:
+        # Actualizar precio conocido si es un evento OPEN
+        if event['type'] == 'OPEN':
+            # Simplificación: Asumimos que el símbolo contiene el par (ej. USDJPY)
+            # Guardamos el precio para usarlo en conversiones
+            latest_prices[event['symbol']] = event['price']
+            
+            # Lógica de Conversión a USD
+            margin_usd = event['amount']
+            conversion_rate = 1.0
+            conversion_pair = "USD"
+            quote_currency = event.get('quote_currency', 'USD')
+            
+            symbol = event['symbol']
+            
+            # 1. Pares que terminan en USD (ej. EURUSD, XAUUSD) -> Ya están en USD
+            if symbol.endswith('USD') or 'USD_' in symbol: # 'USD_' por si hay sufijos
+                pass
+            
+            # 2. Pares que empiezan con USD (ej. USDJPY, USDCAD) -> Margen en Moneda Cotizada (JPY, CAD)
+            # Necesitamos dividir por el precio del par (ej. USDJPY)
+            elif symbol.startswith('USD'):
+                # El margen calculado previamente para pares USDxxx era (Lots * CS) / Lev
+                # Esto asume que el margen se pide en la moneda base (USD).
+                # VERIFICACIÓN:
+                # Si tengo 1 lote de USDJPY. Valor nocional = 100,000 USD.
+                # Margen requerido = 100,000 / 30 = 3,333.33 USD.
+                # MI CÓDIGO ANTERIOR YA HACÍA ESTO:
+                # if symbol.startswith('USD'): margin = (lots * contract_size) / leverage
+                # Por lo tanto, para pares USDxxx, el margen YA ESTÁ EN USD.
+                pass
+                
+            # 3. Pares Cruzados o que terminan en otra moneda (ej. GBPJPY, EURGBP)
+            # El margen base suele ser en la moneda BASE del par.
+            # Ej. GBPJPY -> Margen en GBP.
+            # Necesitamos convertir GBP a USD.
+            else:
+                # Identificar moneda base (asumiendo 3 letras estándar al inicio)
+                base_currency = symbol[:3]
+                
+                # Caso especial: GBPJPY -> Base GBP. Necesitamos GBPUSD.
+                if base_currency == 'GBP':
+                    # Buscar precio de GBPUSD
+                    # Intentamos buscar claves que contengan GBPUSD
+                    rate = 0.0
+                    for k, v in latest_prices.items():
+                        if 'GBPUSD' in k:
+                            rate = v
+                            break
+                    
+                    if rate > 0:
+                        margin_usd = event['amount'] * rate
+                        conversion_rate = rate
+                        conversion_pair = "GBPUSD"
+                    else:
+                        # Fallback si no tenemos precio reciente (usar estático aprox o dejar igual y loguear warning)
+                        # Asumimos 1.5 como fallback conservador o dejamos igual
+                        # El usuario prefiere conversión.
+                        margin_usd = event['amount'] * 1.3 # Aprox histórico
+                        conversion_rate = 1.3
+                        conversion_pair = "Fallback(1.3)"
+
+                # Caso especial: EURJPY -> Base EUR. Necesitamos EURUSD.
+                elif base_currency == 'EUR':
+                     # Buscar precio de EURUSD
+                    rate = 0.0
+                    for k, v in latest_prices.items():
+                        if 'EURUSD' in k:
+                            rate = v
+                            break
+                    
+                    if rate > 0:
+                        margin_usd = event['amount'] * rate
+                        conversion_rate = rate
+                        conversion_pair = "EURUSD"
+                    else:
+                        margin_usd = event['amount'] * 1.1 # Aprox histórico
+                        conversion_rate = 1.1
+                        conversion_pair = "Fallback(1.1)"
+                
+                # Caso 4: Otros (AUD, CAD, CHF, NZD)
+                # Intento genérico: Buscar QuoteUSD o USDQuote
+                else:
+                    # Try to find QuoteUSD (e.g., AUDUSD)
+                    rate = 0.0
+                    target_pair_key = f"{quote_currency}USD"
+                    for k, v in latest_prices.items():
+                        if target_pair_key in k:
+                            rate = v
+                            break
+                    
+                    if rate > 0:
+                        margin_usd = event['amount'] * rate
+                        conversion_rate = rate
+                        conversion_pair = f"{target_pair_key} (Mult)"
+                    else:
+                        # Try to find USDQuote (e.g., USDCAD) - this would mean dividing
+                        target_pair_key = f"USD{quote_currency}"
+                        for k, v in latest_prices.items():
+                            if target_pair_key in k:
+                                rate = v
+                                break
+                        if rate > 0:
+                            margin_usd = event['amount'] / rate
+                            conversion_rate = rate
+                            conversion_pair = f"{target_pair_key} (Div)"
+                        else:
+                            # Final fallback
+                            margin_usd = event['amount'] * 1.0 # Assume 1:1 if no rate found
+                            conversion_rate = 1.0
+                            conversion_pair = f"Fallback(1.0) for {quote_currency}"
+
+
+            # Guardar margen convertido para liberarlo después
+            if symbol not in open_trades_margin:
+                open_trades_margin[symbol] = []
+            open_trades_margin[symbol].append(margin_usd)
+            
+            current_margin += margin_usd
+            if current_margin > max_margin:
+                max_margin = current_margin
+            
+            log_msg = (f"[{event['time']}] OPEN {event['symbol']} {event['lots']:.2f} lots @ {event['price']:.5f} "
+                       f"(Lev: {event['leverage']}, CS: {event['contract_size']}) -> "
+                       f"Margin: {event['amount']:.2f} {quote_currency} ({conversion_pair}: {conversion_rate:.4f}) -> USD: {margin_usd:.2f} | "
+                       f"Total: {current_margin:.2f} (Max: {max_margin:.2f})")
+            debug_log.append(log_msg)
+            
+        else: # CLOSE
+            # Recuperar el margen USD que se reservó
+            amount_usd = 0.0
+            if symbol in open_trades_margin and open_trades_margin[symbol]:
+                amount_usd = open_trades_margin[symbol].pop(0) # FIFO
+            else:
+                # Fallback si algo falla en el orden (no debería)
+                amount_usd = event['amount'] 
+            
+            current_margin -= amount_usd
+            if current_margin < 0: current_margin = 0
+            
+            log_msg = (f"[{event['time']}] CLOSE {event['symbol']} {event['lots']:.2f} lots -> "
+                       f"Released: {amount_usd:.2f} | Total: {current_margin:.2f}")
+            debug_log.append(log_msg)
+
+    return max_margin, debug_log
+
+def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, broker_config: dict = None):
     """
     Procesa un DataFrame de trades y calcula todas las métricas de rendimiento.
     Esta es la versión en Python de la función 'processStrategyData' de analysis.js.
@@ -308,6 +550,9 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         n_capped = min(total_trades, 100)
         sqn = (avg_trade_ret / std_trade_ret) * np.sqrt(n_capped)
 
+    # Calculate Max Margin Required
+    max_margin_required = calculate_max_margin(trades_df, broker_config)
+
     # --- CÁLCULO DE UPI (ULCER PERFORMANCE INDEX) - USA LA CURVA POR OPERACIÓN ---
 
     # PASO 2: Calcular CAGR (Tasa de Crecimiento Anual Compuesta) en porcentaje.
@@ -407,6 +652,10 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         "profitFactor": profit_factor,
         "sortinoRatio": sortino_ratio,
         "maxDrawdown": max_drawdown,
+        "maxDrawdown": max_drawdown,
+        "maxMarginRequired": max_margin_required[0] if isinstance(max_margin_required, tuple) else max_margin_required,
+        "maxMarginLog": max_margin_required[1] if isinstance(max_margin_required, tuple) else [],
+        "monthlyAvgProfit": monthly_avg_profit,
         "monthlyAvgProfit": monthly_avg_profit,
         "maxConsecutiveLosingMonths": max_consecutive_losing_months,
         "ulcerIndexInDollars": ulcer_index_dollars, # <-- NUEVO KPI
@@ -468,6 +717,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame):
         print(debug_metrics)
     print("-------------------------------------------------------------------\n")
 
+    print(f"DEBUG: process_strategy_data returning metrics. Keys: {list(metrics_dict.keys())}")
     return metrics_dict, daily_returns
 
 

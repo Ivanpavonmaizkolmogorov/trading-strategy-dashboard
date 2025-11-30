@@ -23,7 +23,9 @@ const AVAILABLE_COLUMNS = [
     { id: 'maxDrawdown', label: 'Max DD %', minWidth: 100 },
     { id: 'captureRatio', label: 'Capture Ratio', minWidth: 100 },
     { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
+    { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
     { id: 'strategyCount', label: 'Strategies #', minWidth: 80 },
+    { id: 'maxMarginRequired', label: 'Max Margin', minWidth: 100 }, // Added
     // Health Monitoring Metrics
     { id: 'maxConsecutiveLosses', label: 'Max Consec. Losses', minWidth: 120 },
     { id: 'maxConsecutiveWins', label: 'Max Consec. Wins', minWidth: 120 },
@@ -31,14 +33,14 @@ const AVAILABLE_COLUMNS = [
 
 // Default configuration
 const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn'],
+    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxMarginRequired', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn'],
     columnWidths: {}
 };
 
 // Create table instance
 const savedPortfoliosTable = new CustomizableTable({
     id: 'saved-portfolios',
-    storageKey: 'savedPortfoliosTableConfig_v4',
+    storageKey: 'savedPortfoliosTableConfig_v5',
     columns: AVAILABLE_COLUMNS,
     defaultConfig: DEFAULT_CONFIG,
     containerId: 'saved-portfolios-content',

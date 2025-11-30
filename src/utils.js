@@ -70,7 +70,8 @@ export const parseCsv = (file) => {
                     'open time': 'entry_date', 'close time': 'exit_date',
                     'profit/loss': 'pnl', 'profit': 'pnl', 'net profit': 'pnl', 'gain': 'pnl', 'p/l': 'pnl',
                     'time': 'date', 'fecha': 'date', 'gmt time': 'date', 'timestamp': 'date', 'datetime': 'date',
-                    'close': 'price', 'precio': 'price', 'cierre': 'price', 'last': 'price', 'value': 'price', 'open price': 'price', 'close price': 'price'
+                    'close': 'price', 'precio': 'price', 'cierre': 'price', 'last': 'price', 'value': 'price',
+                    'open price': 'open_price', 'close price': 'close_price'
                 };
                 return map[header] || header;
             },
@@ -79,8 +80,12 @@ export const parseCsv = (file) => {
                 if (results.data.length === 0) return reject(new Error(`El archivo ${file.name} está vacío.`));
                 const data = results.data.map(row => {
                     if (row.hasOwnProperty('entry_date') && !row.hasOwnProperty('date')) row.date = row.entry_date;
+
+                    // Ensure 'price' exists for backward compatibility
                     if (!row.hasOwnProperty('price')) {
-                        if (row.hasOwnProperty('close price')) row.price = row['close price'];
+                        if (row.hasOwnProperty('close_price')) row.price = row['close_price'];
+                        else if (row.hasOwnProperty('open_price')) row.price = row['open_price'];
+                        else if (row.hasOwnProperty('close price')) row.price = row['close price'];
                         else if (row.hasOwnProperty('open price')) row.price = row['open price'];
                     }
                     return row;
@@ -114,6 +119,13 @@ export const formatMetricForDisplay = (value, metricName) => {
 
     const isInteger = ['totalTrades', 'maxStagnationTrades', 'maxStagnationDays', 'strategyCount', 'maxConsecutiveLosses', 'maxConsecutiveWins'].includes(metricName);
     if (isInteger) return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+
+    // Special handling for currency metrics to ensure consistency
+    const isCurrency = ['maxDrawdownInDollars', 'totalProfit', 'maxMarginRequired', 'monthlyAvgProfit', 'ulcerIndexInDollars'].includes(metricName);
+    if (isCurrency) {
+        const decimals = Math.abs(value) > 1000 ? 0 : 2;
+        return value.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    }
 
     // Format with space as thousands separator
     // If > 1000, no decimals. Else 2 decimals.

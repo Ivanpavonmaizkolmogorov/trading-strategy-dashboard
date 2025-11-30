@@ -22,8 +22,19 @@ function open_url_in_browser() {
 
 # --- LIMPIEZA AUTOMÁTICA ---
 echo "Limpiando instancias previas del backend..."
+# Matar por nombre de proceso
 pkill -f "uvicorn app:app" || true
-sleep 1
+pkill -f "python app.py" || true
+
+# Matar por puerto (rango 8000-8010) para asegurar
+for port in {8000..8010}; do
+    pid=$(lsof -ti :$port)
+    if [ -n "$pid" ]; then
+        echo "Matando proceso en puerto $port (PID: $pid)..."
+        kill -9 $pid 2>/dev/null || true
+    fi
+done
+sleep 2
 
 # --- LÓGICA DE ARRANQUE INTELIGENTE ---
 BASE_PORT=8001

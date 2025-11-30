@@ -45,6 +45,7 @@ class DatabankRequest(BaseModel):
     strategies_data: List[List[Trade]]
     benchmark_data: Optional[List[Dict[str, Any]]] = None
     params: DatabankParams
+    broker_config: Optional[Dict[str, Any]] = None
 
 class PortfolioDefinition(BaseModel):
     indices: List[int]
@@ -52,7 +53,7 @@ class PortfolioDefinition(BaseModel):
     # Añadimos campos para identificar el portafolio en el frontend
     is_saved_portfolio: bool = False
     saved_index: Optional[int] = None
-    portfolio_id: Optional[int] = None
+    portfolio_id: Optional[Union[int, str]] = None
     is_current_portfolio: bool = False
     is_databank_portfolio: bool = False
     databank_index: Optional[int] = None
@@ -71,6 +72,7 @@ class FullAnalysisRequest(BaseModel): # Contenido movido a PortfolioDefinition
     normalization_metric: Optional[str] = None
     normalization_target_value: Optional[float] = None
     portfolios_to_analyze: Optional[List[PortfolioDefinition]] = None
+    broker_config: Optional[Dict[str, Any]] = None
 
 class OptimizationParams(BaseModel):
     num_simulations: int
@@ -87,6 +89,7 @@ class OptimizationRequest(BaseModel):
     is_risk_normalized: bool = False
     normalization_metric: Optional[str] = None
     normalization_target_value: Optional[float] = None
+    broker_config: Optional[Dict[str, Any]] = None
 
 
 # --- Codificador JSON Personalizado y Robusto ---
@@ -207,7 +210,7 @@ async def get_full_analysis(request: FullAnalysisRequest):
             # Aplicar normalización global SOLO a las estrategias individuales
             if request.is_risk_normalized and request.normalization_target_value and request.normalization_target_value > 0 and not trades_to_analyze_df.empty:
                 # Usamos strat_df (original) para el pre-análisis
-                pre_analysis_result = process_strategy_data(strat_df.copy(), benchmark_data_df.copy())
+                pre_analysis_result = process_strategy_data(strat_df.copy(), benchmark_data_df.copy(), broker_config=request.broker_config)
                 if pre_analysis_result:
                     metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
                     current_metric_value = pre_analysis_result[0].get(metric_key, 0)
@@ -216,7 +219,7 @@ async def get_full_analysis(request: FullAnalysisRequest):
                         # Y aplicamos el escalado a la copia que se va a analizar
                         trades_to_analyze_df['pnl'] *= scale_factor
             
-            analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy())
+            analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy(), broker_config=request.broker_config)
             strategy_analysis_results.append(analysis_result[0] if analysis_result and analysis_result[0] else None)
             print(f"  -> Strategy {i+1} analysis complete.")
         
@@ -240,15 +243,24 @@ async def get_full_analysis(request: FullAnalysisRequest):
                             
                             # --- LÓGICA DE RIESGO MANUAL ---
                             # Si se proporciona configuración de riesgo, escalamos los trades.
-                            # Base: $100. Si risk=200, factor=2.0. Si risk=50, factor=0.5.
                             if p_def.risk_per_strategy and i < len(p_def.risk_per_strategy):
                                 risk_val = p_def.risk_per_strategy[i]
                                 if risk_val is not None and risk_val > 0:
                                     scale_factor = risk_val / 100.0
-                                    # print(f"    [RiskConfig] Strategy {strat_idx} Risk: ${risk_val} -> Scale: {scale_factor}")
                                     strat_df_copy['pnl'] *= scale_factor
+                                    if 'size' in strat_df_copy.columns:
+                                        strat_df_copy['size'] *= scale_factor
                             
-                            # NO multiplicar por weight (a menos que sea optimización, pero eso es otro endpoint)
+                            # --- APLICAR PESOS SI EXISTEN ---
+                            # Si el portafolio tiene pesos definidos (ej. optimización o edición manual),
+                            # debemos escalar tanto el PnL como el tamaño (lots) para que el margen sea correcto.
+                            if p_def.weights and i < len(p_def.weights):
+                                weight = p_def.weights[i]
+                                if weight is not None:
+                                    strat_df_copy['pnl'] *= weight
+                                    if 'size' in strat_df_copy.columns:
+                                        strat_df_copy['size'] *= weight
+
                             portfolio_trades.append(strat_df_copy)
 
                 portfolio_df = pd.concat(portfolio_trades, ignore_index=True) if portfolio_trades else pd.DataFrame()
@@ -261,7 +273,7 @@ async def get_full_analysis(request: FullAnalysisRequest):
                     print(f"  [BACKEND-LOG] 2.{p_idx}.b -> ✅ ENTRANDO en bloque de normalización.")
                     # --- CORRECCIÓN FINALÍSIMA: Usar 'portfolio_df' (los trades combinados originales) para el pre-análisis ---
                     if not portfolio_df.empty:
-                        pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy()) 
+                        pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy(), broker_config=request.broker_config) 
                         if pre_analysis_result:
                             # Determinar qué métrica usar para la normalización desde los resultados del pre-análisis
                             metric_key = 'maxDrawdownInDollars' if p_def.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
@@ -283,7 +295,7 @@ async def get_full_analysis(request: FullAnalysisRequest):
                 
                 # CORRECCIÓN CRÍTICA: Usar los trades que han sido potencialmente escalados ('trades_to_analyze')
                 # en lugar de los originales ('portfolio_trades') para el análisis final.
-                analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy())
+                analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy(), broker_config=request.broker_config)
                 
                 # CORRECCIÓN: Devolver los trades escalados para que el frontend pueda generar los gráficos correctamente.
                 # CORRECCIÓN FINAL: Si analysis_result es None, devolver un diccionario vacío para 'metrics'
@@ -385,7 +397,7 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                 if not strat_trades: continue
                 
                 trades_df = pd.DataFrame(strat_trades)
-                analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy())
+                analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy(), broker_config=request.broker_config)
                 if analysis_result:
                     _, daily_returns = analysis_result
                     individual_analyses.append(daily_returns)
@@ -419,6 +431,10 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
             
             # Si effective_max_k es 0, significa que solo podemos formar el portafolio base (si cumple min_combo_size)
             
+            # Log search parameters
+            print(f"DEBUG: Search Params - Available Indices: {len(available_indices)}, Min K: {effective_min_k}, Max K: {effective_max_k}", flush=True)
+            print(f"DEBUG: Base Indices: {base_indices}", flush=True)
+
             if not available_indices and effective_max_k > 0:
                  # Caso borde: No hay más estrategias para añadir, pero se pide añadir más
                  effective_max_k = 0
@@ -487,8 +503,12 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                 is_valid = True
                 for i1_idx, i1 in enumerate(combo):
                     for i2 in combo[i1_idx+1:]:
-                        if correlation_matrix.iloc[i1, i2] > params.correlation_threshold:
+                        corr_val = correlation_matrix.iloc[i1, i2]
+                        if corr_val > params.correlation_threshold:
                             is_valid = False
+                            # Log rejection for larger portfolios to debug user issue
+                            if len(combo) >= 5:
+                                print(f"DEBUG: Rejected combo {combo} due to correlation {corr_val:.2f} > {params.correlation_threshold} between {i1} and {i2}", flush=True)
                             break
                     if not is_valid:
                         break
@@ -496,16 +516,20 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                 if not is_valid:
                     continue
 
+                if len(combo) >= 5:
+                    print(f"DEBUG: Accepted combo {combo} (size {len(combo)})", flush=True)
+
                 portfolio_trades = []
                 for strat_index in combo:
                     # Simplemente añadimos todos los trades de las estrategias seleccionadas
                     portfolio_trades.extend(strategies_data[strat_index])
                 
                 portfolio_df = pd.DataFrame(portfolio_trades)
-                analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy())
+                analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy(), broker_config=request.broker_config)
 
                 if analysis_result:
                     metrics, _ = analysis_result
+                    # yield f"data: {json.dumps({'status': 'info', 'message': f'DEBUG: Portfolio analyzed. Metrics keys: {list(metrics.keys())}'})}\n\n"
                     if metrics and params.metric_to_optimize_key in metrics:
                         portfolio_data = {
                             "metricValue": metrics[params.metric_to_optimize_key],
@@ -583,7 +607,7 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
             # Aplicar escalado de riesgo si es necesario (ahora sobre un DF con fechas como strings)
             if request.is_risk_normalized and request.normalization_target_value and request.normalization_target_value > 0:
                 pre_analysis_df = trades_to_analyze_df.copy() # Usar la copia ya convertida
-                pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy())
+                pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy(), broker_config=request.broker_config)
                 if pre_analysis_result:
                     metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
                     current_metric_value = pre_analysis_result[0].get(metric_key, 0)
@@ -593,7 +617,7 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
                         trades_to_analyze_df['pnl'] *= scale_factor
 
             final_df = trades_to_analyze_df
-            analysis_result = process_strategy_data(final_df, benchmark_data_df.copy())
+            analysis_result = process_strategy_data(final_df, benchmark_data_df.copy(), broker_config=request.broker_config)
             
             # --- CORRECCIÓN IRREFUTABLE ---
             # El análisis convierte las fechas a Timestamps. ANTES de devolver los trades,

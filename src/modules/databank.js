@@ -5,6 +5,7 @@ import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '
 import { initDatabankTable, getDatabankTableConfig } from './databankTable.js';
 import { focusMode } from './focusMode.js';
 import { generatePortfolioId } from '../utils.js'; // Import ID generator
+import { loadBrokerConfig } from './brokerConfig.js';
 
 /**
  * Actualiza el indicador visual de estado del DataBank.
@@ -83,7 +84,9 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
     // 1. Empaquetar los datos para la petición inicial
     const requestBody = {
         strategy_names: state.loadedStrategyFiles.map(f => f.name), // <-- Añadimos los nombres
+        strategy_names: state.loadedStrategyFiles.map(f => f.name), // <-- Añadimos los nombres
         strategies_data: state.rawStrategiesData,
+        broker_config: loadBrokerConfig(),
         params: {
             metric_to_optimize_key: customConfig.metric || dom.optimizationMetricSelect.value,
             optimization_goal: customConfig.goal || dom.optimizationGoalSelect.value,

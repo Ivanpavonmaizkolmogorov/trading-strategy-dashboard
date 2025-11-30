@@ -23,6 +23,7 @@ export const ALL_METRICS = {
     // Health Monitoring Metrics
     maxConsecutiveLosses: { label: 'Max Consecutive Losses', class: 'p-2 text-center' },
     maxConsecutiveWins: { label: 'Max Consecutive Wins', class: 'p-2 text-center' },
+    maxMarginRequired: { label: 'Max Margin Req.', class: 'p-2 text-center' },
 };
 
 export const SELECTION_COLORS = [

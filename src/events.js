@@ -1,5 +1,5 @@
 import { dom } from './dom.js';
-import { state } from './state.js';
+import { state, saveSavedPortfolios } from './state.js';
 import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable } from './analysis.js';
 import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal, switchViewMode, renderStrategiesTable } from './ui.js';
 import { findDatabankPortfolios, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay } from './modules/databank.js';
@@ -344,6 +344,7 @@ export function initializeEventListeners() {
                         if (newName && portfolio && newName !== portfolio.name) {
                             portfolio.name = newName;
                             nameTextEl.textContent = newName;
+                            saveSavedPortfolios(); // Persist change
                             showToast('Portfolio renamed', 'success');
 
                             // Update Live Monitor if it's the one being monitored
