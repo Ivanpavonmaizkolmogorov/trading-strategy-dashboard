@@ -1322,14 +1322,16 @@ export const switchViewMode = (mode) => {
         }
     }
 
-    // Toggle Stagnation Controls Visibility
+    // Toggle Stagnation Controls & Sync Button Visibility
     const stagnationControls = document.getElementById('stagnation-controls');
-    if (stagnationControls) {
-        if (mode === 'reality-check') {
-            stagnationControls.classList.remove('hidden');
-        } else {
-            stagnationControls.classList.add('hidden');
-        }
+    const syncBtn = document.getElementById('reality-check-sync-btn');
+
+    if (mode === 'reality-check') {
+        if (stagnationControls) stagnationControls.classList.remove('hidden');
+        if (syncBtn) syncBtn.classList.remove('hidden');
+    } else {
+        if (stagnationControls) stagnationControls.classList.add('hidden');
+        if (syncBtn) syncBtn.classList.add('hidden');
     }
 
     // Re-render charts

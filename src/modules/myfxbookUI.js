@@ -4,6 +4,7 @@ import { dom } from '../dom.js';
 
 let currentCredentials = null;
 let myfxbookModal = null;
+let pendingSync = false;
 
 export function initMyfxbookUI() {
     console.log('[Myfxbook UI] Initializing...');
@@ -197,6 +198,13 @@ async function handleLogin(e) {
         const data = await response.json();
 
         if (response.ok && data.success) {
+            if (pendingSync) {
+                console.log('[Myfxbook UI] Login successful during Sync All. Resuming sync...');
+                pendingSync = false;
+                closeMyfxbookModal();
+                refreshAllAccounts();
+                return;
+            }
             renderAccountsList(data.accounts);
         } else {
             showError(data.detail || 'Login failed');
@@ -712,3 +720,28 @@ export function recalculateStrategyBreakdown(portfolio) {
     console.log('[Myfxbook] Strategy breakdown recalculated based on new mapping.');
 }
 
+export async function refreshAllAccounts() {
+    console.log('[Myfxbook] Refreshing all linked accounts...');
+
+    // Check credentials first
+    if (!state.myfxbookCredentials || !state.myfxbookCredentials.email) {
+        import('./notifications.js').then(mod => mod.showToast('Please login to Myfxbook to sync.', 'warning'));
+        pendingSync = true;
+        openMyfxbookModal();
+        return;
+    }
+
+    const portfolios = state.savedPortfolios.filter(p => p.linkedAccountId);
+
+    if (portfolios.length === 0) {
+        import('./notifications.js').then(mod => mod.showToast('No linked accounts to sync.', 'info'));
+        return;
+    }
+
+    import('./notifications.js').then(mod => mod.showToast(`Syncing ${portfolios.length} accounts...`, 'info'));
+
+    const promises = portfolios.map(p => fetchLinkedAccountData(p));
+    await Promise.all(promises);
+
+    import('./notifications.js').then(mod => mod.showToast('All accounts synced.', 'success'));
+}

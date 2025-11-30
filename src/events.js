@@ -8,7 +8,7 @@ import { openViewManager, closeViewManager, applyView, saveView, deleteView } fr
 import { exportAnalysis, importAnalysis } from './modules/importExport.js';
 import { showToast } from './modules/notifications.js';
 import { initializeLayout } from './modules/layout.js'; // <-- NUEVO
-import { initMyfxbookUI, openMyfxbookModal } from './modules/myfxbookUI.js'; // <-- MYFXBOOK
+import { initMyfxbookUI, openMyfxbookModal, refreshAllAccounts } from './modules/myfxbookUI.js'; // <-- MYFXBOOK
 import { generateStrategyId } from './utils.js'; // <-- ID GENERATOR
 import { initLiveMonitor, renderLiveMonitor } from './modules/liveMonitor.js'; // <-- LIVE MONITOR
 import { openSlaveAccountsModal } from './modules/slaveAccounts.js'; // <-- SLAVE ACCOUNTS
@@ -86,6 +86,7 @@ export function initializeEventListeners() {
     // Monitor Actions
     document.getElementById('monitor-link-btn')?.addEventListener('click', openMyfxbookModal);
     document.getElementById('monitor-refresh-btn')?.addEventListener('click', renderLiveMonitor);
+    document.getElementById('reality-check-sync-btn')?.addEventListener('click', refreshAllAccounts);
 
     // --- Controles Principales ---
     dom.analyzeBtn.addEventListener('click', runAnalysis);
