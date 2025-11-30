@@ -2317,6 +2317,55 @@ export const closeRealTradesModal = () => {
     }
 };
 
+/**
+ * Copies the Real Trades table content to clipboard.
+ */
+export const copyRealTradesToClipboard = async () => {
+    const tableBody = document.getElementById('real-trades-table-body');
+    if (!tableBody) return;
+
+    const rows = Array.from(tableBody.querySelectorAll('tr'));
+    if (rows.length === 0) return;
+
+    // Headers
+    const headers = ['Ticket', 'Open Time', 'Type', 'Size', 'Symbol', 'Open Price', 'Close Time', 'Close Price', 'Commission', 'Swap', 'Profit', 'Net Profit'];
+    let tsvContent = headers.join('\t') + '\n';
+
+    // Rows
+    rows.forEach(row => {
+        const cells = Array.from(row.querySelectorAll('td'));
+        const rowData = cells.map(cell => cell.textContent.trim()).join('\t');
+        tsvContent += rowData + '\n';
+    });
+
+    try {
+        await navigator.clipboard.writeText(tsvContent);
+
+        // Feedback
+        const btn = document.getElementById('copy-real-trades-btn');
+        if (btn) {
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = `
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Copied!</span>
+            `;
+            btn.classList.remove('bg-blue-600', 'hover:bg-blue-500', 'border-blue-500');
+            btn.classList.add('bg-green-600', 'hover:bg-green-500', 'border-green-500');
+
+            setTimeout(() => {
+                btn.innerHTML = originalContent;
+                btn.classList.remove('bg-green-600', 'hover:bg-green-500', 'border-green-500');
+                btn.classList.add('bg-blue-600', 'hover:bg-blue-500', 'border-blue-500');
+            }, 2000);
+        }
+    } catch (err) {
+        console.error('Failed to copy trades:', err);
+    }
+};
+
 // Expose globally
 window.openRealTradesModal = openRealTradesModal;
 window.closeRealTradesModal = closeRealTradesModal;
+window.copyRealTradesToClipboard = copyRealTradesToClipboard;
