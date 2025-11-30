@@ -14,6 +14,10 @@ export const focusMode = {
      * @param {string} type - 'strategy', 'databank', 'saved'
      * @param {HTMLElement} rowElement - The table row element
      */
+    toggle(item, type, rowElement) {
+        this.enable(item, type, rowElement);
+    },
+
     enable(item, type, rowElement) {
         console.log('[FocusMode] enable() called. Type:', type, 'Item:', item.name || item.id);
         const id = item.id || item.name; // Use name as fallback ID if needed

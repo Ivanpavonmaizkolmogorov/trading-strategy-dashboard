@@ -37,11 +37,13 @@ export function initializeEventListeners() {
                 if (state.activeViewMode === 'reality-check') {
                     // Refresh Charts and Table
                     if (window.analysisResults) {
-                        console.log('[Events] Refreshing Charts...');
-                        switchViewMode('reality-check');
+                        switchViewMode('reality-check'); // Re-trigger view mode switch to refresh charts
                     }
-                    console.log('[Events] Refreshing Table...');
-                    renderStrategiesTable();
+                    if (state.activeTab === 'saved-portfolios') {
+                        displaySavedPortfoliosList();
+                    } else {
+                        renderStrategiesTable();
+                    }
                 }
             }
         });
