@@ -1468,8 +1468,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         }];
 
         // REALITY CHECK: Add Real Equity Curve if available AND mode is 'reality-check'
-        console.log(`[UI] Checking Reality Check for ${result.name}: Mode=${state.activeViewMode}, HasRealMetrics=${!!result.realMetrics}, HasTradesById=${!!(result.realMetrics && result.realMetrics._tradesById)}, HasMagicMap=${!!state.magicNumberMap}`);
-
         if (state.activeViewMode === 'reality-check' && result.realMetrics && result.realMetrics._tradesById && state.magicNumberMap) {
             let allRealTrades = [];
             let strategyNames = [];
@@ -1491,8 +1489,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
                     // Try lookup by ID first, then Name
                     const magicRaw = state.magicNumberMap[strategyId] || state.magicNumberMap[stratName];
-
-                    console.log(`[UI] 🔍 Lookup for ${stratName} (ID: ${strategyId}) -> Magic: ${magicRaw}`);
 
                     if (magicRaw) {
                         let magics = [];
@@ -1539,8 +1535,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     // Use original opaque color for Real curve
                     const realColor = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + (result.savedIndex ?? index)) % STRATEGY_COLORS.length]));
 
-                    console.log(`[UI] 📊 Real Equity Curve for ${result.name}: ${realEquityCurve.length} points.`);
-
                     // Add Real Equity Dataset
                     returnedDatasets.push({
                         label: `${result.name} (Real)`,
@@ -1557,7 +1551,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
                     // Hard Stop Line (Trailing based on MaxDD)
                     const hardStopLimit = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 0));
-                    console.log(`[UI] 🛡️ Hard Stop Limit: ${hardStopLimit} (MaxDD)`);
 
                     if (hardStopLimit > 0) {
                         const hardStopCurve = [];
@@ -1567,8 +1560,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                             if (p.y > maxEq) maxEq = p.y;
                             hardStopCurve.push({ x: p.x, y: maxEq - hardStopLimit });
                         });
-
-                        console.log(`[UI] 🛡️ Hard Stop Curve: ${hardStopCurve.length} points. Last:`, hardStopCurve[hardStopCurve.length - 1]);
 
                         returnedDatasets.push({
                             label: 'Hard Stop (MaxDD)',
@@ -1580,8 +1571,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                             fill: false,
                             order: -1 // On top
                         });
-                    } else {
-                        console.warn(`[UI] ⚠️ Hard Stop Limit is 0 or invalid. Metrics:`, metrics);
                     }
 
                     // Calculate Risk Metrics for Badge (Logic preserved for badge calculation later if needed, but here we just need datasets)

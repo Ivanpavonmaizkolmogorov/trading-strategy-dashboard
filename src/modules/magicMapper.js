@@ -121,8 +121,8 @@ function createMapperModal() {
                         <span class="text-xs font-normal text-gray-500">Sorted by Similarity & Trades</span>
                     </div>
                     
-                    <div id="mapper-ids-list" class="overflow-y-auto flex-1 p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 content-start">
-                        <!-- IDs grid -->
+                    <div id="mapper-ids-list" class="overflow-y-auto flex-1 p-4 flex flex-col gap-6">
+                        <!-- IDs list -->
                     </div>
                 </div>
             </div>
@@ -320,9 +320,12 @@ function renderIdsList() {
     const idsList = mapperModal.querySelector('#mapper-ids-list');
     idsList.innerHTML = '';
 
+    // Remove grid classes, ensure flex column
+    idsList.className = 'overflow-y-auto flex-1 p-4 flex flex-col gap-6';
+
     if (!selectedStrategyId) {
         idsList.innerHTML = `
-            <div class="col-span-full text-center py-10 text-gray-500">
+            <div class="text-center py-10 text-gray-500">
                 <p>Select a strategy on the left to start mapping.</p>
             </div>
         `;
@@ -333,7 +336,7 @@ function renderIdsList() {
 
     if (availableIds.length === 0) {
         idsList.innerHTML = `
-            <div class="col-span-full text-center py-10 text-gray-500">
+            <div class="text-center py-10 text-gray-500">
                 <div class="text-4xl mb-4">📭</div>
                 <h3 class="text-xl font-bold text-gray-300">No IDs Found</h3>
                 <p>${searchTerm ? 'Try a different search term.' : 'Sync your Myfxbook account first.'}</p>
@@ -344,90 +347,159 @@ function renderIdsList() {
 
     const currentMappedIds = tempMapping[selectedStrategyId] || [];
 
+
+    // Split into Assigned and Available
+    const assignedItems = [];
+    const availableItems = [];
+
+    // Collect all IDs assigned to OTHER strategies
+    const otherAssignedIds = new Set();
+    Object.keys(tempMapping).forEach(sId => {
+        if (sId !== selectedStrategyId && tempMapping[sId]) {
+            tempMapping[sId].forEach(id => otherAssignedIds.add(String(id)));
+        }
+    });
+
     availableIds.forEach(stat => {
         const idStr = String(stat.id);
-        const isChecked = currentMappedIds.includes(idStr);
-        const isRecommended = stat._similarity > 0.6; // Threshold for recommendation
-
-        // Check if this ID is owned by another strategy
-        let ownerStrategyId = null;
-        let ownerName = null;
-
-        if (!isChecked) {
-            ownerStrategyId = Object.keys(tempMapping).find(sId =>
-                sId !== selectedStrategyId &&
-                tempMapping[sId] &&
-                tempMapping[sId].includes(idStr)
-            );
-
-            if (ownerStrategyId) {
-                // Find name
-                const strategyIdx = currentPortfolio.indices.find(idx => {
-                    const s = state.loadedStrategyFiles[idx];
-                    return (s.strategyId || s.name) === ownerStrategyId;
-                });
-                ownerName = strategyIdx !== undefined ? state.loadedStrategyFiles[strategyIdx].name : ownerStrategyId;
-            }
+        if (currentMappedIds.includes(idStr)) {
+            assignedItems.push(stat);
+        } else if (!otherAssignedIds.has(idStr)) {
+            // Only add if NOT assigned to any other strategy
+            availableItems.push(stat);
         }
+    });
 
-        const label = document.createElement('label');
-        // Add visual indication if owned by another (e.g., opacity, or different border)
-        const isOwnedByOther = !!ownerName;
+    // Helper to render a section
+    const renderSection = (title, items, isAssignedSection) => {
+        const section = document.createElement('div');
+        section.className = 'flex flex-col gap-2';
 
-        label.className = `flex flex-col bg-gray-700/30 border border-gray-600 rounded-lg p-3 hover:bg-gray-700/50 transition-colors cursor-pointer h-full relative 
-            ${isChecked ? 'border-blue-500 bg-blue-900/10 ring-1 ring-blue-500/50' : ''} 
-            ${isRecommended && !isChecked && !isOwnedByOther ? 'border-green-500/50 bg-green-900/10' : ''}
-            ${isOwnedByOther ? 'opacity-75 border-dashed border-gray-600' : ''}`;
-
-        label.innerHTML = `
-            <div class="flex items-start gap-3 mb-2">
-                <input type="checkbox" class="mt-1 form-checkbox h-4 w-4 text-blue-600 rounded border-gray-500 bg-gray-700 focus:ring-blue-500 focus:ring-offset-gray-800" ${isChecked ? 'checked' : ''}>
-                <div class="min-w-0 flex-1">
-                    <div class="flex justify-between items-start">
-                        <div class="font-mono text-xs font-bold text-white break-words leading-tight" title="${stat.exampleRaw || stat.id}">${stat.id}</div>
-                        ${isRecommended && !isOwnedByOther ? '<span class="text-[10px] bg-green-900 text-green-300 px-1 rounded border border-green-700 ml-1">Match</span>' : ''}
-                        ${isOwnedByOther ? `<span class="text-[10px] bg-gray-700 text-gray-300 px-1 rounded border border-gray-600 ml-1 truncate max-w-[80px]" title="Linked to: ${ownerName}">Linked: ${ownerName}</span>` : ''}
-                    </div>
-                </div>
-            </div>
-            <div class="mt-auto pt-2 border-t border-gray-600/50 flex justify-between items-center text-xs text-gray-400">
-                <span class="font-medium text-gray-300">${stat.symbol}</span>
-                <div class="flex gap-2">
-                    <span class="${stat.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'} font-mono">$${stat.totalProfit.toFixed(0)}</span>
-                    <span class="bg-gray-700 px-1.5 rounded text-[10px]">${stat.tradesCount}</span>
-                </div>
-            </div>
+        const header = document.createElement('div');
+        header.className = 'flex items-center gap-2 pb-2 border-b border-gray-700/50';
+        header.innerHTML = `
+            <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider">${title}</h3>
+            <span class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded-full">${items.length}</span>
         `;
+        section.appendChild(header);
 
-        const checkbox = label.querySelector('input');
-        checkbox.onchange = (e) => {
-            if (e.target.checked) {
-                // Steal from others
-                Object.keys(tempMapping).forEach(sId => {
-                    if (sId !== selectedStrategyId && tempMapping[sId]) {
-                        if (tempMapping[sId].includes(idStr)) {
-                            tempMapping[sId] = tempMapping[sId].filter(id => id !== idStr);
+        const list = document.createElement('div');
+        list.className = 'flex flex-col gap-1'; // Compact list
+
+        if (items.length === 0) {
+            list.innerHTML = `<div class="text-xs text-gray-600 italic p-2">No items available.</div>`;
+        } else {
+            items.forEach(stat => {
+                const idStr = String(stat.id);
+                const isChecked = isAssignedSection; // By definition
+                const isRecommended = stat._similarity > 0.6;
+
+                // Check ownership for available items
+                let ownerName = null;
+                // Note: With the new filtering, ownerName will always be null for availableItems
+                // But we keep the logic in case we want to revert or for robustness
+                if (!isChecked) {
+                    const ownerStrategyId = Object.keys(tempMapping).find(sId =>
+                        sId !== selectedStrategyId &&
+                        tempMapping[sId] &&
+                        tempMapping[sId].includes(idStr)
+                    );
+                    if (ownerStrategyId) {
+                        const strategyIdx = currentPortfolio.indices.find(idx => {
+                            const s = state.loadedStrategyFiles[idx];
+                            return (s.strategyId || s.name) === ownerStrategyId;
+                        });
+                        ownerName = strategyIdx !== undefined ? state.loadedStrategyFiles[strategyIdx].name : ownerStrategyId;
+                    }
+                }
+
+                const label = document.createElement('label');
+                const isOwnedByOther = !!ownerName;
+
+                // Compact Row Styles
+                label.className = `flex items-center gap-3 p-2 rounded border transition-all cursor-pointer group
+                    ${isChecked
+                        ? 'bg-blue-900/20 border-blue-500/50 hover:bg-blue-900/30'
+                        : 'bg-gray-700/20 border-gray-700 hover:bg-gray-700/40'}
+                    ${isRecommended && !isChecked && !isOwnedByOther ? 'ring-1 ring-green-500/30 bg-green-900/5' : ''}
+                    ${isOwnedByOther ? 'opacity-75 border-dashed border-gray-600' : ''}
+                `;
+
+                label.innerHTML = `
+                    <input type="checkbox" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-800 focus:ring-blue-500 focus:ring-offset-gray-900 transition-colors" ${isChecked ? 'checked' : ''}>
+                    
+                    <div class="flex-1 min-w-0 flex items-center gap-3 overflow-hidden">
+                        <!-- ID / Comment -->
+                        <div class="flex flex-col min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-xs font-bold ${isChecked ? 'text-blue-200' : 'text-gray-300'} truncate" title="${stat.exampleRaw || stat.id}">
+                                    ${stat.id}
+                                </span>
+                                ${isRecommended && !isOwnedByOther ? '<span class="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-800">MATCH</span>' : ''}
+                                ${isOwnedByOther ? `<span class="text-[9px] bg-orange-900/30 text-orange-300 px-1.5 py-0.5 rounded border border-orange-800/50 truncate max-w-[120px]" title="Linked to: ${ownerName}">🔗 ${ownerName}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Metrics (Right Side) -->
+                    <div class="flex items-center gap-3 text-xs whitespace-nowrap">
+                        <span class="font-medium text-gray-500 w-12 text-right">${stat.symbol}</span>
+                        <span class="font-mono w-16 text-right ${stat.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}">$${stat.totalProfit.toFixed(0)}</span>
+                        <span class="bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded text-[10px] min-w-[24px] text-center">${stat.tradesCount}</span>
+                    </div>
+                `;
+
+                const checkbox = label.querySelector('input');
+                checkbox.onchange = (e) => {
+                    if (e.target.checked) {
+                        // Steal logic
+                        Object.keys(tempMapping).forEach(sId => {
+                            if (sId !== selectedStrategyId && tempMapping[sId]) {
+                                if (tempMapping[sId].includes(idStr)) {
+                                    tempMapping[sId] = tempMapping[sId].filter(id => id !== idStr);
+                                }
+                            }
+                        });
+                        if (!tempMapping[selectedStrategyId]) tempMapping[selectedStrategyId] = [];
+                        if (!tempMapping[selectedStrategyId].includes(idStr)) {
+                            tempMapping[selectedStrategyId].push(idStr);
+                        }
+                    } else {
+                        if (tempMapping[selectedStrategyId]) {
+                            tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(id => id !== idStr);
                         }
                     }
-                });
+                    renderStrategiesList();
+                    renderIdsList();
+                };
 
-                if (!tempMapping[selectedStrategyId]) tempMapping[selectedStrategyId] = [];
-                if (!tempMapping[selectedStrategyId].includes(idStr)) {
-                    tempMapping[selectedStrategyId].push(idStr);
-                }
-            } else {
-                if (tempMapping[selectedStrategyId]) {
-                    tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(id => id !== idStr);
-                }
-            }
-            // Re-render to update "Linked to..." status on other items if needed, 
-            // and update strategy counts
-            renderStrategiesList();
-            renderIdsList();
-        };
+                list.appendChild(label);
+            });
+        }
+        section.appendChild(list);
+        idsList.appendChild(section);
+    };
 
-        idsList.appendChild(label);
-    });
+    // Render Available First (Top)
+    renderSection('Available (Unassigned)', availableItems, false);
+
+    // Render Assigned Second (Bottom)
+    if (assignedItems.length > 0) {
+        // Add a visual separator/arrow
+        const separator = document.createElement('div');
+        separator.className = 'flex justify-center py-2';
+        separator.innerHTML = `<span class="text-gray-600 text-lg">⬇️</span>`;
+        idsList.appendChild(separator);
+
+        // Find strategy name for title
+        const strategyIdx = currentPortfolio.indices.find(idx => {
+            const s = state.loadedStrategyFiles[idx];
+            return (s.strategyId || s.name) === selectedStrategyId;
+        });
+        const strategyName = strategyIdx !== undefined ? state.loadedStrategyFiles[strategyIdx].name : 'Current Strategy';
+
+        renderSection(`Assigned to: ${strategyName}`, assignedItems, true);
+    }
 }
 
 function renderStrategiesList() {
