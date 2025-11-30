@@ -273,6 +273,7 @@ const resetForm = () => {
  * @param {number} portfolioIndex - Index of the portfolio in state.savedPortfolios.
  */
 export const openSlaveAccountsModal = (portfolioIndex) => {
+    console.log('[SlaveAccounts] openSlaveAccountsModal called for index:', portfolioIndex);
     ensureSlaveAccountsModalExists();
     activePortfolioIndex = portfolioIndex;
 

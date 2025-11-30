@@ -248,17 +248,50 @@ export function initializeEventListeners() {
     // --- Portafolios Guardados ---
     // Usamos el contenedor principal de la sección para delegar todos los eventos
     // --- Portafolios Guardados ---
-    // Usamos el nuevo contenedor de Portafolios Guardados
-    if (dom.savedPortfoliosContent) {
-        dom.savedPortfoliosContent.addEventListener('click', async (e) => {
-            // Listener para ordenar
-            const header = e.target.closest('#saved-portfolios-header th.sortable');
+    // --- Portafolios Guardados ---
+    // Header Listener (Sorting)
+    if (dom.savedPortfoliosHeader) {
+        dom.savedPortfoliosHeader.addEventListener('click', (e) => {
+            const header = e.target.closest('th.sortable');
             if (header) {
                 console.log('-> Clic detectado en cabecera de Portafolios Guardados:', header.dataset.sortKey);
                 sortSavedPortfoliosTable(header);
-                console.log('<- Función sortSavedPortfoliosTable llamada.');
             }
+        });
+    }
 
+    // Body Listener (Actions)
+    console.log('[Events] Checking dom.savedPortfoliosBody:', dom.savedPortfoliosBody);
+    if (dom.savedPortfoliosBody) {
+        console.log('[Events] Attaching click listener to savedPortfoliosBody');
+        // Helper function for name editing
+        const savePortfolioName = (inputEl) => {
+            const newName = inputEl.value.trim();
+            const wrapper = inputEl.closest('[data-portfolio-index]');
+            const index = wrapper ? parseInt(wrapper.dataset.portfolioIndex, 10) : -1;
+            const portfolio = state.savedPortfolios[index];
+
+            if (newName && portfolio && newName !== portfolio.name) {
+                portfolio.name = newName;
+                const nameTextEl = wrapper.querySelector('.portfolio-name-text');
+                if (nameTextEl) nameTextEl.textContent = newName;
+                saveSavedPortfolios(); // Persist change
+                showToast('Portfolio renamed', 'success');
+
+                // Update Live Monitor if it's the one being monitored
+                if (document.getElementById('live-monitor-view')?.classList.contains('hidden') === false) {
+                    import('./modules/liveMonitor.js').then(({ renderLiveMonitor }) => renderLiveMonitor());
+                }
+            }
+            const displayEl = inputEl.closest('.portfolio-name-group').querySelector('.portfolio-name-display');
+            if (displayEl) displayEl.classList.remove('hidden');
+            inputEl.classList.add('hidden');
+        };
+
+        dom.savedPortfoliosBody.addEventListener('click', async (e) => {
+            console.log('[Events] Click detected in savedPortfoliosBody. Target:', e.target);
+
+            // --- Delete Portfolio ---
             if (e.target.classList.contains('delete-portfolio-btn')) {
                 const indexToRemove = parseInt(e.target.dataset.index, 10);
                 if (indexToRemove === state.featuredPortfolioIndex) state.featuredPortfolioIndex = null;
@@ -266,49 +299,47 @@ export function initializeEventListeners() {
                 state.savedPortfolios.splice(indexToRemove, 1);
                 // --- OPTIMIZACIÓN: Actualizar UI localmente sin llamar al backend ---
                 displaySavedPortfoliosList();
-                // PERFORMANCE OVERHAUL: Disabled auto-rendering
-                // renderPortfolioComparisonCharts(window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal));
                 showToast('Portafolio eliminado correctamente', 'success');
-                // await reAnalyzeAllData(); // <-- ELIMINADO: Innecesario
             }
 
-            // Optimize button - check target or parent
-            const optimizeBtn = e.target.classList.contains('view-edit-portfolio-btn')
+            // --- Optimize Portfolio ---
+            const optimizeBtn = e.target.classList.contains('optimize-portfolio-btn')
                 ? e.target
-                : e.target.closest('.view-edit-portfolio-btn');
+                : e.target.closest('.optimize-portfolio-btn'); // Corrected class name from view-edit-portfolio-btn
 
             if (optimizeBtn) {
                 console.log('[Events] Click en botón Optimizar detectado');
                 const index = parseInt(optimizeBtn.dataset.index, 10);
-                console.log('[Events] Índice del portafolio:', index);
-                // Use new tab workflow instead of modal
                 import('./modules/optimization.js').then(module => {
                     module.startOptimizationWorkflow(index);
                 });
             }
-            // --- CORRECCIÓN: Añadir el listener para el botón de destacar (estrella) ---
+
+            // --- Feature Portfolio (Star) ---
             if (e.target.classList.contains('feature-portfolio-btn')) {
                 const index = parseInt(e.target.dataset.index, 10);
-                // Si ya está destacado, quitar el destaque. Si no, establecerlo.
                 state.featuredPortfolioIndex = state.featuredPortfolioIndex === index ? null : index;
-
-                // --- OPTIMIZACIÓN: Actualizar UI localmente sin llamar al backend ---
                 renderFeaturedPortfolio();
-                displaySavedPortfoliosList(); // Actualiza la estrella en la lista
-                // PERFORMANCE OVERHAUL: Disabled auto-rendering
-                // renderPortfolioComparisonCharts(window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal));
-
+                displaySavedPortfoliosList();
                 if (state.featuredPortfolioIndex !== null) {
                     showToast('Portafolio destacado actualizado', 'success');
                 } else {
                     showToast('Portafolio ya no está destacado', 'info');
                 }
-
-                // await reAnalyzeAllData(); // <-- ELIMINADO: Innecesario
             }
+
+            // --- Compare Portfolio (Refresh) ---
+            const compareBtn = e.target.closest('.compare-original-btn');
+            if (compareBtn) {
+                const index = parseInt(compareBtn.dataset.index, 10);
+                state.comparisonPortfolioIndex = state.comparisonPortfolioIndex === index ? null : index;
+                displaySavedPortfoliosList();
+            }
+
             // --- Manage Slave Accounts ---
             const manageAccountsBtn = e.target.closest('.manage-slave-accounts-btn');
             if (manageAccountsBtn) {
+                console.log('[Events] Manage Slave Accounts clicked');
                 const index = parseInt(manageAccountsBtn.dataset.index, 10);
                 openSlaveAccountsModal(index);
                 e.stopPropagation();
@@ -318,296 +349,294 @@ export function initializeEventListeners() {
             const viewRiskBtn = e.target.closest('.view-strategy-risk-btn');
             if (viewRiskBtn) {
                 const index = parseInt(viewRiskBtn.dataset.index, 10);
-                openStrategyRiskModal(index);
+                const source = viewRiskBtn.dataset.source || 'saved';
+                openStrategyRiskModal(index, source);
                 e.stopPropagation();
             }
 
             // --- Edit Portfolio Name in List ---
-            const nameContainer = e.target.closest('.portfolio-name-container');
+            const nameContainer = e.target.closest('.portfolio-name-group'); // Updated class
             if (nameContainer && (e.target.closest('.portfolio-name-display') || e.target.closest('.edit-portfolio-name-btn'))) {
                 const displayEl = nameContainer.querySelector('.portfolio-name-display');
                 const inputEl = nameContainer.querySelector('.portfolio-name-input');
-                const nameTextEl = nameContainer.querySelector('.portfolio-name-text');
-                const wrapper = nameContainer.closest('[data-portfolio-index]');
-                const index = wrapper ? parseInt(wrapper.dataset.portfolioIndex, 10) : -1;
-
-                if (displayEl && inputEl && index !== -1) {
-                    // Enable Edit
+                if (displayEl && inputEl) {
                     displayEl.classList.add('hidden');
                     inputEl.classList.remove('hidden');
                     inputEl.focus();
-                    inputEl.select();
-
-                    const saveName = () => {
-                        const newName = inputEl.value.trim();
-                        const portfolio = state.savedPortfolios[index];
-                        if (newName && portfolio && newName !== portfolio.name) {
-                            portfolio.name = newName;
-                            nameTextEl.textContent = newName;
-                            saveSavedPortfolios(); // Persist change
-                            showToast('Portfolio renamed', 'success');
-
-                            // Update Live Monitor if it's the one being monitored
-                            if (document.getElementById('live-monitor-view')?.classList.contains('hidden') === false) {
-                                // If live monitor is visible, we might want to refresh it to show new name
-                                import('./modules/liveMonitor.js').then(({ renderLiveMonitor }) => renderLiveMonitor());
-                            }
-                        }
-                        displayEl.classList.remove('hidden');
-                        inputEl.classList.add('hidden');
-                    };
-
-                    const onKeydown = (ev) => {
-                        if (ev.key === 'Enter') {
-                            saveName();
-                            inputEl.removeEventListener('keydown', onKeydown);
-                            inputEl.removeEventListener('blur', onBlur);
-                        } else if (ev.key === 'Escape') {
-                            inputEl.value = state.savedPortfolios[index].name;
-                            displayEl.classList.remove('hidden');
-                            inputEl.classList.add('hidden');
-                            inputEl.removeEventListener('keydown', onKeydown);
-                            inputEl.removeEventListener('blur', onBlur);
-                        }
-                    };
-
-                    const onBlur = () => {
-                        // Delay to allow Enter to fire first
-                        setTimeout(() => {
-                            saveName();
-                            inputEl.removeEventListener('keydown', onKeydown);
-                            inputEl.removeEventListener('blur', onBlur);
-                        }, 100);
-                    };
-
-                    inputEl.addEventListener('keydown', onKeydown);
-                    inputEl.addEventListener('blur', onBlur);
-
-                    // Prevent bubbling to row click
-                    e.stopPropagation();
+                    inputEl.select(); // Select text for easy editing
                 }
+                e.stopPropagation(); // Prevent bubbling to row click
             }
         });
 
-        // --- Portafolio Destacado ---
-        // --- Portafolio Destacado (OBSOLETO - Reemplazado por Visor) ---
-        if (dom.featuredPortfolioSection) {
-            dom.featuredPortfolioSection.addEventListener('click', (e) => {
-                if (e.target.id === 'save-comments-btn') {
-                    const comments = document.getElementById('portfolio-comments').value;
-                    state.savedPortfolios[state.featuredPortfolioIndex].comments = comments;
-                    const feedbackEl = document.getElementById('save-comments-feedback');
-                    feedbackEl.textContent = '¡Guardado!';
-                    setTimeout(() => { feedbackEl.textContent = ''; }, 2000);
-                    showToast('Comentarios guardados', 'success');
-                }
-            });
-        }
-
-        // --- DataBank ---
-        if (dom.findDatabankPortfoliosBtn) {
-            dom.findDatabankPortfoliosBtn.addEventListener('click', async () => {
-                const { openSearchConfigModal } = await import('./modules/searchConfig.js');
-                openSearchConfigModal(); // Call with no fixed strategies
-            });
-        }
-
-        if (dom.pauseSearchBtn) {
-            dom.pauseSearchBtn.addEventListener('click', async () => {
-                try {
-                    const response = await fetch('/databank/pause', { method: 'POST' });
-                    if (!response.ok) throw new Error('Error al enviar señal de pausa al backend.');
-                    // La UI se actualiza en base a los mensajes del stream, no aquí.
-                } catch (error) {
-                    console.error("Error al pausar/reanudar búsqueda:", error);
-                }
-            });
-        }
-
-        if (dom.stopSearchBtn) {
-            dom.stopSearchBtn.addEventListener('click', async () => {
-                try {
-                    const response = await fetch('/databank/stop', { method: 'POST' });
-                    if (!response.ok) throw new Error('Error al enviar señal de detención al backend.');
-                    // La UI se actualiza en base a los mensajes del stream, no aquí.
-                    // Deshabilitamos inmediatamente para evitar clics múltiples.
-                    dom.stopSearchBtn.disabled = true;
-                    dom.pauseSearchBtn.disabled = true;
-                } catch (error) {
-                    console.error("Error al detener búsqueda:", error);
-                }
-            });
-        }
-
-        if (dom.clearDatabankBtn) {
-            dom.clearDatabankBtn.addEventListener('click', clearDatabank);
-        }
-
-        dom.databankTableHeader.addEventListener('click', (e) => {
-            const header = e.target.closest('th.sortable');
-            if (header) {
-                sortDatabank(header);
+        // Input Blur/Enter Listener for Name Edit
+        dom.savedPortfoliosBody.addEventListener('focusout', (e) => {
+            if (e.target.classList.contains('portfolio-name-input')) {
+                // Delay to allow Enter to fire first
+                setTimeout(() => {
+                    savePortfolioName(e.target);
+                }, 100);
             }
         });
 
-        dom.databankTableHeader.addEventListener('change', (e) => {
-            if (e.target.id === 'databank-select-all') {
-                const isChecked = e.target.checked;
-                dom.databankTableBody.querySelectorAll('.databank-row-checkbox').forEach(cb => {
-                    cb.checked = isChecked;
-                });
+        dom.savedPortfoliosBody.addEventListener('keydown', (e) => {
+            if (e.target.classList.contains('portfolio-name-input') && e.key === 'Enter') {
+                savePortfolioName(e.target);
+                e.target.blur(); // Trigger focusout to ensure consistency
+            } else if (e.target.classList.contains('portfolio-name-input') && e.key === 'Escape') {
+                const inputEl = e.target;
+                const displayEl = inputEl.closest('.portfolio-name-group').querySelector('.portfolio-name-display');
+                if (displayEl) displayEl.classList.remove('hidden');
+                inputEl.classList.add('hidden');
+                // Reset value
+                const wrapper = inputEl.closest('[data-portfolio-index]');
+                const index = wrapper ? parseInt(wrapper.dataset.portfolioIndex, 10) : -1;
+                if (index !== -1 && state.savedPortfolios[index]) {
+                    inputEl.value = state.savedPortfolios[index].name;
+                }
             }
         });
+    }
 
-        dom.databankSaveSelectedBtn.addEventListener('click', () => {
-            const checkboxes = dom.databankTableBody.querySelectorAll('.databank-row-checkbox:checked');
-            let savedCount = 0;
-            checkboxes.forEach(cb => {
-                const index = parseInt(cb.dataset.index, 10);
-                const portfolioData = state.databankPortfolios[index];
-                if (portfolioData && savePortfolioFromDatabank(index, portfolioData.metrics)) {
-                    savedCount++;
-                }
+    // --- Portafolio Destacado ---
+    // --- Portafolio Destacado (OBSOLETO - Reemplazado por Visor) ---
+    if (dom.featuredPortfolioSection) {
+        dom.featuredPortfolioSection.addEventListener('click', (e) => {
+            if (e.target.id === 'save-comments-btn') {
+                const comments = document.getElementById('portfolio-comments').value;
+                state.savedPortfolios[state.featuredPortfolioIndex].comments = comments;
+                const feedbackEl = document.getElementById('save-comments-feedback');
+                feedbackEl.textContent = '¡Guardado!';
+                setTimeout(() => { feedbackEl.textContent = ''; }, 2000);
+                showToast('Comentarios guardados', 'success');
+            }
+        });
+    }
+
+    // --- DataBank ---
+    if (dom.findDatabankPortfoliosBtn) {
+        dom.findDatabankPortfoliosBtn.addEventListener('click', async () => {
+            const { openSearchConfigModal } = await import('./modules/searchConfig.js');
+            openSearchConfigModal(); // Call with no fixed strategies
+        });
+    }
+
+    if (dom.pauseSearchBtn) {
+        dom.pauseSearchBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/databank/pause', { method: 'POST' });
+                if (!response.ok) throw new Error('Error al enviar señal de pausa al backend.');
+                // La UI se actualiza en base a los mensajes del stream, no aquí.
+            } catch (error) {
+                console.error("Error al pausar/reanudar búsqueda:", error);
+            }
+        });
+    }
+
+    if (dom.stopSearchBtn) {
+        dom.stopSearchBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/databank/stop', { method: 'POST' });
+                if (!response.ok) throw new Error('Error al enviar señal de detención al backend.');
+                // La UI se actualiza en base a los mensajes del stream, no aquí.
+                // Deshabilitamos inmediatamente para evitar clics múltiples.
+                dom.stopSearchBtn.disabled = true;
+                dom.pauseSearchBtn.disabled = true;
+            } catch (error) {
+                console.error("Error al detener búsqueda:", error);
+            }
+        });
+    }
+
+    if (dom.clearDatabankBtn) {
+        dom.clearDatabankBtn.addEventListener('click', clearDatabank);
+    }
+
+    dom.databankTableHeader.addEventListener('click', (e) => {
+        const header = e.target.closest('th.sortable');
+        if (header) {
+            sortDatabank(header);
+        }
+    });
+
+    dom.databankTableHeader.addEventListener('change', (e) => {
+        if (e.target.id === 'databank-select-all') {
+            const isChecked = e.target.checked;
+            dom.databankTableBody.querySelectorAll('.databank-row-checkbox').forEach(cb => {
+                cb.checked = isChecked;
             });
-            if (savedCount > 0) {
-                // --- OPTIMIZACIÓN: Solo re-analizar si faltan métricas (raro desde Databank) ---
-                // savePortfolioFromDatabank ya adjunta las métricas si existen.
-                // Verificamos si algún portafolio guardado recientemente NO tiene métricas.
+        }
+    });
+
+    dom.databankSaveSelectedBtn.addEventListener('click', () => {
+        const checkboxes = dom.databankTableBody.querySelectorAll('.databank-row-checkbox:checked');
+        let savedCount = 0;
+        checkboxes.forEach(cb => {
+            const index = parseInt(cb.dataset.index, 10);
+            const portfolioData = state.databankPortfolios[index];
+            if (portfolioData && savePortfolioFromDatabank(index, portfolioData.metrics)) {
+                savedCount++;
+            }
+        });
+        if (savedCount > 0) {
+            // --- OPTIMIZACIÓN: Solo re-analizar si faltan métricas (raro desde Databank) ---
+            // savePortfolioFromDatabank ya adjunta las métricas si existen.
+            // Verificamos si algún portafolio guardado recientemente NO tiene métricas.
+            const needsAnalysis = state.savedPortfolios.some(p => !p.metrics);
+            if (needsAnalysis) {
+                reAnalyzeAllData();
+            } else {
+                displaySavedPortfoliosList();
+                // No necesitamos actualizar gráficos comparativos aquí, el usuario puede hacerlo manualmente si quiere
+            }
+            showToast(`${savedCount} portafolios guardados`, 'success');
+        }
+    });
+
+    dom.databankTableBody.addEventListener('click', (e) => {
+        if (e.target.classList.contains('databank-save-single-btn')) {
+            const index = parseInt(e.target.dataset.index, 10);
+            const portfolioData = state.databankPortfolios[index];
+            if (portfolioData && savePortfolioFromDatabank(index, portfolioData.metrics)) {
+                // --- OPTIMIZACIÓN: Igual que arriba ---
                 const needsAnalysis = state.savedPortfolios.some(p => !p.metrics);
                 if (needsAnalysis) {
                     reAnalyzeAllData();
                 } else {
                     displaySavedPortfoliosList();
-                    // No necesitamos actualizar gráficos comparativos aquí, el usuario puede hacerlo manualmente si quiere
                 }
-                showToast(`${savedCount} portafolios guardados`, 'success');
+                showToast('Portafolio guardado', 'success');
+            }
+        }
+
+        // --- View Strategy Risk in Databank ---
+        const viewRiskBtn = e.target.closest('.view-strategy-risk-btn');
+        if (viewRiskBtn) {
+            const index = parseInt(viewRiskBtn.dataset.index, 10);
+            const source = viewRiskBtn.dataset.source || 'databank';
+            openStrategyRiskModal(index, source);
+            e.stopPropagation();
+        }
+    });
+
+    // --- Optimization Modal (Hidden for now) ---
+    const optModalElements = document.getElementById('optimization-modal');
+    if (optModalElements) {
+        const closeBtn = optModalElements.querySelector('#close-optimization-modal-btn');
+        const backdrop = document.getElementById('optimization-modal-backdrop');
+        if (closeBtn) closeBtn.addEventListener('click', closeOptimizationModal);
+        if (backdrop) backdrop.addEventListener('click', closeOptimizationModal);
+        // El listener para 'start-single-optimization-btn' se ha movido a optimization.js
+
+        // --- NUEVO: Eventos para el escalado de riesgo en el modal de optimización ---
+        const scaleRiskCheckbox = optModalElements.querySelector('#optimization-scale-risk-checkbox');
+        const targetMaxDDInput = optModalElements.querySelector('#optimization-target-max-dd');
+        const targetMaxDDSlider = optModalElements.querySelector('#optimization-target-max-dd-slider');
+
+        if (scaleRiskCheckbox && targetMaxDDInput) {
+            scaleRiskCheckbox.addEventListener('change', (e) => { targetMaxDDInput.parentElement.classList.toggle('hidden', !e.target.checked); reevaluateOptimizationResults(); });
+        }
+        if (targetMaxDDSlider && targetMaxDDInput) {
+            setupSyncedSlider(targetMaxDDSlider, targetMaxDDInput, reevaluateOptimizationResults);
+        }
+    }
+
+
+    // --- View Manager (Hidden for now) ---
+    if (dom.manageViewsBtn) dom.manageViewsBtn.addEventListener('click', () => openViewManager('databank'));
+    if (dom.savedManageViewsBtn) dom.savedManageViewsBtn.addEventListener('click', () => openViewManager('saved'));
+    if (dom.closeViewManagerBtn) dom.closeViewManagerBtn.addEventListener('click', closeViewManager);
+    if (dom.viewManagerBackdrop) dom.viewManagerBackdrop.addEventListener('click', closeViewManager);
+    if (dom.viewSelector) {
+        dom.viewSelector.addEventListener('change', (e) => {
+            const selectedView = viewsState.databankViews.find(v => v.name === e.target.value);
+            viewsState.currentView = selectedView || null;
+        });
+    }
+    if (dom.savedViewSelector) {
+        dom.savedViewSelector.addEventListener('change', (e) => {
+            const selectedView = viewsState.savedPortfoliosViews.find(v => v.name === e.target.value);
+            viewsState.currentSavedView = selectedView || null;
+        });
+    }
+
+    const viewManagerModal = dom.viewManagerModal;
+    if (viewManagerModal) {
+        const applyBtn = viewManagerModal.querySelector('#apply-view-btn');
+        const saveBtn = viewManagerModal.querySelector('#save-view-btn');
+        const deleteBtn = viewManagerModal.querySelector('#delete-view-btn');
+        if (applyBtn) applyBtn.addEventListener('click', applyView);
+        if (saveBtn) saveBtn.addEventListener('click', saveView);
+        if (deleteBtn) deleteBtn.addEventListener('click', deleteView);
+    }
+
+    // --- Import / Export ---
+    dom.exportBtn.addEventListener('click', exportAnalysis);
+    dom.importFile.addEventListener('click', (e) => { e.target.value = null; }); // Permite re-importar el mismo archivo
+    dom.importFile.addEventListener('change', importAnalysis);
+
+    // --- Quick Index (Hidden for now) ---
+    if (dom.toggleQuickIndexBtn) {
+        dom.toggleQuickIndexBtn.addEventListener('click', () => {
+            dom.quickIndexContent.classList.toggle('hidden');
+        });
+    }
+
+    // --- Eventos de copia en modales y tablas ---
+    document.body.addEventListener('click', (e) => {
+        if (e.target.classList.contains('copyable-strategy')) {
+            const textToCopy = e.target.textContent;
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const originalBg = e.target.style.backgroundColor;
+                e.target.style.backgroundColor = '#10B981'; // green-500
+                setTimeout(() => {
+                    e.target.style.backgroundColor = originalBg;
+                }, 500);
+            }).catch(err => {
+                console.error('Error al copiar al portapapeles:', err);
+            });
+        }
+    });
+
+    // --- NUEVO: Eventos para los botones de acción del gráfico comparativo ---
+    const chartActionsGroup = document.getElementById('chart-actions-group');
+    if (chartActionsGroup) {
+        chartActionsGroup.addEventListener('click', (e) => {
+            if (e.target.classList.contains('chart-action-item')) {
+                chartActionsGroup.querySelectorAll('.chart-action-item').forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+            }
+        });
+    }
+
+    // --- NUEVO: Eventos para el modal de confirmación del gráfico ---
+    const chartClickModal = document.getElementById('chart-click-modal');
+    if (chartClickModal) {
+        const cancelBtn = chartClickModal.querySelector('#chart-click-cancel-btn');
+        const backdrop = chartClickModal.querySelector('#chart-click-modal-backdrop');
+        if (cancelBtn) cancelBtn.addEventListener('click', closeChartClickModal);
+        if (backdrop) backdrop.addEventListener('click', closeChartClickModal);
+    }
+    // --- NUEVO: Listeners para pestañas de vista (Backtest / Reality Check) ---
+    const tabBacktest = document.getElementById('tab-backtest');
+    const tabRealityCheck = document.getElementById('tab-reality-check');
+
+    if (tabBacktest) {
+        tabBacktest.addEventListener('click', () => switchViewMode('backtest'));
+    }
+    if (tabRealityCheck) {
+        tabRealityCheck.addEventListener('click', () => switchViewMode('reality-check'));
+        // --- DEBUG: Global Click Listener ---
+        window.addEventListener('click', (e) => {
+            if (e.target.closest('.manage-slave-accounts-btn')) {
+                console.log('[GLOBAL DEBUG] Click on Manage Slave Accounts Button detected!');
+                console.log('Target:', e.target);
+                console.log('Path:', e.composedPath());
             }
         });
 
-        dom.databankTableBody.addEventListener('click', (e) => {
-            if (e.target.classList.contains('databank-save-single-btn')) {
-                const index = parseInt(e.target.dataset.index, 10);
-                const portfolioData = state.databankPortfolios[index];
-                if (portfolioData && savePortfolioFromDatabank(index, portfolioData.metrics)) {
-                    // --- OPTIMIZACIÓN: Igual que arriba ---
-                    const needsAnalysis = state.savedPortfolios.some(p => !p.metrics);
-                    if (needsAnalysis) {
-                        reAnalyzeAllData();
-                    } else {
-                        displaySavedPortfoliosList();
-                    }
-                    showToast('Portafolio guardado', 'success');
-                }
-            }
-        });
-
-        // --- Optimization Modal (Hidden for now) ---
-        const optModalElements = document.getElementById('optimization-modal');
-        if (optModalElements) {
-            const closeBtn = optModalElements.querySelector('#close-optimization-modal-btn');
-            const backdrop = document.getElementById('optimization-modal-backdrop');
-            if (closeBtn) closeBtn.addEventListener('click', closeOptimizationModal);
-            if (backdrop) backdrop.addEventListener('click', closeOptimizationModal);
-            // El listener para 'start-single-optimization-btn' se ha movido a optimization.js
-
-            // --- NUEVO: Eventos para el escalado de riesgo en el modal de optimización ---
-            const scaleRiskCheckbox = optModalElements.querySelector('#optimization-scale-risk-checkbox');
-            const targetMaxDDInput = optModalElements.querySelector('#optimization-target-max-dd');
-            const targetMaxDDSlider = optModalElements.querySelector('#optimization-target-max-dd-slider');
-
-            if (scaleRiskCheckbox && targetMaxDDInput) {
-                scaleRiskCheckbox.addEventListener('change', (e) => { targetMaxDDInput.parentElement.classList.toggle('hidden', !e.target.checked); reevaluateOptimizationResults(); });
-            }
-            if (targetMaxDDSlider && targetMaxDDInput) {
-                setupSyncedSlider(targetMaxDDSlider, targetMaxDDInput, reevaluateOptimizationResults);
-            }
-        }
-
-
-        // --- View Manager (Hidden for now) ---
-        if (dom.manageViewsBtn) dom.manageViewsBtn.addEventListener('click', () => openViewManager('databank'));
-        if (dom.savedManageViewsBtn) dom.savedManageViewsBtn.addEventListener('click', () => openViewManager('saved'));
-        if (dom.closeViewManagerBtn) dom.closeViewManagerBtn.addEventListener('click', closeViewManager);
-        if (dom.viewManagerBackdrop) dom.viewManagerBackdrop.addEventListener('click', closeViewManager);
-        if (dom.viewSelector) {
-            dom.viewSelector.addEventListener('change', (e) => {
-                const selectedView = viewsState.databankViews.find(v => v.name === e.target.value);
-                viewsState.currentView = selectedView || null;
-            });
-        }
-        if (dom.savedViewSelector) {
-            dom.savedViewSelector.addEventListener('change', (e) => {
-                const selectedView = viewsState.savedPortfoliosViews.find(v => v.name === e.target.value);
-                viewsState.currentSavedView = selectedView || null;
-            });
-        }
-
-        const viewManagerModal = dom.viewManagerModal;
-        if (viewManagerModal) {
-            const applyBtn = viewManagerModal.querySelector('#apply-view-btn');
-            const saveBtn = viewManagerModal.querySelector('#save-view-btn');
-            const deleteBtn = viewManagerModal.querySelector('#delete-view-btn');
-            if (applyBtn) applyBtn.addEventListener('click', applyView);
-            if (saveBtn) saveBtn.addEventListener('click', saveView);
-            if (deleteBtn) deleteBtn.addEventListener('click', deleteView);
-        }
-
-        // --- Import / Export ---
-        dom.exportBtn.addEventListener('click', exportAnalysis);
-        dom.importFile.addEventListener('click', (e) => { e.target.value = null; }); // Permite re-importar el mismo archivo
-        dom.importFile.addEventListener('change', importAnalysis);
-
-        // --- Quick Index (Hidden for now) ---
-        if (dom.toggleQuickIndexBtn) {
-            dom.toggleQuickIndexBtn.addEventListener('click', () => {
-                dom.quickIndexContent.classList.toggle('hidden');
-            });
-        }
-
-        // --- Eventos de copia en modales y tablas ---
-        document.body.addEventListener('click', (e) => {
-            if (e.target.classList.contains('copyable-strategy')) {
-                const textToCopy = e.target.textContent;
-                navigator.clipboard.writeText(textToCopy).then(() => {
-                    const originalBg = e.target.style.backgroundColor;
-                    e.target.style.backgroundColor = '#10B981'; // green-500
-                    setTimeout(() => {
-                        e.target.style.backgroundColor = originalBg;
-                    }, 500);
-                }).catch(err => {
-                    console.error('Error al copiar al portapapeles:', err);
-                });
-            }
-        });
-
-        // --- NUEVO: Eventos para los botones de acción del gráfico comparativo ---
-        const chartActionsGroup = document.getElementById('chart-actions-group');
-        if (chartActionsGroup) {
-            chartActionsGroup.addEventListener('click', (e) => {
-                if (e.target.classList.contains('chart-action-item')) {
-                    chartActionsGroup.querySelectorAll('.chart-action-item').forEach(btn => btn.classList.remove('active'));
-                    e.target.classList.add('active');
-                }
-            });
-        }
-
-        // --- NUEVO: Eventos para el modal de confirmación del gráfico ---
-        const chartClickModal = document.getElementById('chart-click-modal');
-        if (chartClickModal) {
-            const cancelBtn = chartClickModal.querySelector('#chart-click-cancel-btn');
-            const backdrop = chartClickModal.querySelector('#chart-click-modal-backdrop');
-            if (cancelBtn) cancelBtn.addEventListener('click', closeChartClickModal);
-            if (backdrop) backdrop.addEventListener('click', closeChartClickModal);
-        }
-        // --- NUEVO: Listeners para pestañas de vista (Backtest / Reality Check) ---
-        const tabBacktest = document.getElementById('tab-backtest');
-        const tabRealityCheck = document.getElementById('tab-reality-check');
-
-        if (tabBacktest) {
-            tabBacktest.addEventListener('click', () => switchViewMode('backtest'));
-        }
-        if (tabRealityCheck) {
-            tabRealityCheck.addEventListener('click', () => switchViewMode('reality-check'));
-        }
+        // --- DEBUG: Expose Modal Function Globally ---
+        window.openSlaveAccountsModal = openSlaveAccountsModal;
+        window.debugOpenSlave = openSlaveAccountsModal; // Keep alias just in case
     }
 }

@@ -96,20 +96,15 @@ const ensureStrategyRiskModalExists = () => {
  * Opens the Strategy Risk Viewer for a portfolio.
  * @param {number} portfolioIndex 
  */
-export const openStrategyRiskModal = (portfolioIndex) => {
+export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
     ensureStrategyRiskModalExists();
 
-    const portfolio = state.savedPortfolios[portfolioIndex];
+    const portfolio = source === 'databank' ? state.databankPortfolios[portfolioIndex] : state.savedPortfolios[portfolioIndex];
     if (!portfolio) return;
 
     document.getElementById('strategy-risk-portfolio-name').textContent = `Portafolio: ${portfolio.name}`;
     const tbody = document.getElementById('strategy-risk-table-body');
     tbody.innerHTML = '';
-
-    // Reset base input to 100 or keep previous? Resetting is safer.
-    const baseInput = document.getElementById('risk-viewer-base-input');
-    baseInput.value = 100;
-    const baseVal = 100;
 
     // Determine strategies and weights
     let strategies = [];
@@ -121,6 +116,18 @@ export const openStrategyRiskModal = (portfolioIndex) => {
 
     // Helper to get strategy count first
     const count = (portfolio.strategyIds && portfolio.strategyIds.length) || (portfolio.indices && portfolio.indices.length) || 0;
+
+    // Reset base input
+    // User prefers "100 per strategy" as the mental model for default equal weights.
+    // So if 5 strategies, Base = 500 -> Risk = 100 each.
+    const baseInput = document.getElementById('risk-viewer-base-input');
+    let baseVal = 100;
+
+    if (!hasWeights && !hasRiskPerStrategy && count > 0) {
+        baseVal = count * 100;
+    }
+
+    baseInput.value = baseVal;
     const defaultWeight = count > 0 ? (1 / count) : 0;
 
     if (portfolio.strategyIds && portfolio.strategyIds.length > 0) {
@@ -179,7 +186,7 @@ export const openStrategyRiskModal = (portfolioIndex) => {
             if (baseInput) baseInput.disabled = false;
             if (riskColumnHeader) riskColumnHeader.textContent = 'Riesgo Calculado';
         } else {
-            infoText.innerHTML = `⚠️ <strong>Pesos No Encontrados</strong>: Se asume <strong>Peso Equitativo (${(defaultWeight * 100).toFixed(1)}%)</strong>.<br>La columna "Riesgo" se calcula dividiendo el Valor Base entre el número de estrategias.`;
+            infoText.innerHTML = `ℹ️ <strong>Distribución Equitativa (Por Defecto)</strong>: Se asume <strong>${(defaultWeight * 100).toFixed(1)}%</strong> por estrategia.<br>La columna "Riesgo" se calcula dividiendo el Valor Base entre el número de estrategias.`;
             if (baseInput) baseInput.disabled = false;
             if (riskColumnHeader) riskColumnHeader.textContent = 'Riesgo Calculado';
         }

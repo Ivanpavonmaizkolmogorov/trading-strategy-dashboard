@@ -418,8 +418,12 @@ export const updateDatabankDisplay = () => {
                 if (!constructedName && p.indices) {
                     constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i + 1}`).join(', ');
                 }
-                const names = (constructedName || '').split(', ').map(name => `<div class="copyable-strategy p-0.5 rounded-sm" title="Copiar '${name.replace('.csv', '')}'">${name.replace('.csv', '')}</div>`).join('');
-                html += `<td class="px-4 py-3 text-gray-300 max-w-xs">${names}</td>`;
+                // Compact View: Single line with ellipsis, full list in tooltip
+                const count = p.indices ? p.indices.length : 0;
+                const shortText = `${count} Estrategias: ${constructedName}`;
+                html += `<td class="px-4 py-3 text-gray-300 max-w-xs truncate" title="${constructedName}">
+                            <div class="truncate text-sm">${shortText}</div>
+                         </td>`;
             } else {
                 // Get value from metrics or analysis.metrics
                 let value;
@@ -440,11 +444,14 @@ export const updateDatabankDisplay = () => {
                     console.log(`[DEBUG FRONTEND] Col '${key}': Value extracted:`, value);
                 }
 
-                html += `<td class="px-4 py-3 text-gray-300 text-right">${formatMetricForDisplay(value, key)}</td>`;
+                html += `<td class="px-4 py-3 text-gray-300 text-right whitespace-nowrap">${formatMetricForDisplay(value, key)}</td>`;
             }
         });
 
-        html += `<td class="px-4 py-3 text-center sticky right-0 bg-gray-800 z-10"><button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button></td></tr>`;
+        html += `<td class="px-4 py-3 text-center sticky right-0 bg-gray-800 z-10 whitespace-nowrap">
+                    <button class="view-strategy-risk-btn text-gray-400 hover:text-sky-400 text-lg px-1 mr-2" title="Ver Riesgo Base" data-index="${index}" data-source="databank">👁️</button>
+                    <button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button>
+                 </td></tr>`;
     });
     dom.databankTableBody.innerHTML = html;
 

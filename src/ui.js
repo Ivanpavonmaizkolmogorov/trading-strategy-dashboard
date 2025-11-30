@@ -1025,10 +1025,11 @@ export const displaySavedPortfoliosList = () => {
         tdActions.innerHTML = `
             <button data-index="${originalIndex}" class="feature-portfolio-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isFeatured ? 'featured' : ''}" title="Destacar/Acciones">&#9733;</button>
             ${p.weights ? `<button data-index="${originalIndex}" class="compare-original-btn text-gray-500 hover:text-amber-400 text-xl px-1 ${isCompared ? 'active' : ''}" title="Comparar con Original">🔄</button>` : ''}
-            <button data-index="${originalIndex}" class="manage-slave-accounts-btn text-gray-400 hover:text-sky-400 text-lg px-1 relative" title="Gestionar Cuentas Esclavas">
+            <button data-index="${originalIndex}" onclick="event.stopPropagation(); if(window.openSlaveAccountsModal) window.openSlaveAccountsModal(${originalIndex});" class="manage-slave-accounts-btn text-gray-400 hover:text-sky-400 text-lg px-1 relative" title="Gestionar Cuentas Esclavas">
                 👥
                 ${(p.slaveAccounts && p.slaveAccounts.length > 0) ? `<span class="absolute -top-1 -right-1 flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span></span>` : ''}
             </button>
+            <button data-index="${originalIndex}" class="view-strategy-risk-btn text-gray-400 hover:text-sky-400 text-lg px-1" title="Ver Riesgo Base Estrategias">👁️</button>
             <button data-index="${originalIndex}" class="delete-portfolio-btn text-gray-400 hover:text-red-400 text-lg px-1" title="Eliminar">🗑️</button>
             <button data-index="${originalIndex}" class="optimize-portfolio-btn text-sky-400 hover:text-sky-300 text-lg px-1" title="Optimizar">⚙️</button>
         `;
