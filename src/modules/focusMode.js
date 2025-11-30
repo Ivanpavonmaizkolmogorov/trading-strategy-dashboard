@@ -336,14 +336,23 @@ export const focusMode = {
             // DEBUG: Log item name being processed
             console.log(`[FocusMode] Processing item: ${item.name} (ID: ${item.id})`);
 
-            analyses.push({
+            const analysisObj = {
                 name: item.name,
                 analysis: analysis,
                 color: item.color,
-                savedIndex: savedIndex, // Pass index for UI logic
-                realMetrics: realMetrics, // Pass attached real metrics
-                strategies: [item.name] // Ensure chart can resolve magic number
-            });
+                savedIndex: savedIndex,
+                realMetrics: realMetrics,
+                indices: item.indices // Pass indices for Saved Portfolios
+            };
+
+            // For single strategies, we need to pass the name as a strategy so magic number lookup works
+            if (item.type === 'strategy') {
+                analysisObj.strategies = [item.name];
+            } else if (item.strategies) {
+                analysisObj.strategies = item.strategies;
+            }
+
+            analyses.push(analysisObj);
         });
 
         // DEBUG: Log what we are trying to update
