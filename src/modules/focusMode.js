@@ -232,8 +232,18 @@ export const focusMode = {
             // REALITY CHECK FOR STRATEGIES: Attach Real Metrics if available
             let realMetrics = null;
             if (item.type === 'strategy' && state.magicNumberMap) {
-                const magicRaw = state.magicNumberMap[item.name];
-                console.log(`[FocusMode] 🔍 Looking up real data for strategy: ${item.name}`);
+                // Resolve Strategy ID
+                let strategyId = item.id;
+                // Try to find ID from loaded files if item has originalIndex
+                if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
+                    const file = state.loadedStrategyFiles[item.originalIndex];
+                    strategyId = file.strategyId || file.name;
+                } else if (!strategyId) {
+                    strategyId = item.name;
+                }
+
+                const magicRaw = state.magicNumberMap[strategyId] || state.magicNumberMap[item.name];
+                console.log(`[FocusMode] 🔍 Looking up real data for strategy: ${item.name} (ID: ${strategyId})`);
                 console.log(`[FocusMode] 🔢 Magic Number(s) found: ${magicRaw}`);
 
                 if (magicRaw) {

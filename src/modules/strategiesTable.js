@@ -147,7 +147,12 @@ export const renderStrategiesTable = () => {
     // FILTER: Reality Check Mode
     if (state.activeViewMode === 'reality-check') {
         const totalStrategies = strategies.length;
-        strategies = strategies.filter(s => state.magicNumberMap && state.magicNumberMap[s.name]);
+        strategies = strategies.filter(s => {
+            // Get ID from loaded files using original index
+            const file = state.loadedStrategyFiles[s.originalIndex];
+            const id = file ? (file.strategyId || file.name) : s.name;
+            return state.magicNumberMap && state.magicNumberMap[id] && state.magicNumberMap[id].length > 0;
+        });
         console.log(`[StrategiesTable] 🔍 Reality Check Filter: Showing ${strategies.length} / ${totalStrategies} strategies (Linked to Myfxbook)`);
     }
 
@@ -225,7 +230,10 @@ export const renderStrategiesTable = () => {
 
                 // --- RISK BADGE (Reality Check Mode) ---
                 if (state.activeViewMode === 'reality-check' && state.magicNumberMap) {
-                    const magicRaw = state.magicNumberMap[value]; // value is strategy name
+                    // Resolve Strategy ID
+                    const file = state.loadedStrategyFiles[strategy.originalIndex];
+                    const sId = file ? (file.strategyId || file.name) : value;
+                    const magicRaw = state.magicNumberMap[sId] || state.magicNumberMap[value];
 
                     if (magicRaw) {
                         // Get Real Trades from ANY linked portfolio

@@ -1468,6 +1468,8 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         }];
 
         // REALITY CHECK: Add Real Equity Curve if available AND mode is 'reality-check'
+        console.log(`[UI] Checking Reality Check for ${result.name}: Mode=${state.activeViewMode}, HasRealMetrics=${!!result.realMetrics}, HasTradesById=${!!(result.realMetrics && result.realMetrics._tradesById)}, HasMagicMap=${!!state.magicNumberMap}`);
+
         if (state.activeViewMode === 'reality-check' && result.realMetrics && result.realMetrics._tradesById && state.magicNumberMap) {
             let allRealTrades = [];
             let strategyNames = [];
@@ -1480,7 +1482,18 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
             if (strategyNames.length > 0) {
                 strategyNames.forEach(stratName => {
-                    const magicRaw = state.magicNumberMap[stratName];
+                    // Resolve Strategy ID from loaded files
+                    let strategyId = stratName;
+                    const file = state.loadedStrategyFiles.find(f => f.name === stratName);
+                    if (file && file.strategyId) {
+                        strategyId = file.strategyId;
+                    }
+
+                    // Try lookup by ID first, then Name
+                    const magicRaw = state.magicNumberMap[strategyId] || state.magicNumberMap[stratName];
+
+                    console.log(`[UI] 🔍 Lookup for ${stratName} (ID: ${strategyId}) -> Magic: ${magicRaw}`);
+
                     if (magicRaw) {
                         let magics = [];
                         if (Array.isArray(magicRaw)) {
@@ -1500,69 +1513,81 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 });
             }
 
-            // Sort by close date
-            allRealTrades.sort((a, b) => new Date(a.closeDate || a.closeTime) - new Date(b.closeDate || b.closeTime));
-
-            // Generate Real Equity Curve
-            let currentEquity = 0;
-            const realEquityCurve = [];
             if (allRealTrades.length > 0) {
-                const firstDate = new Date(allRealTrades[0].closeDate || allRealTrades[0].closeTime).getTime();
-                realEquityCurve.push({ x: firstDate - 3600000, y: 0 });
-            }
-            allRealTrades.forEach(trade => {
-                const dateStr = trade.closeDate || trade.closeTime;
-                const tradeDate = new Date(dateStr).getTime();
-                if (!isNaN(tradeDate)) {
-                    currentEquity += (trade.profit || 0) + (trade.swap || 0) + (trade.commission || 0);
-                    realEquityCurve.push({ x: tradeDate, y: currentEquity });
+                // Sort by close date
+                allRealTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+
+                // Generate Real Equity Curve (Absolute Profit)
+                let currentEquity = 0;
+                const realEquityCurve = [];
+
+                if (allRealTrades.length > 0) {
+                    const firstDate = new Date(allRealTrades[0].closeDate || allRealTrades[0].closeTime).getTime();
+                    realEquityCurve.push({ x: firstDate - 3600000, y: 0 });
                 }
-            });
 
-            if (realEquityCurve.length > 0) {
-                // Use original opaque color for Real curve
-                const realColor = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + (result.savedIndex ?? index)) % STRATEGY_COLORS.length]));
-
-                // Add Real Equity Dataset
-                returnedDatasets.push({
-                    label: `${result.name} (Real)`,
-                    data: realEquityCurve,
-                    borderColor: realColor,
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.1,
-                    order: -2 // On top of everything
+                allRealTrades.forEach(trade => {
+                    const dateStr = trade.closeDate || trade.closeTime;
+                    const tradeDate = new Date(dateStr).getTime();
+                    if (!isNaN(tradeDate)) {
+                        currentEquity += (trade.profit || 0) + (trade.swap || 0) + (trade.commission || 0);
+                        realEquityCurve.push({ x: tradeDate, y: currentEquity });
+                    }
                 });
 
-                // --- DEGRADATION ANALYSIS ---
-                const metrics = result.analysis?.metrics || result.metrics || result.analysis || {};
+                if (realEquityCurve.length > 0) {
+                    // Use original opaque color for Real curve
+                    const realColor = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + (result.savedIndex ?? index)) % STRATEGY_COLORS.length]));
 
-                // Hard Stop Line (Trailing based on MaxDD)
-                const hardStopLimit = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 0));
+                    console.log(`[UI] 📊 Real Equity Curve for ${result.name}: ${realEquityCurve.length} points.`);
 
-                if (hardStopLimit > 0) {
-                    const hardStopCurve = [];
-                    let maxEq = -Infinity;
-
-                    realEquityCurve.forEach(p => {
-                        if (p.y > maxEq) maxEq = p.y;
-                        hardStopCurve.push({ x: p.x, y: maxEq - hardStopLimit });
-                    });
-
+                    // Add Real Equity Dataset
                     returnedDatasets.push({
-                        label: 'Hard Stop (MaxDD)',
-                        data: hardStopCurve,
-                        borderColor: realColor, // Same color as strategy
+                        label: `${result.name} (Real)`,
+                        data: realEquityCurve,
+                        borderColor: realColor,
                         borderWidth: 2,
-                        borderDash: [5, 5], // Dashed
-                        pointRadius: 0,
-                        fill: false,
-                        order: -1 // On top
+                        pointRadius: 3, // Make points visible
+                        tension: 0.1,
+                        order: -2 // On top of everything
                     });
-                }
 
-                // Calculate Risk Metrics for Badge (Logic preserved for badge calculation later if needed, but here we just need datasets)
-                // ... (Badge calculation logic is separate in displaySavedPortfoliosList, here we just render charts)
+                    // --- DEGRADATION ANALYSIS ---
+                    const metrics = result.analysis?.metrics || result.metrics || result.analysis || {};
+
+                    // Hard Stop Line (Trailing based on MaxDD)
+                    const hardStopLimit = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 0));
+                    console.log(`[UI] 🛡️ Hard Stop Limit: ${hardStopLimit} (MaxDD)`);
+
+                    if (hardStopLimit > 0) {
+                        const hardStopCurve = [];
+                        let maxEq = -Infinity;
+
+                        realEquityCurve.forEach(p => {
+                            if (p.y > maxEq) maxEq = p.y;
+                            hardStopCurve.push({ x: p.x, y: maxEq - hardStopLimit });
+                        });
+
+                        console.log(`[UI] 🛡️ Hard Stop Curve: ${hardStopCurve.length} points. Last:`, hardStopCurve[hardStopCurve.length - 1]);
+
+                        returnedDatasets.push({
+                            label: 'Hard Stop (MaxDD)',
+                            data: hardStopCurve,
+                            borderColor: realColor, // Same color as strategy
+                            borderWidth: 2,
+                            borderDash: [5, 5], // Dashed
+                            pointRadius: 0,
+                            fill: false,
+                            order: -1 // On top
+                        });
+                    } else {
+                        console.warn(`[UI] ⚠️ Hard Stop Limit is 0 or invalid. Metrics:`, metrics);
+                    }
+
+                    // Calculate Risk Metrics for Badge (Logic preserved for badge calculation later if needed, but here we just need datasets)
+                    // ... (Badge calculation logic is separate in displaySavedPortfoliosList, here we just render charts)
+                    // ... (inside realEquityCurve check)
+                }
             }
         }
 
@@ -1938,6 +1963,23 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         });
     }
 
+    // Calculate min date from Real datasets if in Reality Check mode
+    let minRealDate = undefined;
+    if (state.activeViewMode === 'reality-check') {
+        datasets.forEach(ds => {
+            if (ds.label.includes('(Real)') && ds.data.length > 0) {
+                const firstPoint = ds.data[0];
+                if (!minRealDate || firstPoint.x < minRealDate) {
+                    minRealDate = firstPoint.x;
+                }
+            }
+        });
+        // Add some buffer (e.g., 1 day or 1 week before)
+        if (minRealDate) {
+            minRealDate -= 86400000 * 2; // 2 days buffer
+        }
+    }
+
     // 4. Create Equity Chart
     state.chartInstances[canvasId] = new Chart(ctx, {
         type: 'line',
@@ -1957,6 +1999,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             scales: {
                 x: {
                     type: 'time',
+                    min: minRealDate,
                     time: { unit: undefined }, // Override unit to auto-scale for Real Equity which might be short-term
                     grid: { color: 'rgba(75, 85, 99, 0.2)' },
                     ticks: { color: '#9ca3af', font: { size: 10 } }
