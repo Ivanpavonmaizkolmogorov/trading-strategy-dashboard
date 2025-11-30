@@ -217,14 +217,117 @@ export const renderStrategiesTable = () => {
             const td = document.createElement('td');
             td.className = 'px-4 py-3 text-gray-300 truncate';
 
-            if (colId === 'name') {
-                const fileName = strategy.fileName || strategy.name || 'Unknown';
-                td.className += ' font-medium text-white';
-                td.textContent = fileName;
-                td.title = fileName;
-            } else {
-                const value = getMetricValue(strategy, colId);
+            let value = getMetricValue(strategy, colId);
 
+            if (colId === 'name') {
+                td.className += ' font-medium text-white';
+                td.title = value; // Tooltip for full name
+
+                // --- RISK BADGE (Reality Check Mode) ---
+                if (state.activeViewMode === 'reality-check' && state.magicNumberMap) {
+                    const magicRaw = state.magicNumberMap[value]; // value is strategy name
+
+                    if (magicRaw) {
+                        // Get Real Trades from ANY linked portfolio
+                        let magics = Array.isArray(magicRaw) ? magicRaw : (typeof magicRaw === 'string' ? magicRaw.split(',') : [String(magicRaw)]);
+                        let allRealTrades = [];
+
+                        // Find trades in saved portfolios
+                        state.savedPortfolios.forEach(p => {
+                            if (p.realMetrics && p.realMetrics._tradesById) {
+                                magics.forEach(m => {
+                                    const trades = p.realMetrics._tradesById[m.trim()];
+                                    if (trades) allRealTrades = allRealTrades.concat(trades);
+                                });
+                            }
+                        });
+
+                        if (allRealTrades.length > 0) {
+                            // Calculate Risk % based on Mode
+                            let ddPercent = 0;
+                            let stagPercent = 0;
+                            let riskIcon = '🛡️';
+                            let riskColor = 'text-green-400';
+                            let stagLabel = '';
+
+                            // Sort trades by time
+                            allRealTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+
+                            // Common Data Prep
+                            let maxEq = -Infinity;
+                            let lastHighIndex = 0;
+                            let lastHighTime = new Date(allRealTrades[0].closeTime).getTime();
+                            let maxRealDD = 0;
+                            let currentEq = 0;
+
+                            allRealTrades.forEach((t, index) => {
+                                currentEq += (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
+                                if (currentEq > maxEq) {
+                                    maxEq = currentEq;
+                                    lastHighIndex = index;
+                                    lastHighTime = new Date(t.closeTime).getTime();
+                                }
+                                const dd = maxEq - currentEq;
+                                if (dd > maxRealDD) maxRealDD = dd;
+                            });
+
+                            // 1. Drawdown Risk (Always)
+                            const backtestMaxDD = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 1000));
+                            ddPercent = (maxRealDD / backtestMaxDD) * 100;
+
+                            // 2. Stagnation Risk (Based on Mode)
+                            if (state.stagnationMode === 'trades') {
+                                const currentStagnationTrades = (allRealTrades.length - 1) - lastHighIndex;
+                                const limit = Number(metrics.maxStagnationTrades || 1);
+                                stagPercent = (currentStagnationTrades / limit) * 100;
+                                stagLabel = 'Stag(T)';
+                            } else {
+                                // Default: Days
+                                const lastDate = new Date(allRealTrades[allRealTrades.length - 1].closeTime).getTime();
+                                const currentStagnationDays = (lastDate - lastHighTime) / (1000 * 60 * 60 * 24);
+                                const limit = Number(metrics.maxStagnationDays || 1);
+                                stagPercent = (currentStagnationDays / limit) * 100;
+                                stagLabel = 'Stag(D)';
+                            }
+
+                            // Determine Icon (Based on Worst Risk)
+                            const maxRisk = Math.max(ddPercent, stagPercent);
+                            if (maxRisk >= 100) { riskColor = 'text-red-500 font-bold'; riskIcon = '🚨'; }
+                            else if (maxRisk >= 80) { riskColor = 'text-orange-400'; riskIcon = '⚠️'; }
+
+                            value = `${value} <span class="ml-2 ${riskColor} text-xs bg-gray-800 px-1.5 py-0.5 rounded border border-gray-600">DD: ${ddPercent.toFixed(0)}% | ${stagLabel}: ${stagPercent.toFixed(0)}% ${riskIcon}</span>`;
+
+                            // Add Magnifying Glass for Real Trades
+                            if (state.activeViewMode === 'reality-check') {
+                                const realTradesBtn = document.createElement('button');
+                                realTradesBtn.className = 'view-real-trades-btn ml-2 text-gray-400 hover:text-white transition-colors';
+                                realTradesBtn.dataset.strategyIndex = originalIndex;
+                                realTradesBtn.title = 'View Real Trades';
+                                realTradesBtn.innerHTML = '🔍';
+                                realTradesBtn.addEventListener('click', (e) => {
+                                    e.stopPropagation(); // Prevent row selection
+                                    const index = parseInt(e.currentTarget.dataset.strategyIndex);
+                                    if (window.openRealTradesModal) {
+                                        window.openRealTradesModal(index);
+                                    } else {
+                                        console.error("openRealTradesModal function not found!");
+                                    }
+                                });
+                                td.innerHTML = value; // Set the value first
+                                td.appendChild(realTradesBtn); // Then append the button
+                            } else {
+                                td.innerHTML = value; // Use innerHTML because value might contain HTML now
+                            }
+                        } else {
+                            td.innerHTML = value; // Use innerHTML because value might contain HTML now
+                        }
+                    } else {
+                        td.innerHTML = value; // Use innerHTML because value might contain HTML now
+                    }
+                } else {
+                    td.innerHTML = value; // Use innerHTML because value might contain HTML now
+                }
+            } else {
                 td.className += ' text-right';
                 td.textContent = formatMetricForDisplay(value, colId);
 

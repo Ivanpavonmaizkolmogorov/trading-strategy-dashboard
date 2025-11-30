@@ -15,7 +15,14 @@ export const state = {
     nextPortfolioId: 0,
     selectedRows: { databank: [], saved: [] },
     isSearchPaused: false,
+    isSearchPaused: false,
     isSearchStopped: false,
+
+    // --- NUEVO: Configuración de Riesgo ---
+    stagnationMode: 'days', // 'days', 'trades'
+
+    // --- NUEVO: Tab Activo ---
+    activeTab: 'strategies', // 'strategies', 'saved-portfolios', 'databank'
 
     // --- NUEVO: Cuentas vinculadas de Myfxbook ---
     linkedAccounts: [], // { myfxbookId, accountId, name, broker, portfolioId, lastSyncDate, metrics: {...} }

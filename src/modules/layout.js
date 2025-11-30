@@ -1,4 +1,5 @@
 import { dom } from '../dom.js';
+import { state } from '../state.js';
 import { renderViewerForActiveTab } from './viewer.js';
 import { renderStrategiesTable, displaySavedPortfoliosList } from '../ui.js';
 import { initStrategiesTable } from './strategiesTable.js';
@@ -65,6 +66,12 @@ const initBottomPanelTabs = () => {
             if (targetContent) {
                 targetContent.classList.remove('hidden');
                 targetContent.classList.add('active', 'flex');
+
+                // Update State
+                if (targetId === 'strategies-content') state.activeTab = 'strategies';
+                else if (targetId === 'saved-portfolios-content') state.activeTab = 'saved-portfolios';
+                else if (targetId === 'databank-content') state.activeTab = 'databank';
+                console.log(`[Layout] Active Tab changed to: ${state.activeTab}`);
 
                 // Render specific content if needed
                 if (targetId === 'strategies-content') {

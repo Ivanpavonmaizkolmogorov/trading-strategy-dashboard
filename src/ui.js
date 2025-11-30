@@ -757,6 +757,12 @@ export const displaySavedPortfoliosList = () => {
             sortSavedPortfoliosTable(th);
         });
 
+        // Initial Visibility Check
+        const stagnationControls = document.getElementById('stagnation-controls');
+        if (stagnationControls && state.activeViewMode === 'reality-check') {
+            stagnationControls.classList.remove('hidden');
+        }
+
         // Resizer
         const resizer = document.createElement('div');
         resizer.className = 'absolute right-0 top-0 bottom-0 w-1 cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors';
@@ -1114,14 +1120,30 @@ export const switchViewMode = (mode) => {
         }
     }
 
+    // Toggle Stagnation Controls Visibility
+    const stagnationControls = document.getElementById('stagnation-controls');
+    if (stagnationControls) {
+        if (mode === 'reality-check') {
+            stagnationControls.classList.remove('hidden');
+        } else {
+            stagnationControls.classList.add('hidden');
+        }
+    }
+
     // Re-render charts
     if (window.focusMode && window.focusMode.active) {
         console.log('[UI] Switch View Mode: Focus Mode active, updating focused charts.');
         window.focusMode.updateCharts();
     } else {
-        // Normal mode: render saved portfolios
-        const savedResults = (window.analysisResults || []).filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal);
-        renderPortfolioComparisonCharts(savedResults);
+        // Normal mode: render saved portfolios ONLY if in Saved Portfolios tab
+        if (state.activeTab === 'saved-portfolios') {
+            const savedResults = (window.analysisResults || []).filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal);
+            renderPortfolioComparisonCharts(savedResults);
+        } else {
+            console.log(`[UI] Switch View Mode: Active tab is ${state.activeTab}, skipping portfolio chart render.`);
+            // Optional: Clear chart or show placeholder?
+            // For now, just don't render portfolios.
+        }
     }
 
     // Re-render Strategies Table (to apply filter)
@@ -1359,46 +1381,62 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     console.log(`[UI]    Generated Cone Points: ${coneUpper.length}`);
                     console.log(`[UI]    Generated Hard Stop Points: ${hardStop.length}`);
 
-                    // --- ADD DATASETS ---
+                    // 3. Real Equity
+                    // --- RISK CALCULATION (Dual Display) ---
+                    let ddPercent = 0;
+                    let stagPercent = 0;
+                    let riskIcon = '';
+                    let stagLabel = '';
 
-                    // 1. Cone (Area)
-                    ds.push({
-                        label: 'Statistical Cone (95%)',
-                        data: coneUpper,
-                        borderColor: 'transparent',
-                        backgroundColor: 'rgba(156, 163, 175, 0.1)', // Gray-400 very low opacity
-                        fill: '+1', // Fill to next dataset (Lower Cone)
-                        pointRadius: 0,
-                        borderWidth: 0,
-                        order: 10
-                    });
-                    ds.push({
-                        label: 'Cone Lower Limit',
-                        data: coneLower,
-                        borderColor: 'rgba(156, 163, 175, 0.3)', // Visible boundary
-                        borderWidth: 1,
-                        borderDash: [5, 5],
-                        backgroundColor: 'transparent',
-                        fill: false,
-                        pointRadius: 0,
-                        order: 10
-                    });
+                    if (realEquityCurve.length > 0) {
+                        // Common Data Preparation
+                        let maxEq = -Infinity;
+                        let lastHighIndex = 0;
+                        let lastHighTime = realEquityCurve[0].x;
+                        let currentStagnationDays = 0;
+                        let currentStagnationTrades = 0;
+                        let maxRealDD = 0;
 
-                    // 2. Hard Stop (Trailing Max DD)
-                    ds.push({
-                        label: `Stop: ${result.name}`,
-                        data: hardStop,
-                        borderColor: realColor, // Use strategy color
-                        borderWidth: 2,
-                        borderDash: [2, 2], // Dotted line to distinguish from main curve
-                        pointRadius: 0,
-                        fill: false,
-                        tension: 0,
-                        order: 5
-                    });
+                        // Calculate MaxDD and find Last High
+                        realEquityCurve.forEach((p, index) => {
+                            if (p.y > maxEq) {
+                                maxEq = p.y;
+                                lastHighIndex = index;
+                                lastHighTime = p.x;
+                            }
+                            const dd = maxEq - p.y;
+                            if (dd > maxRealDD) maxRealDD = dd;
+                        });
+
+                        // 1. Drawdown Risk (Always)
+                        const ddLimit = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 1000));
+                        ddPercent = (maxRealDD / ddLimit) * 100;
+
+                        // 2. Stagnation Risk (Based on Mode)
+                        const lastDate = realEquityCurve[realEquityCurve.length - 1].x;
+
+                        if (state.stagnationMode === 'trades') {
+                            currentStagnationTrades = (realEquityCurve.length - 1) - lastHighIndex;
+                            const limit = Number(metrics.maxStagnationTrades || 1);
+                            stagPercent = (currentStagnationTrades / limit) * 100;
+                            stagLabel = 'Stag(T)';
+                        } else {
+                            // Default: Days
+                            currentStagnationDays = (lastDate - lastHighTime) / (1000 * 60 * 60 * 24);
+                            const limit = Number(metrics.maxStagnationDays || 1);
+                            stagPercent = (currentStagnationDays / limit) * 100;
+                            stagLabel = 'Stag(D)';
+                        }
+
+                        // Determine Icon (Based on Worst Risk)
+                        const maxRisk = Math.max(ddPercent, stagPercent);
+                        if (maxRisk < 80) riskIcon = '🛡️';
+                        else if (maxRisk < 100) riskIcon = '⚠️';
+                        else riskIcon = '🚨';
+                    }
 
                     ds.push({
-                        label: `${result.name} (Real)`,
+                        label: `${result.name} [DD: ${ddPercent.toFixed(0)}% | ${stagLabel}: ${stagPercent.toFixed(0)}% ${riskIcon}]`,
                         data: realEquityCurve,
                         borderColor: realColor,
                         backgroundColor: realColor + '40',
@@ -1411,64 +1449,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                         order: 0 // Top layer
                     });
 
-                    // --- DEGRADATION HUD ---
-                    // Calculate Risk Used %
-                    let riskUsedPercent = 0;
-                    if (backtestMaxDD > 0) {
-                        // Find max real drawdown so far
-                        let maxRealDD = 0;
-                        let maxEq = 0;
-                        let currentEq = 0;
-                        // Re-calculate maxDD from the curve points to be sure
-                        realEquityCurve.forEach(p => {
-                            if (p.y > maxEq) maxEq = p.y;
-                            const dd = maxEq - p.y;
-                            if (dd > maxRealDD) maxRealDD = dd;
-                        });
-                        riskUsedPercent = (maxRealDD / backtestMaxDD) * 100;
-                    }
-
-                    // Create/Update HUD in Toolbar
-                    const actionsGroup = document.getElementById('chart-actions-group');
-                    if (actionsGroup) {
-                        let hud = document.getElementById('degradation-hud');
-                        if (!hud) {
-                            hud = document.createElement('div');
-                            hud.id = 'degradation-hud';
-                            // Toolbar style: inline, no absolute, right margin
-                            hud.className = 'mr-4 px-3 py-1 rounded-md border shadow-sm transition-all duration-300 flex items-center gap-2 font-mono text-xs';
-                            actionsGroup.prepend(hud);
-                        }
-
-                        // Style based on Risk
-                        let bgColor, borderColor, textColor, icon;
-                        if (riskUsedPercent < 80) {
-                            bgColor = 'bg-green-900/50';
-                            borderColor = 'border-green-500/30';
-                            textColor = 'text-green-200';
-                            icon = '🛡️';
-                        } else if (riskUsedPercent < 100) {
-                            bgColor = 'bg-orange-900/50';
-                            borderColor = 'border-orange-500/30';
-                            textColor = 'text-orange-200';
-                            icon = '⚠️';
-                        } else {
-                            bgColor = 'bg-red-900/50';
-                            borderColor = 'border-red-500/30';
-                            textColor = 'text-red-200';
-                            icon = '🚨';
-                        }
-
-                        hud.className = `mr-4 px-3 py-1 rounded-md border shadow-sm ${bgColor} ${borderColor} ${textColor} flex items-center gap-2 font-mono text-xs`;
-                        hud.innerHTML = `
-                            <span class="text-base">${icon}</span>
-                            <div class="flex flex-col leading-tight">
-                                <span class="text-[10px] opacity-70 uppercase tracking-wider">Risk Used</span>
-                                <span class="font-bold text-sm">${riskUsedPercent.toFixed(1)}%</span>
-                            </div>
-                        `;
-                        hud.style.display = 'flex';
-                    }
+                    // (Toolbar HUD logic removed for Legend test)
                 }
             }
         }
@@ -2060,3 +2041,109 @@ export const renderStrategiesTable = () => {
     const tableBody = document.getElementById('strategies-table-body');
     renderStrategiesTableModule();
 };
+
+/**
+ * Abre el modal de Trades Reales.
+ */
+export const openRealTradesModal = (strategyIndex) => {
+    console.log(`[UI] Opening Real Trades Modal for strategy index: ${strategyIndex}`);
+    const strategy = window.analysisResults[strategyIndex];
+
+    if (!strategy) {
+        console.error('[UI] Strategy not found.');
+        return;
+    }
+
+    // Logic to find Real Trades (copied from strategiesTable.js)
+    let allRealTrades = [];
+    if (state.magicNumberMap && state.magicNumberMap[strategy.name]) {
+        const magicRaw = state.magicNumberMap[strategy.name];
+        let magics = Array.isArray(magicRaw) ? magicRaw : (typeof magicRaw === 'string' ? magicRaw.split(',') : [String(magicRaw)]);
+
+        state.savedPortfolios.forEach(p => {
+            if (p.realMetrics && p.realMetrics._tradesById) {
+                magics.forEach(m => {
+                    const trades = p.realMetrics._tradesById[m.trim()];
+                    if (trades) allRealTrades = allRealTrades.concat(trades);
+                });
+            }
+        });
+    }
+
+    if (allRealTrades.length === 0) {
+        console.warn(`[UI] No real trades found for strategy: ${strategy.name}`);
+        // Optional: Show a toast or alert, or just open empty modal
+    }
+
+    const trades = allRealTrades.sort((a, b) => new Date(b.closeTime) - new Date(a.closeTime)); // Descending order
+
+    const modalTitle = document.getElementById('real-trades-modal-title');
+    const modalSubtitle = document.getElementById('real-trades-modal-subtitle');
+    const tableBody = document.getElementById('real-trades-table-body');
+    const modal = document.getElementById('real-trades-modal');
+    const modalContent = document.getElementById('real-trades-modal-content');
+
+    if (modalTitle) modalTitle.textContent = `${strategy.name} - Real Trades`;
+    if (modalSubtitle) modalSubtitle.textContent = `Total Trades: ${trades.length}`;
+
+    if (tableBody) {
+        if (trades.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="12" class="p-4 text-center text-gray-500">No real trades found for this strategy.</td></tr>`;
+        } else {
+            tableBody.innerHTML = trades.map(t => {
+                const profitClass = t.profit >= 0 ? 'text-green-400' : 'text-red-400';
+                const netProfit = (t.profit || 0) + (t.commission || 0) + (t.swap || 0);
+                const netProfitClass = netProfit >= 0 ? 'text-green-400' : 'text-red-400';
+
+                return `
+                    <tr class="hover:bg-gray-800/50 transition-colors border-b border-gray-700/50 last:border-0">
+                        <td class="p-3 font-mono text-gray-300">${t.ticket || '-'}</td>
+                        <td class="p-3 text-gray-400 text-xs">${t.openTime}</td>
+                        <td class="p-3 text-gray-300">${t.type}</td>
+                        <td class="p-3 text-right font-mono text-gray-300">${t.size}</td>
+                        <td class="p-3 text-gray-300">${t.item}</td>
+                        <td class="p-3 text-right font-mono text-gray-300">${t.openPrice}</td>
+                        <td class="p-3 text-gray-400 text-xs">${t.closeTime}</td>
+                        <td class="p-3 text-right font-mono text-gray-300">${t.closePrice}</td>
+                        <td class="p-3 text-right font-mono text-gray-400">${(t.commission || 0).toFixed(2)}</td>
+                        <td class="p-3 text-right font-mono text-gray-400">${(t.swap || 0).toFixed(2)}</td>
+                        <td class="p-3 text-right font-mono font-bold ${profitClass}">${(t.profit || 0).toFixed(2)}</td>
+                        <td class="p-3 text-right font-mono font-bold ${netProfitClass}">${netProfit.toFixed(2)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    }
+
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        // Animation
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            if (modalContent) modalContent.classList.remove('scale-95');
+        }, 10);
+    }
+};
+
+/**
+ * Cierra el modal de Trades Reales.
+ */
+export const closeRealTradesModal = () => {
+    const modal = document.getElementById('real-trades-modal');
+    const modalContent = document.getElementById('real-trades-modal-content');
+
+    if (modal) {
+        modal.classList.add('opacity-0');
+        if (modalContent) modalContent.classList.add('scale-95');
+
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }, 300);
+    }
+};
+
+// Expose globally
+window.openRealTradesModal = openRealTradesModal;
+window.closeRealTradesModal = closeRealTradesModal;

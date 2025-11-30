@@ -1,7 +1,7 @@
 import { dom } from './dom.js';
 import { state } from './state.js';
 import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable } from './analysis.js';
-import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal, switchViewMode } from './ui.js';
+import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal, switchViewMode, renderStrategiesTable } from './ui.js';
 import { findDatabankPortfolios, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay } from './modules/databank.js';
 import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
 import { openViewManager, closeViewManager, applyView, saveView, deleteView } from './modules/viewManager.js';
@@ -23,6 +23,29 @@ export function initializeEventListeners() {
 
     // --- Live Monitor Navigation ---
     initLiveMonitor();
+
+    // --- Stagnation Mode Controls ---
+    const stagnationRadios = document.querySelectorAll('input[name="stagnation-mode"]');
+    console.log(`[Events] Found ${stagnationRadios.length} stagnation radio buttons.`);
+    stagnationRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            console.log(`[Events] Stagnation Radio changed: ${e.target.value}`);
+            if (e.target.checked) {
+                state.stagnationMode = e.target.value;
+                console.log(`[Events] State updated. Mode: ${state.stagnationMode}`);
+
+                if (state.activeViewMode === 'reality-check') {
+                    // Refresh Charts and Table
+                    if (window.analysisResults) {
+                        console.log('[Events] Refreshing Charts...');
+                        switchViewMode('reality-check');
+                    }
+                    console.log('[Events] Refreshing Table...');
+                    renderStrategiesTable();
+                }
+            }
+        });
+    });
 
     const navMonitor = document.getElementById('nav-monitor');
     const liveMonitorView = document.getElementById('live-monitor-view');

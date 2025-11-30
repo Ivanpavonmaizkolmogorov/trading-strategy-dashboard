@@ -258,6 +258,25 @@
                             Check</button>
                     </div>
                     <div id="chart-actions-group" class="flex items-center text-xs">
+                        <!-- Stagnation Controls (Visible only in Reality Check) -->
+                        <div id="stagnation-controls"
+                            class="hidden mr-4 flex items-center bg-gray-800 rounded-lg p-1 border border-gray-700">
+                            <span
+                                class="text-gray-400 mr-2 text-[10px] uppercase font-bold tracking-wider pl-1">Stagnation:</span>
+                            <div class="flex bg-gray-700 rounded p-0.5">
+                                <label
+                                    class="cursor-pointer flex items-center px-2 py-0.5 rounded transition-colors hover:bg-gray-600 has-[:checked]:bg-blue-600 has-[:checked]:text-white text-gray-300">
+                                    <input type="radio" name="stagnation-mode" value="days" class="hidden" checked>
+                                    <span class="flex items-center gap-1">⏳ Days</span>
+                                </label>
+                                <label
+                                    class="cursor-pointer flex items-center px-2 py-0.5 rounded transition-colors hover:bg-gray-600 has-[:checked]:bg-blue-600 has-[:checked]:text-white text-gray-300">
+                                    <input type="radio" name="stagnation-mode" value="trades" class="hidden">
+                                    <span class="flex items-center gap-1">🔢 Trades</span>
+                                </label>
+                            </div>
+                        </div>
+
                         <button id="select-all-btn"
                             class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-l border-r border-gray-600"
                             title="Seleccionar Todo (Precaución: Lento)">
@@ -681,6 +700,62 @@
 
     <!-- Toast Container -->
     <div id="toast-container" class="fixed top-4 right-4 z-[60] flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Real Trades Modal -->
+    <div id="real-trades-modal"
+        class="fixed inset-0 bg-gray-900 bg-opacity-95 hidden items-center justify-center z-50 backdrop-blur-sm transition-opacity duration-300 opacity-0">
+        <div id="real-trades-modal-content"
+            class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col border border-gray-700 transform scale-95 transition-transform duration-300">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-6 border-b border-gray-700 bg-gray-800/50 rounded-t-xl">
+                <div>
+                    <h3 id="real-trades-modal-title" class="text-2xl font-bold text-white">Real Trades</h3>
+                    <p id="real-trades-modal-subtitle" class="text-sm text-gray-400 mt-1">Detailed list of executed
+                        trades</p>
+                </div>
+                <button onclick="closeRealTradesModal()"
+                    class="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-700 rounded-lg">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Body (Table) -->
+            <div class="flex-1 overflow-auto p-6 custom-scrollbar">
+                <table class="w-full text-left border-collapse">
+                    <thead class="text-xs text-gray-400 uppercase bg-gray-900/50 sticky top-0 z-10">
+                        <tr>
+                            <th class="p-3 font-semibold rounded-tl-lg">Ticket</th>
+                            <th class="p-3 font-semibold">Open Time</th>
+                            <th class="p-3 font-semibold">Type</th>
+                            <th class="p-3 font-semibold text-right">Size</th>
+                            <th class="p-3 font-semibold">Symbol</th>
+                            <th class="p-3 font-semibold text-right">Open Price</th>
+                            <th class="p-3 font-semibold">Close Time</th>
+                            <th class="p-3 font-semibold text-right">Close Price</th>
+                            <th class="p-3 font-semibold text-right">Commission</th>
+                            <th class="p-3 font-semibold text-right">Swap</th>
+                            <th class="p-3 font-semibold text-right">Profit</th>
+                            <th class="p-3 font-semibold text-right rounded-tr-lg">Net Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="real-trades-table-body" class="text-sm divide-y divide-gray-700/50">
+                        <!-- Rows will be populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-700 bg-gray-800/50 rounded-b-xl flex justify-end">
+                <button onclick="closeRealTradesModal()"
+                    class="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors border border-gray-600">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Optimization Modal (Slide-in from Right) -->
     <div id="optimization-modal" class="fixed inset-0 z-[100] hidden">
