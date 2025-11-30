@@ -2220,8 +2220,13 @@ export const openRealTradesModal = (index, type = 'strategy') => {
         strategyOrPortfolio = window.analysisResults[index];
         if (strategyOrPortfolio) {
             // Logic to find Real Trades (copied from strategiesTable.js)
-            if (state.magicNumberMap && state.magicNumberMap[strategyOrPortfolio.name]) {
-                const magicRaw = state.magicNumberMap[strategyOrPortfolio.name];
+            // Logic to find Real Trades (copied from strategiesTable.js)
+            // Resolve Strategy ID
+            const file = state.loadedStrategyFiles[index];
+            const sId = file ? (file.strategyId || file.name) : strategyOrPortfolio.name;
+            const magicRaw = state.magicNumberMap[sId] || state.magicNumberMap[strategyOrPortfolio.name];
+
+            if (magicRaw) {
                 let magics = Array.isArray(magicRaw) ? magicRaw : (typeof magicRaw === 'string' ? magicRaw.split(',') : [String(magicRaw)]);
 
                 state.savedPortfolios.forEach(p => {
