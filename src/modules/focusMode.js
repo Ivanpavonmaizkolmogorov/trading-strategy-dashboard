@@ -335,6 +335,7 @@ export const focusMode = {
 
             // DEBUG: Log item name being processed
             console.log(`[FocusMode] Processing item: ${item.name} (ID: ${item.id})`);
+            console.log('[FocusMode] Item indices:', item.indices);
 
             const analysisObj = {
                 name: item.name,

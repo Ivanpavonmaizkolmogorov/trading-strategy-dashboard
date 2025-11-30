@@ -930,41 +930,60 @@ export const displaySavedPortfoliosList = () => {
                     let riskColor = 'text-green-400';
                     let stagLabel = '';
 
-                    const backtestMaxDD = Math.abs(Number(p.metrics?.maxDrawdownInDollars || p.metrics?.maxDrawdown || 1000));
-                    const maxRealDD = Math.abs(Number(p.realMetrics.maxDrawdown || 0));
-                    ddPercent = (maxRealDD / backtestMaxDD) * 100;
+                    const backtestMaxDD = Math.abs(Number(p.metrics?.maxDrawdownInDollars || p.metrics?.maxDrawdown || 0));
+                    let maxRealDD = Math.abs(Number(p.realMetrics?.maxDrawdown || 0));
 
                     if (p.realMetrics._tradesById) {
-                        const allRealTrades = Object.values(p.realMetrics._tradesById).sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+                        const allRealTrades = Object.values(p.realMetrics._tradesById).flat()
+                            .filter(t => (t.action || t.type) !== 'Deposit' && (t.action || t.type) !== 'Transfer')
+                            .sort((a, b) => new Date(a.closeDate || a.closeTime) - new Date(b.closeDate || b.closeTime));
 
                         if (allRealTrades.length > 0) {
+                            // Calculate MaxDD and Equity
                             let maxEq = -Infinity;
                             let lastHighIndex = 0;
-                            let lastHighTime = new Date(allRealTrades[0].closeTime).getTime();
+                            let lastHighTime = new Date(allRealTrades[0].closeDate || allRealTrades[0].closeTime).getTime();
                             let currentEq = 0;
+                            let calculatedMaxDD = 0;
 
                             allRealTrades.forEach((t, idx) => {
                                 currentEq += (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
                                 if (currentEq > maxEq) {
                                     maxEq = currentEq;
                                     lastHighIndex = idx;
-                                    lastHighTime = new Date(t.closeTime).getTime();
+                                    lastHighTime = new Date(t.closeDate || t.closeTime).getTime();
                                 }
+                                const dd = maxEq - currentEq;
+                                if (dd > calculatedMaxDD) calculatedMaxDD = dd;
                             });
+
+                            // Use calculated MaxDD if original is missing or NaN
+                            if (!maxRealDD || isNaN(maxRealDD)) {
+                                maxRealDD = calculatedMaxDD;
+                                console.log(`[UI] Calculated missing MaxDD for ${p.name}: ${maxRealDD}`);
+                            }
 
                             if (state.stagnationMode === 'trades') {
                                 const currentStagnationTrades = (allRealTrades.length - 1) - lastHighIndex;
-                                const limit = Number(p.metrics?.maxStagnationTrades || 1);
-                                stagPercent = (currentStagnationTrades / limit) * 100;
+                                const limit = Number(p.metrics?.maxStagnationTrades || 0);
+                                if (limit > 0) stagPercent = (currentStagnationTrades / limit) * 100;
                                 stagLabel = 'Stag(T)';
                             } else {
-                                const lastDate = new Date(allRealTrades[allRealTrades.length - 1].closeTime).getTime();
+                                const lastDate = new Date(allRealTrades[allRealTrades.length - 1].closeDate || allRealTrades[allRealTrades.length - 1].closeTime).getTime();
                                 const currentStagnationDays = (lastDate - lastHighTime) / (1000 * 60 * 60 * 24);
-                                const limit = Number(p.metrics?.maxStagnationDays || 1);
-                                stagPercent = (currentStagnationDays / limit) * 100;
+                                const limit = Number(p.metrics?.maxStagnationDays || 0);
+                                if (limit > 0) stagPercent = (currentStagnationDays / limit) * 100;
                                 stagLabel = 'Stag(D)';
                             }
                         }
+                    }
+
+                    console.log(`[UI] Debug Badge: Portfolio ${p.name} - BacktestDD: ${backtestMaxDD}, RealDD: ${maxRealDD}`);
+
+                    if (backtestMaxDD > 0) {
+                        ddPercent = (maxRealDD / backtestMaxDD) * 100;
+                    } else {
+                        ddPercent = 0;
                     }
 
                     const maxRisk = Math.max(ddPercent, stagPercent);
@@ -1396,7 +1415,8 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     if (allAnalyses.length === 0) return;
 
     // 1. Prepare Equity Datasets
-    const datasets = allAnalyses.map((result, index) => {
+    const drawdownDatasets = []; // Initialize here to populate inside map
+    const datasets = allAnalyses.flatMap((result, index) => {
         const isFeatured = result.savedIndex === state.featuredPortfolioIndex;
         const analysis = result.analysis || {};
         const chartData = analysis.chartData || {};
@@ -1404,7 +1424,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
         if (!normalizedData.length) {
             console.warn(`[UI] ⚠️ Skipping chart for ${result.name}: No equity curve data found.`, result);
-            return null;
+            return [];
         }
 
         console.log(`[UI] 📈 Preparing dataset for ${result.name}: ${normalizedData.length} points.`);
@@ -1432,7 +1452,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             console.log(`[UI] 🔍 Reality Check: Hiding backtest data to focus on Real Evolution.`);
         }
 
-        const ds = [{
+        const returnedDatasets = [{
             label: result.name,
             data: finalData,
             borderColor: color,
@@ -1457,16 +1477,8 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             }
 
             if (strategyNames.length > 0) {
-                console.log(`[UI] Debug: Result Indices:`, result.indices);
-                console.log(`[UI] Debug: Result Strategies:`, result.strategies);
-                console.log(`[UI] Debug: Window Analysis Results Length:`, window.analysisResults?.length);
-
-                console.log(`[UI] Debug: Strategy Names: ${strategyNames.join(', ')}`);
                 strategyNames.forEach(stratName => {
-                    // Handle multiple magic numbers (comma separated or array)
                     const magicRaw = state.magicNumberMap[stratName];
-                    console.log(`[UI] Debug: Magic for ${stratName}:`, magicRaw);
-
                     if (magicRaw) {
                         let magics = [];
                         if (Array.isArray(magicRaw)) {
@@ -1480,15 +1492,11 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                         magics.forEach(m => {
                             if (result.realMetrics._tradesById[m]) {
                                 allRealTrades = allRealTrades.concat(result.realMetrics._tradesById[m]);
-                            } else {
-                                // console.log(`[UI] Debug: No trades found for magic ${m}. Available keys:`, Object.keys(result.realMetrics._tradesById));
                             }
                         });
                     }
                 });
             }
-
-            console.log(`[UI]    Total Real Trades: ${allRealTrades.length}`);
 
             // Sort by close date
             allRealTrades.sort((a, b) => new Date(a.closeDate || a.closeTime) - new Date(b.closeDate || b.closeTime));
@@ -1503,171 +1511,61 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             allRealTrades.forEach(trade => {
                 const dateStr = trade.closeDate || trade.closeTime;
                 const tradeDate = new Date(dateStr).getTime();
-                if (isNaN(tradeDate)) console.error(`[UI] Invalid Date: ${dateStr}`);
-                currentEquity += (trade.profit || 0) + (trade.swap || 0) + (trade.commission || 0);
-                realEquityCurve.push({ x: tradeDate, y: currentEquity });
+                if (!isNaN(tradeDate)) {
+                    currentEquity += (trade.profit || 0) + (trade.swap || 0) + (trade.commission || 0);
+                    realEquityCurve.push({ x: tradeDate, y: currentEquity });
+                }
             });
 
             if (realEquityCurve.length > 0) {
                 // Use original opaque color for Real curve
                 const realColor = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + (result.savedIndex ?? index)) % STRATEGY_COLORS.length]));
 
-                // --- DEGRADATION ANALYSIS ---
-                // Try to find metrics in various locations
-                const metrics = result.analysis?.metrics || result.metrics || result.analysis || {};
-
-                console.log('[UI] 🔍 Inspecting Metrics Source:', metrics);
-
-                const backtestProfit = Number(metrics.totalProfit || metrics.totalNetProfit || metrics.netProfit || 0);
-                const backtestTrades = Number(metrics.totalTrades || metrics.trades || 1);
-                const backtestSQN = Number(metrics.sqn || 0);
-                // Ensure MaxDD is positive and non-zero (fallback to 1000 if missing to avoid visual glitch)
-                let backtestMaxDD = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 0));
-                if (backtestMaxDD === 0) backtestMaxDD = 1000; // Fallback safety
-
-                // 1. Calculate Volatility (Sigma) from SQN
-                // SQN = (Mean / StdDev) * Sqrt(N)  ->  StdDev = (Mean * Sqrt(N)) / SQN
-                const meanProfit = backtestProfit / backtestTrades;
-                let stdDev = 0;
-                if (backtestSQN > 0) {
-                    stdDev = (meanProfit * Math.sqrt(backtestTrades)) / backtestSQN;
-                }
-
-                console.log(`[UI] 📉 Degradation Analysis for ${result.name}:`);
-                console.log(`[UI]    Mean Profit: ${meanProfit}, StdDev: ${stdDev}, SQN: ${backtestSQN}`);
-
-                // 2. Generate Cone & Hard Stop Arrays
-                const coneUpper = [];
-                const coneLower = [];
-                const hardStop = [];
-
-                let maxRealEquitySoFar = -Infinity;
-
-                // We need to map real trades 1..N to the time axis
-                // realEquityCurve[0] is the start point (0,0) at t=start-1h
-                // realEquityCurve[1..N] are the trades
-
-                // Start points
-                const startX = realEquityCurve[0].x;
-                coneUpper.push({ x: startX, y: 0 });
-                coneLower.push({ x: startX, y: 0 });
-                hardStop.push({ x: startX, y: -backtestMaxDD }); // Initial stop
-
-                // Iterate through real trades (skipping the 0-point)
-                for (let i = 1; i < realEquityCurve.length; i++) {
-                    const point = realEquityCurve[i];
-                    const tradeIndex = i; // 1st trade, 2nd trade...
-
-                    // Cone Calculation (Random Walk)
-                    // Center = N * Mean
-                    // Deviation = Sigma * Sqrt(N) * Z (Z=2 for 95%)
-                    const center = tradeIndex * meanProfit;
-                    const deviation = stdDev * Math.sqrt(tradeIndex) * 2;
-
-                    coneUpper.push({ x: point.x, y: center + deviation });
-                    coneLower.push({ x: point.x, y: center - deviation });
-
-                    // Hard Stop Calculation (Trailing based on MaxDD)
-                    if (point.y > maxRealEquitySoFar) maxRealEquitySoFar = point.y;
-                    hardStop.push({ x: point.x, y: maxRealEquitySoFar - backtestMaxDD });
-                }
-
-                console.log(`[UI]    Generated Cone Points: ${coneUpper.length}`);
-                console.log(`[UI]    Generated Hard Stop Points: ${hardStop.length}`);
-
-                // 3. Real Equity
-                // --- RISK CALCULATION (Dual Display) ---
-                let ddPercent = 0;
-                let stagPercent = 0;
-                let riskIcon = '';
-                let stagLabel = '';
-
-                if (realEquityCurve.length > 0) {
-                    // Common Data Preparation
-                    let maxEq = -Infinity;
-                    let lastHighIndex = 0;
-                    let lastHighTime = realEquityCurve[0].x;
-                    let currentStagnationDays = 0;
-                    let currentStagnationTrades = 0;
-                    let maxRealDD = 0;
-
-                    // Calculate MaxDD and find Last High
-                    realEquityCurve.forEach((p, index) => {
-                        if (p.y > maxEq) {
-                            maxEq = p.y;
-                            lastHighIndex = index;
-                            lastHighTime = p.x;
-                        }
-                        const dd = maxEq - p.y;
-                        if (dd > maxRealDD) maxRealDD = dd;
-                    });
-
-                    // 1. Drawdown Risk (Always)
-                    const ddLimit = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 1000));
-                    ddPercent = (maxRealDD / ddLimit) * 100;
-
-                    // 2. Stagnation Risk (Based on Mode)
-                    const lastDate = realEquityCurve[realEquityCurve.length - 1].x;
-
-                    if (state.stagnationMode === 'trades') {
-                        currentStagnationTrades = (realEquityCurve.length - 1) - lastHighIndex;
-                        const limit = Number(metrics.maxStagnationTrades || 1);
-                        stagPercent = (currentStagnationTrades / limit) * 100;
-                        stagLabel = 'Stag(T)';
-                    } else {
-                        // Default: Days
-                        currentStagnationDays = (lastDate - lastHighTime) / (1000 * 60 * 60 * 24);
-                        const limit = Number(metrics.maxStagnationDays || 1);
-                        stagPercent = (currentStagnationDays / limit) * 100;
-                        stagLabel = 'Stag(D)';
-                    }
-
-                    // Determine Icon (Based on Worst Risk)
-                    let riskIcon = '🛡️';
-                    let maxRisk = 0;
-
-                    if (!isNaN(ddPercent) && !isNaN(stagPercent)) {
-                        maxRisk = Math.max(ddPercent, stagPercent);
-                        if (maxRisk < 80) riskIcon = '🛡️';
-                        else if (maxRisk < 100) riskIcon = '⚠️';
-                        else riskIcon = '🚨';
-                    } else if (!isNaN(ddPercent)) {
-                        if (ddPercent < 80) riskIcon = '🛡️';
-                        else if (ddPercent < 100) riskIcon = '⚠️';
-                        else riskIcon = '🚨';
-                    } else if (!isNaN(stagPercent)) { // If only stagnation is a number
-                        if (stagPercent < 80) riskIcon = '🛡️';
-                        else if (stagPercent < 100) riskIcon = '⚠️';
-                        else riskIcon = '🚨';
-                    } else { // If both are NaN
-                        riskIcon = '❓';
-                    }
-                }
-
-                const ddDisplay = isNaN(ddPercent) ? '-' : ddPercent.toFixed(0) + '%';
-                const stagDisplay = isNaN(stagPercent) ? '-' : stagPercent.toFixed(0) + '%';
-
-                ds.push({
-                    label: `${result.name} [DD: ${ddDisplay} | ${stagLabel}: ${stagDisplay} ${riskIcon}]`,
+                // Add Real Equity Dataset
+                returnedDatasets.push({
+                    label: `${result.name} (Real)`,
                     data: realEquityCurve,
                     borderColor: realColor,
-                    backgroundColor: realColor + '40',
-                    borderWidth: 3, // Thicker line for Real
-                    pointRadius: 3, // Visible points
-                    pointHoverRadius: 6,
-                    fill: false,
+                    borderWidth: 2,
+                    pointRadius: 0,
                     tension: 0.1,
-                    savedIndex: result.savedIndex ?? index,
-                    order: 0 // Top layer
+                    order: -2 // On top of everything
                 });
 
-                // (Toolbar HUD logic removed for Legend test)
+                // --- DEGRADATION ANALYSIS ---
+                const metrics = result.analysis?.metrics || result.metrics || result.analysis || {};
+
+                // Hard Stop Line (Trailing based on MaxDD)
+                const hardStopLimit = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 0));
+
+                if (hardStopLimit > 0) {
+                    const hardStopCurve = [];
+                    let maxEq = -Infinity;
+
+                    realEquityCurve.forEach(p => {
+                        if (p.y > maxEq) maxEq = p.y;
+                        hardStopCurve.push({ x: p.x, y: maxEq - hardStopLimit });
+                    });
+
+                    returnedDatasets.push({
+                        label: 'Hard Stop (MaxDD)',
+                        data: hardStopCurve,
+                        borderColor: realColor, // Same color as strategy
+                        borderWidth: 2,
+                        borderDash: [5, 5], // Dashed
+                        pointRadius: 0,
+                        fill: false,
+                        order: -1 // On top
+                    });
+                }
+
+                // Calculate Risk Metrics for Badge (Logic preserved for badge calculation later if needed, but here we just need datasets)
+                // ... (Badge calculation logic is separate in displaySavedPortfoliosList, here we just render charts)
             }
         }
 
-        // Filter out empty datasets (like the hidden backtest) to avoid Chart.js issues
-        return ds.filter(d => d.data.length > 0);
-    }).flatMap(ds => ds);
+        return returnedDatasets;
+    });
 
     // Cleanup HUD if not in Reality Check
     if (state.activeViewMode !== 'reality-check') {
@@ -2007,7 +1905,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
         state.chartInstances[ddCanvasId] = new Chart(ddCtx, {
             type: 'line',
-            data: { datasets: ddDatasets },
+            data: { datasets: ddDatasets.concat(drawdownDatasets) },
             plugins: [crosshairPlugin],
             options: {
                 ...CHART_OPTIONS,
@@ -2272,7 +2170,16 @@ export const openRealTradesModal = (index, type = 'strategy') => {
             // Let's verify if _tradesById is flat or nested.
             // In analysis.js: realMetrics._tradesById = { ...allTrades };
             // So it should be a map of ticket -> trade.
-            allRealTrades = Object.values(strategyOrPortfolio.realMetrics._tradesById);
+            // _tradesById is Magic -> Array of Trades. We need to flatten it.
+            const tradesArrays = Object.values(strategyOrPortfolio.realMetrics._tradesById);
+            allRealTrades = tradesArrays.flat().filter(t => {
+                const action = t.action || t.type;
+                return action !== 'Deposit' && action !== 'Transfer';
+            });
+            console.log(`[UI] Debug Real Trades Modal: Found ${allRealTrades.length} trades after flattening and filtering.`);
+            if (allRealTrades.length > 0) {
+                console.log(`[UI] Debug First Trade:`, allRealTrades[0]);
+            }
         }
     } else {
         // Strategy
