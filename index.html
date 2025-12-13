@@ -13,6 +13,8 @@
     <script
         src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom/dist/chartjs-plugin-zoom.min.js"></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
         /* Custom font and scrollbar */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -268,6 +270,9 @@
                         <button id="tab-reality-check"
                             class="text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors">Reality
                             Check</button>
+                        <button id="tab-sq-stats"
+                            class="text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors">SQ
+                            Overview</button>
                     </div>
                     <div id="chart-actions-group" class="flex items-center text-xs">
                         <!-- Sync All Button (Visible only in Reality Check) -->
@@ -313,7 +318,7 @@
                 </div>
 
                 <!-- Chart Area -->
-                <div class="flex-1 relative p-2 flex flex-col group">
+                <div class="flex-1 relative p-2 flex flex-col group min-h-0">
                     <!-- Unified Info Panel -->
                     <div id="chart-info-panel"
                         class="fixed z-50 bg-gray-900/95 backdrop-blur-md p-4 rounded-xl border border-gray-700/50 shadow-2xl pointer-events-none transition-opacity duration-75 opacity-0 min-w-[200px] hidden">
@@ -321,17 +326,46 @@
                             id="chart-info-date">--/--/----</div>
                         <div id="chart-info-body" class="space-y-2"></div>
                     </div>
-                    <div class="flex-[4] relative min-h-0">
-                        <canvas id="portfolioEquityChart"></canvas>
+
+                    <!-- Backtest & Reality Check Views -->
+                    <div id="chart-view-container" class="flex-1 flex flex-col min-h-0">
+                        <div class="flex-[4] relative min-h-0">
+                            <canvas id="portfolioEquityChart"></canvas>
+                        </div>
+                        <div class="flex-1 relative min-h-0 border-t border-gray-700 pt-1"
+                            style="min-height: 80px; max-height: 120px;">
+                            <canvas id="portfolioDrawdownChart"></canvas>
+                        </div>
+                        <!-- Comparison Table Container -->
+                        <div id="comparison-table-container"
+                            class="hidden border-t border-gray-700 bg-gray-900 p-2 overflow-auto transition-all duration-300"
+                            style="max-height: 150px;"></div>
                     </div>
-                    <div class="flex-1 relative min-h-0 border-t border-gray-700 pt-1"
-                        style="min-height: 80px; max-height: 120px;">
-                        <canvas id="portfolioDrawdownChart"></canvas>
+
+                    <!-- SQ Analysis View -->
+                    <div id="sq-analysis-view"
+                        class="hidden flex-1 overflow-y-auto bg-gray-900 custom-scrollbar relative min-h-0">
+                        <div id="sq-analysis-loading"
+                            class="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-10 hidden">
+                            <div class="text-center">
+                                <svg class="animate-spin h-8 w-8 text-amber-500 mx-auto mb-2"
+                                    xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                        stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor"
+                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                                    </path>
+                                </svg>
+                                <span class="text-gray-400 text-sm">Calculando métricas...</span>
+                            </div>
+                        </div>
+                        <div id="sq-analysis-content">
+                            <!-- Content injected by JS -->
+                            <div class="flex items-center justify-center h-full text-gray-500">
+                                Selecciona un portafolio para ver el análisis detallado.
+                            </div>
+                        </div>
                     </div>
-                    <!-- Comparison Table Container -->
-                    <div id="comparison-table-container"
-                        class="hidden border-t border-gray-700 bg-gray-900 p-2 overflow-auto transition-all duration-300"
-                        style="max-height: 150px;"></div>
                 </div>
             </div>
 
@@ -986,7 +1020,7 @@
         </div>
     </div>
 
-    <script type="module" src="src/main.js?v=3.80"></script>
+    <script type="module" src="src/main.js?v=3.91"></script>
 
 </body>
 

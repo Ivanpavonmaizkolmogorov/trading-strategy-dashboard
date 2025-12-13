@@ -5,6 +5,8 @@ import { savePortfolioFromDatabank } from './databank.js'; // Reusing save logic
 import { displaySavedPortfoliosList } from '../ui.js';
 import { ALL_METRICS } from '../config.js';
 
+import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=5';
+
 /**
  * Analyzes a manually selected set of strategies.
  * @param {number[]} indices - Array of strategy indices.
@@ -152,6 +154,11 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
                     <!-- Warnings -->
                 </div>
 
+                <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-400 mb-1">Comentarios (Opcional)</label>
+                    <textarea id="portfolio-comment" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 text-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" rows="2" placeholder="Notas sobre este portafolio..."></textarea>
+                </div>
+
                 <div class="mt-8 flex justify-end gap-3">
                     <button id="cancel-save-btn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg transition-colors">Cerrar</button>
                     <button id="confirm-save-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2">
@@ -241,6 +248,23 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
         const names = indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '').substring(0, 5)).join('+');
         const strategyIds = indices.map(i => state.loadedStrategyFiles[i].strategyId);
 
+        // Calculate SQ Metrics for persistence
+        let allTrades = [];
+        indices.forEach(idx => {
+            const file = state.loadedStrategyFiles[idx];
+            if (file && file.content) {
+                const trades = parseTradesFromContent(file.content);
+                allTrades = allTrades.concat(trades);
+            } else if (state.rawStrategiesData[idx]) {
+                // Fallback: Use rawStrategiesData if content is missing (e.g. after reload)
+                console.log(`[PortfolioBuilder] Using rawStrategiesData for strategy index ${idx}`);
+                const trades = parseTradesFromData(state.rawStrategiesData[idx]);
+                allTrades = allTrades.concat(trades);
+            }
+        });
+        allTrades.sort((a, b) => a.exitTime - b.exitTime);
+        const sqMetrics = calculateSQMetrics(allTrades);
+
         // Save portfolio with strategyIds for robust restoration
         state.savedPortfolios.push({
             name: `Manual (${names})`,
@@ -249,8 +273,9 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
             id: generatePortfolioId(`Manual (${names})`, strategyIds),
             weights: null,
             metrics: portfolio.metrics, // Save pre-calculated metrics
+            sqMetrics: sqMetrics, // <--- SAVE SQ METRICS
             analysis: portfolio.metrics, // Save chart data and analysis (metrics contains chartData)
-            comments: document.getElementById('portfolio-comment').value || ''
+            comments: document.getElementById('portfolio-comment')?.value || ''
         });
 
         displaySavedPortfoliosList();

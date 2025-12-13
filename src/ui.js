@@ -7,6 +7,7 @@ import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
 import { focusMode } from './modules/focusMode.js';
 import { renderStrategiesTable as renderStrategiesTableModule } from './modules/strategiesTable.js';
+import { renderSQAnalysis } from './modules/sqAnalysis_v2.js?v=5';
 import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig } from './modules/savedPortfoliosTable.js';
 import { unlinkAccount } from './modules/myfxbookUI.js';
 import { openSlaveAccountsModal } from './modules/slaveAccounts.js';
@@ -600,11 +601,21 @@ export const renderEquityChart = (canvasId, analysis, name, color) => {
         type: 'line',
         data: {
             datasets: [
-                { label: name, data: analysis.chartData.equityCurve, borderColor: color, backgroundColor: `${color}1a`, borderWidth: 2, pointRadius: 0, tension: 0.1, fill: true }
+                {
+                    label: name,
+                    data: analysis.chartData.equityCurve,
+                    borderColor: color,
+                    backgroundColor: `${color}1a`,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.1,
+                    fill: true
+                }
             ]
         },
         options: CHART_OPTIONS
     });
+
 };
 
 /**
@@ -1300,14 +1311,44 @@ export const switchViewMode = (mode) => {
     // Update Tab Styles
     const tabBacktest = document.getElementById('tab-backtest');
     const tabReality = document.getElementById('tab-reality-check');
+    const tabSQ = document.getElementById('tab-sq-stats');
 
-    if (tabBacktest && tabReality) {
-        if (mode === 'backtest') {
-            tabBacktest.className = 'text-sm font-semibold text-white border-b-2 border-sky-500 pb-1 transition-colors';
-            tabReality.className = 'text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors';
+    const activeClass = 'text-sm font-semibold text-white border-b-2 border-sky-500 pb-1 transition-colors';
+    const inactiveClass = 'text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors';
+
+    if (tabBacktest && tabReality && tabSQ) {
+        tabBacktest.className = mode === 'backtest' ? activeClass : inactiveClass;
+        tabReality.className = mode === 'reality-check' ? activeClass : inactiveClass;
+        tabSQ.className = mode === 'sq-stats' ? activeClass : inactiveClass;
+    }
+
+    // Toggle View Containers
+    const chartView = document.getElementById('chart-view-container');
+    const sqView = document.getElementById('sq-analysis-view');
+
+    if (chartView && sqView) {
+        if (mode === 'sq-stats') {
+            chartView.classList.add('hidden');
+            sqView.classList.remove('hidden');
+
+            // Render SQ Analysis for the primary portfolio
+            // Priority: Featured -> First in List
+            let targetIndex = state.featuredPortfolioIndex;
+            if (targetIndex === null || targetIndex === undefined || targetIndex === -1) {
+                if (state.savedPortfolios.length > 0) {
+                    targetIndex = 0; // Default to first
+                }
+            }
+
+            if (targetIndex !== null && targetIndex !== undefined && targetIndex !== -1) {
+                renderSQAnalysis(targetIndex, 'saved');
+            } else {
+                document.getElementById('sq-analysis-content').innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">No hay portafolios guardados para analizar.</div>';
+            }
+
         } else {
-            tabBacktest.className = 'text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors';
-            tabReality.className = 'text-sm font-semibold text-white border-b-2 border-sky-500 pb-1 transition-colors';
+            chartView.classList.remove('hidden');
+            sqView.classList.add('hidden');
         }
     }
 

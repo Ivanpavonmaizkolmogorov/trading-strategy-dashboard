@@ -568,12 +568,44 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
                 };
             });
 
+            // Calculate portfolio-wide metrics locally to ensure accuracy/fallback
+            const allTrades = history.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+            let portMaxLosses = 0;
+            let portCurrentLosses = 0;
+            let portRunningBalance = 0;
+            let portMaxBalance = 0;
+            let portMaxDD = 0;
+
+            allTrades.forEach(t => {
+                const profit = parseFloat(t.profit || 0) + parseFloat(t.swap || 0) + parseFloat(t.commission || 0);
+
+                // Consecutive Losses
+                if (profit < 0) {
+                    portCurrentLosses++;
+                    if (portCurrentLosses > portMaxLosses) portMaxLosses = portCurrentLosses;
+                } else {
+                    portCurrentLosses = 0;
+                }
+
+                // Drawdown
+                portRunningBalance += profit;
+                if (portRunningBalance > portMaxBalance) portMaxBalance = portRunningBalance;
+                const dd = portMaxBalance - portRunningBalance;
+                if (dd > portMaxDD) portMaxDD = dd;
+            });
+
             // Store real metrics
             portfolio.realMetrics = {
                 lastSync: new Date().toISOString(),
                 tradesCount: data.count,
-                consecutiveLosses: data.metrics.consecutiveLosses,
-                maxDrawdown: data.metrics.maxDrawdown,
+                // Use local calculation if backend is 0 or missing, or prefer local for consistency
+                consecutiveLosses: {
+                    maxConsecutiveLosses: portMaxLosses > (data.metrics.consecutiveLosses?.maxConsecutiveLosses || 0) ? portMaxLosses : (data.metrics.consecutiveLosses?.maxConsecutiveLosses || 0),
+                    currentConsecutiveLosses: portCurrentLosses // Backend might not provide this
+                },
+                maxDrawdown: {
+                    maxDrawdownDollars: portMaxDD > (data.metrics.maxDrawdown?.maxDrawdownDollars || 0) ? portMaxDD : (data.metrics.maxDrawdown?.maxDrawdownDollars || 0)
+                },
                 currentAccountStatus: data.accountInfo, // Store current account status (DD, Equity, etc.)
                 totalProfit: history.reduce((sum, t) => sum + (t.profit || 0), 0),
                 strategyBreakdown: {}, // Will be populated by recalculate

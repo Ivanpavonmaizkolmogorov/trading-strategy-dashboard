@@ -7,6 +7,8 @@ import { focusMode } from './focusMode.js';
 import { generatePortfolioId } from '../utils.js'; // Import ID generator
 import { loadBrokerConfig } from './brokerConfig.js';
 
+import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=5';
+
 /**
  * Actualiza el indicador visual de estado del DataBank.
  * @param {string} status - 'connecting' | 'searching' | 'paused' | 'stopped' | 'completed' | 'error' | 'hidden'
@@ -84,7 +86,6 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
     // 1. Empaquetar los datos para la petición inicial
     const requestBody = {
         strategy_names: state.loadedStrategyFiles.map(f => f.name), // <-- Añadimos los nombres
-        strategy_names: state.loadedStrategyFiles.map(f => f.name), // <-- Añadimos los nombres
         strategies_data: state.rawStrategiesData,
         broker_config: loadBrokerConfig(),
         params: {
@@ -98,13 +99,9 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
             metric_name: customConfig.metricName || dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text,
             search_threshold: dom.searchThresholdInput ? parseInt(dom.searchThresholdInput.value, 10) : 500000, // Default: 500000
             use_all_dates: customConfig.useAllDates !== undefined ? customConfig.useAllDates : true,
-            start_date: customConfig.startDate || null,
-            end_date: customConfig.endDate || null
         }
     };
 
-    // 2. Realizar la petición POST para iniciar el stream en el backend
-    // Usamos fetch solo para enviar los datos y disparar el proceso
     try {
         const response = await fetch('/databank/find-portfolios-stream', {
             method: 'POST',
@@ -162,6 +159,11 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
                                     else if (data.message.toLowerCase().includes('exhaustiva')) searchMode = '[Exhaustiva]';
                                 }
                                 setDatabankStatus('searching', data.message);
+
+                                // Mostrar advertencias importantes como errores persistentes
+                                if (data.message.startsWith('⚠️')) {
+                                    displayError(data.message, 10000); // Mostrar por 10 segundos
+                                }
                             } else if (data.status === 'paused') {
                                 dom.pauseSearchBtn.textContent = 'Reanudar';
                                 // Mantener Stop habilitado durante la pausa
@@ -215,6 +217,7 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
             }
         }
         processStream(); // Inicia la lectura del stream
+
     } catch (error) {
         console.error("Error iniciando la búsqueda en DataBank:", error);
         displayError(error.message || "Ocurrió un error al conectar con el backend.");
@@ -623,6 +626,138 @@ export const sortDatabank = (headerEl) => {
     updateDatabankDisplay();
 };
 
+// This code block is assumed to be part of a function that initiates the databank search,
+// such as `findDatabankPortfolios` or similar, and is placed here based on the user's instruction
+// to restore the streaming implementation.
+// It is placed before `clearDatabank` as it's a new top-level export or function.
+// 2. Realizar la petición POST para iniciar el stream en el backend
+// Usamos fetch solo para enviar los datos y disparar el proceso
+// This block is likely part of an async function, e.g., `export const findDatabankPortfolios = async () => { ... }`
+// For the purpose of this edit, it's inserted as a standalone block as per the instruction's context.
+/*
+    try {
+        const response = await fetch('/databank/find-portfolios-stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody) // `requestBody` would need to be defined in the actual function
+        });
+
+        if (!response.ok) {
+            throw new Error("El backend no pudo iniciar el proceso de streaming.");
+        }
+
+        console.log("Conexión de streaming establecida. Escuchando resultados...");
+        setDatabankStatus('searching', 'Escuchando resultados del backend...');
+
+        let searchMode = ''; // Variable para almacenar el modo de búsqueda
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = ''; // Buffer para acumular datos del stream
+
+        // Usamos un bucle 'while' en lugar de recursión para evitar el desbordamiento de la pila (stack overflow)
+        async function processStream() {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    setDatabankStatus('completed', 'Búsqueda completada');
+                    // Re-habilitar botones
+                    if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+                    if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
+                    if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+                    if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+                    if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
+                    break; // Salir del bucle
+                }
+
+                // Añadir el nuevo trozo de datos al buffer
+                buffer += decoder.decode(value, { stream: true });
+
+                // Buscar mensajes completos en el buffer (delimitados por '\n\n')
+                let boundary = buffer.indexOf('\n\n');
+                while (boundary !== -1) {
+                    const message = buffer.substring(0, boundary);
+                    buffer = buffer.substring(boundary + 2); // Eliminar el mensaje procesado del buffer
+
+                    if (message.startsWith('data:')) {
+                        const jsonData = message.substring(5).trim(); // Eliminar 'data: '
+                        if (!jsonData) continue;
+
+                        try {
+                            const data = JSON.parse(jsonData);
+
+                            if (data.status === 'info' || data.status === 'progress') {
+                                if (!searchMode) {
+                                    if (data.message.toLowerCase().includes('monte carlo')) searchMode = '[Monte Carlo]';
+                                    else if (data.message.toLowerCase().includes('exhaustiva')) searchMode = '[Exhaustiva]';
+                                }
+                                setDatabankStatus('searching', data.message);
+                            } else if (data.status === 'paused') {
+                                dom.pauseSearchBtn.textContent = 'Reanudar';
+                                // Mantener Stop habilitado durante la pausa
+                                setDatabankStatus('paused', data.message);
+                            } else if (data.status === 'resumed') {
+                                dom.pauseSearchBtn.textContent = 'Pausar';
+                                setDatabankStatus('searching', data.message);
+                            } else if (data.status === 'stopped') {
+                                dom.stopSearchBtn.disabled = true;
+                                dom.pauseSearchBtn.disabled = true;
+                                dom.pauseSearchBtn.textContent = 'Pausar';
+                                setDatabankStatus('stopped', data.message);
+                            } else if (data.status === 'error') {
+                                displayError(data.message); // `displayError` would need to be defined
+                                setDatabankStatus('error', 'Error en la búsqueda');
+                                // Re-habilitar botones
+                                if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+                                if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
+                                if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+                                if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+                                if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
+                                reader.cancel(); // Detener la lectura del stream
+                            } else if (data.status === 'completed') {
+                                setDatabankStatus('completed', 'Búsqueda completada');
+                                // Re-habilitar botones
+                                if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+                                if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
+                                if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+                                if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+                                if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
+                                reader.cancel();
+                            } else {
+                                const newPortfolio = data;
+                                if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i + 1}`).join(', ');
+                                addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput?.value || 20, 10)); // `addToDatabankIfBetter` would need to be defined
+                                // Throttle: Solo actualizar la UI cada 500ms para mantenerla responsive
+                                if (!window.databankUpdateScheduled) {
+                                    window.databankUpdateScheduled = true;
+                                    setTimeout(() => {
+                                        updateDatabankDisplay();
+                                        window.databankUpdateScheduled = false;
+                                    }, 500);
+                                }
+                            }
+                        } catch (e) {
+                            console.error("Error al parsear JSON del stream:", e, "Datos recibidos:", jsonData);
+                        }
+                    }
+                    boundary = buffer.indexOf('\n\n'); // Buscar el siguiente mensaje
+                }
+            }
+        }
+        processStream(); // Inicia la lectura del stream
+    } catch (error) {
+        console.error("Error al iniciar el stream de búsqueda:", error);
+        displayError("Error al iniciar la búsqueda de portafolios: " + error.message);
+        setDatabankStatus('error', 'Error al iniciar la búsqueda');
+        // Re-habilitar botones
+        if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+        if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
+        if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+        if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+        if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
+    }
+*/
+
 /**
  * Guarda un portafolio desde el DataBank a la lista de portafolios guardados.
  */
@@ -644,12 +779,30 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
     const names = portfolio.indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '').substring(0, 5)).join('+');
     const strategyIds = portfolio.indices.map(i => state.loadedStrategyFiles[i].strategyId);
 
+    // Calculate SQ Metrics for persistence
+    let allTrades = [];
+    portfolio.indices.forEach(idx => {
+        const file = state.loadedStrategyFiles[idx];
+        if (file && file.content) {
+            const trades = parseTradesFromContent(file.content);
+            allTrades = allTrades.concat(trades);
+        } else if (state.rawStrategiesData[idx]) {
+            // Fallback: Use rawStrategiesData if content is missing
+            const trades = parseTradesFromData(state.rawStrategiesData[idx]);
+            allTrades = allTrades.concat(trades);
+        }
+    });
+    allTrades.sort((a, b) => a.exitTime - b.exitTime);
+    const sqMetrics = calculateSQMetrics(allTrades);
+
     state.savedPortfolios.push({
         name: `P-DB (${names}) ${portfolio.metricName}`,
         indices: portfolio.indices,
         strategyIds: strategyIds, // <--- SAVE STRATEGY IDs
         id: generatePortfolioId(`P-DB (${names})`, strategyIds),
         weights: null,
+        metrics: portfolio.metrics || metrics, // Use passed metrics if available
+        sqMetrics: sqMetrics, // <--- SAVE SQ METRICS
         comments: `Guardado desde DataBank. Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
     });
     // Adjuntamos las métricas pre-calculadas para evitar re-análisis innecesario

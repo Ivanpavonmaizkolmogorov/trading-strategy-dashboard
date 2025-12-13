@@ -506,6 +506,14 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                         corr_val = correlation_matrix.iloc[i1, i2]
                         if corr_val > params.correlation_threshold:
                             is_valid = False
+                            
+                            # Si es el portafolio completo (todas las estrategias), avisar al usuario explícitamente
+                            if len(combo) == num_strategies:
+                                name1 = request.strategy_names[i1] if hasattr(request, 'strategy_names') and i1 < len(request.strategy_names) else f"#{i1+1}"
+                                name2 = request.strategy_names[i2] if hasattr(request, 'strategy_names') and i2 < len(request.strategy_names) else f"#{i2+1}"
+                                warning_msg = f"⚠️ Portafolio completo descartado: Alta correlación ({corr_val:.2f}) entre '{name1}' y '{name2}'."
+                                yield f"data: {json.dumps({'status': 'info', 'message': warning_msg})}\n\n"
+
                             # Log rejection for larger portfolios to debug user issue
                             if len(combo) >= 5:
                                 print(f"DEBUG: Rejected combo {combo} due to correlation {corr_val:.2f} > {params.correlation_threshold} between {i1} and {i2}", flush=True)

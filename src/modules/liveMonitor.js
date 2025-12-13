@@ -4,7 +4,7 @@ import { openMyfxbookModal } from './myfxbookUI.js';
 import { openSlaveAccountsModal } from './slaveAccounts.js';
 import { openStrategyRiskModal } from './strategyRiskViewer.js';
 import { showToast } from './notifications.js';
-import { loadPortfolioIntoEditor } from './portfolioBuilder.js';
+import { loadPortfolioIntoEditor } from './portfolioBuilder.js?v=2';
 import { openMagicMapper } from './magicMapper.js'; // We need to export this or similar
 
 export const initLiveMonitor = () => {
@@ -47,12 +47,9 @@ export const renderLiveMonitor = () => {
 function calculateRiskScore(portfolio) {
     if (!portfolio.realMetrics || !portfolio.metrics) return 0;
     const limit = portfolio.metrics.maxConsecutiveLosses || 1;
-    const current = portfolio.realMetrics.consecutiveLosses?.maxConsecutiveLosses || 0; // Note: Myfxbook returns maxConsecutiveLosses in history, but for live monitoring we ideally want CURRENT streak. 
-    // However, the backend currently calculates 'maxConsecutiveLosses' from the whole history. 
-    // We need to check if we have 'currentStreak' available. 
-    // Looking at analysis_engine.py, we added 'currentStreakCount'. 
-    // We need to make sure myfxbook_client/app.py returns this too.
-    // For now, let's assume we use the maxConsecutiveLosses from real history as a proxy for "worst case seen so far".
+    const current = portfolio.realMetrics.consecutiveLosses?.currentConsecutiveLosses !== undefined
+        ? portfolio.realMetrics.consecutiveLosses.currentConsecutiveLosses
+        : (portfolio.realMetrics.consecutiveLosses?.maxConsecutiveLosses || 0);
 
     // Actually, the user wants to know if they are breaking the record.
     return (current / limit) * 100;
@@ -64,12 +61,14 @@ function createMonitorCard(portfolio) {
 
     // Data extraction
     const limit = portfolio.metrics.maxConsecutiveLosses || 0;
-    // Ideally we want the CURRENT streak from Myfxbook, but we only have maxConsecutiveLosses from the fetch.
-    // Let's use that for now, assuming the user wants to know if the account *ever* exceeded the backtest.
-    const realMax = portfolio.realMetrics?.consecutiveLosses?.maxConsecutiveLosses || 0;
+    // Ideally we want the CURRENT streak from Myfxbook
+    const realMaxHist = portfolio.realMetrics?.consecutiveLosses?.maxConsecutiveLosses || 0;
+    const realCurrent = portfolio.realMetrics?.consecutiveLosses?.currentConsecutiveLosses || 0;
+    // Use current for risk calculation, but display might want both
+    const realMax = realCurrent > 0 ? `${realCurrent} <span class="text-xs text-gray-500">/ ${realMaxHist}</span>` : realMaxHist;
 
     // Calculate Health
-    const percentage = limit > 0 ? (realMax / limit) * 100 : 0;
+    const percentage = limit > 0 ? ((realCurrent || realMaxHist) / limit) * 100 : 0;
 
     let statusColor = 'bg-emerald-500';
     let statusText = 'SAFE';
@@ -242,7 +241,7 @@ function createMonitorCard(portfolio) {
 
                 return `
                     <div class="flex justify-between items-center text-xs py-1 border-b border-gray-700/50 last:border-0">
-                        <span class="text-gray-400 truncate w-24" title="${s.name} (#${s.magicNum})">${s.name}</span>
+                        <span class="text-gray-400 truncate w-32" title="${s.name} (#${s.magicNum})">${s.name}</span>
                         <div class="flex gap-3">
                             <span class="${rowColor} font-mono" title="Current / Max Real">
                                 ${s.currentLosses}<span class="text-gray-600">/</span>${s.realMaxLosses}
@@ -315,7 +314,7 @@ function createMonitorCard(portfolio) {
     repairBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         // We need to import this dynamically or ensure it's available
-        import('./portfolioBuilder.js').then(mod => {
+        import('./portfolioBuilder.js?v=2').then(mod => {
             // Find index
             const index = state.savedPortfolios.findIndex(p => p.id === portfolio.id);
             if (index !== -1) {

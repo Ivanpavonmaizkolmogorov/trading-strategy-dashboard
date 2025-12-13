@@ -620,23 +620,27 @@ export function initializeEventListeners() {
     // --- NUEVO: Listeners para pestañas de vista (Backtest / Reality Check) ---
     const tabBacktest = document.getElementById('tab-backtest');
     const tabRealityCheck = document.getElementById('tab-reality-check');
+    const tabSQ = document.getElementById('tab-sq-stats');
 
     if (tabBacktest) {
         tabBacktest.addEventListener('click', () => switchViewMode('backtest'));
     }
     if (tabRealityCheck) {
         tabRealityCheck.addEventListener('click', () => switchViewMode('reality-check'));
-        // --- DEBUG: Global Click Listener ---
-        window.addEventListener('click', (e) => {
-            if (e.target.closest('.manage-slave-accounts-btn')) {
-                console.log('[GLOBAL DEBUG] Click on Manage Slave Accounts Button detected!');
-                console.log('Target:', e.target);
-                console.log('Path:', e.composedPath());
-            }
-        });
-
-        // --- DEBUG: Expose Modal Function Globally ---
-        window.openSlaveAccountsModal = openSlaveAccountsModal;
-        window.debugOpenSlave = openSlaveAccountsModal; // Keep alias just in case
     }
+    if (tabSQ) {
+        tabSQ.addEventListener('click', () => switchViewMode('sq-stats'));
+    }
+    // --- DEBUG: Global Click Listener ---
+    window.addEventListener('click', (e) => {
+        if (e.target.closest('.manage-slave-accounts-btn')) {
+            console.log('[GLOBAL DEBUG] Click on Manage Slave Accounts Button detected!');
+            console.log('Target:', e.target);
+            console.log('Path:', e.composedPath());
+        }
+    });
+
+    // --- DEBUG: Expose Modal Function Globally ---
+    window.openSlaveAccountsModal = openSlaveAccountsModal;
+    window.debugOpenSlave = openSlaveAccountsModal; // Keep alias just in case
 }

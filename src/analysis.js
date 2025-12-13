@@ -63,7 +63,23 @@ export const runAnalysis = async () => {
     dom.resultsDiv.classList.add('hidden');
 
     try {
-        const strategiesPromises = state.loadedStrategyFiles.map(file => parseCsv(file));
+        const strategiesPromises = state.loadedStrategyFiles.map(file => {
+            if (file instanceof File) {
+                return parseCsv(file);
+            } else if (file.content) {
+                // If we have content string but not a File object (e.g. from manual object creation)
+                // We might need a way to parse string content directly, but parseCsv expects a Blob/File usually.
+                // For now, let's assume parseCsv handles File. 
+                // If it's not a File, we can't use FileReader on it.
+                // But wait, if we have 'content', we don't need FileReader!
+                // We can just return the content if parseCsv supports it, or parse it directly.
+                // However, parseCsv in utils.js likely uses PapaParse on a file.
+                // Let's check utils.js next. For now, just throw a clearer error.
+                throw new Error(`El archivo '${file.name}' no es válido para lectura (falta objeto File). Recarga las estrategias.`);
+            } else {
+                throw new Error(`El archivo '${file.name || 'Desconocido'}' no tiene contenido. Recarga las estrategias.`);
+            }
+        });
         state.rawStrategiesData = await Promise.all(strategiesPromises);
 
         // Clear old metrics antes de un nuevo análisis completo

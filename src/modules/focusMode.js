@@ -2,6 +2,7 @@ import { state } from '../state.js';
 import { dom } from '../dom.js';
 import { renderEquityChart, renderScatterChart, renderLorenzChart, renderChartsForTab, renderPortfolioComparisonCharts, renderRealityCheckTab } from '../ui.js';
 import { STRATEGY_COLORS } from '../config.js';
+import { renderSQAnalysis } from './sqAnalysis_v2.js?v=5';
 
 export const focusMode = {
     active: false,
@@ -378,6 +379,73 @@ export const focusMode = {
             dom.portfolioComparisonChartSection.classList.remove('hidden');
         }
 
+        // --- SQ ANALYSIS UPDATE LOGIC ---
+        // If a single strategy is selected, update the SQ Analysis view to focus on it.
+        // We need to find the parent portfolio index to call renderSQAnalysis.
+        // If multiple items are selected, or none, we might want to reset or show aggregate?
+        // For now, let's focus on the single strategy case as requested.
+
+        if (this.focusedItems.size === 1) {
+            const item = this.focusedItems.values().next().value;
+            if (item.type === 'strategy') {
+                // We need to find which portfolio this strategy belongs to, or use the currently active portfolio index.
+                // Usually, the strategies table is showing strategies from a specific portfolio (e.g. Saved Portfolio 0).
+                // Let's try to get the active portfolio index from state or UI.
+                // Or we can try to find the strategy in the loaded files to get its ID.
+
+                let strategyId = item.id;
+                // Try to find ID from loaded files if item has originalIndex
+                if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
+                    const file = state.loadedStrategyFiles[item.originalIndex];
+                    strategyId = file.strategyId || file.name;
+                } else if (!strategyId) {
+                    strategyId = item.name;
+                }
+
+                // Assuming we are viewing the currently selected portfolio in the strategies table.
+                // We can check if there is a 'currentPortfolioIndex' in state or similar.
+                // But renderSQAnalysis takes 'portfolioIndex'.
+                // If we are in 'saved' mode, we can try to find the portfolio that contains this strategy.
+                // However, strategies might belong to multiple portfolios.
+                // BUT, usually the user is drilling down into ONE portfolio.
+                // Let's assume the first saved portfolio for now if we can't determine, OR better:
+                // Check if 'state.currentPortfolioIndex' exists (it might not).
+                // Let's look at how strategiesTable knows what to render. It uses 'window.analysisResults'.
+                // If window.analysisResults comes from a portfolio, we might have a reference.
+
+                // Fallback: If we can't find the portfolio index easily, we might skip this or default to 0.
+                // But wait, the user is likely looking at a specific portfolio.
+                // Let's try to pass the strategy ID to renderSQAnalysis, assuming the view is already set to the correct portfolio.
+                // We can re-render the CURRENTLY visible portfolio with the new strategy filter.
+
+                // How to know the current portfolio index for SQ Analysis?
+                // We can store it in a global variable or data attribute when renderSQAnalysis is called.
+                // Let's assume renderSQAnalysis has been called before (as seen in logs).
+                // We can try to read the currently rendered portfolio index from the DOM if we stored it?
+                // Or we can just try to update the existing view if we expose a method?
+                // But I modified renderSQAnalysis to be the entry point.
+
+                // Let's try to find the portfolio index that contains this strategy in 'state.savedPortfolios'.
+                const parentPortfolioIndex = state.savedPortfolios.findIndex(p =>
+                    p.strategyIds && p.strategyIds.includes(strategyId)
+                );
+
+                if (parentPortfolioIndex !== -1) {
+                    console.log(`[FocusMode] Updating SQ Analysis for strategy: ${strategyId} in portfolio ${parentPortfolioIndex}`);
+                    renderSQAnalysis(parentPortfolioIndex, 'saved', strategyId);
+                } else {
+                    // If not found by ID, maybe by name?
+                    // Or maybe it's a databank portfolio?
+                    console.warn(`[FocusMode] Could not find parent portfolio for strategy ${strategyId} to update SQ Analysis.`);
+                }
+            }
+        } else {
+            // If multiple or zero, maybe reset to 'all'?
+            // We need to know which portfolio we were looking at.
+            // This is tricky without state tracking.
+            // For now, let's only handle the single selection case which is the user request.
+        }
+
         // REALITY CHECK PANEL LOGIC
         const detailsContainer = document.getElementById('strategy-details-container');
         if (detailsContainer) {
@@ -456,6 +524,9 @@ export const focusMode = {
                 window.updateDatabankDisplay();
             }
         }
+
+        // Also reset SQ Analysis if needed?
+        // If we knew the last portfolio index, we could call renderSQAnalysis(idx, 'saved', 'all');
     },
 
     /**

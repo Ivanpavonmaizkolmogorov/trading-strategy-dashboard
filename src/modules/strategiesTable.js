@@ -3,7 +3,7 @@ import { formatMetricForDisplay } from '../utils.js';
 import { focusMode } from './focusMode.js';
 import { CustomizableTable } from './tableEngine.js';
 import { openSearchConfigModal } from './searchConfig.js';
-import { analyzeCustomPortfolio } from './portfolioBuilder.js';
+import { analyzeCustomPortfolio } from './portfolioBuilder.js?v=2';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
