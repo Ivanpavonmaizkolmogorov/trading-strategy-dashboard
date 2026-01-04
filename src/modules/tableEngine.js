@@ -287,4 +287,16 @@ export class CustomizableTable {
     getConfig() {
         return this.currentConfig;
     }
+    /**
+     * Update configuration programmatically
+     */
+    updateConfig(newConfig) {
+        this.currentConfig = newConfig;
+        localStorage.setItem(this.storageKey, JSON.stringify(this.currentConfig));
+
+        // Trigger callback
+        if (this.onConfigChange) {
+            this.onConfigChange();
+        }
+    }
 }

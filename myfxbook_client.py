@@ -191,24 +191,26 @@ class MyfxbookClient:
         print(f"[Myfxbook] Fetching history for account: {account_id}")
         
         url = f"{self.BASE_URL}/get-history.json"
+        # Fetching from 2020 to ensure we capture ALL trades and their comments
         params = {
             "session": self.session_token,
-            "id": account_id
+            "id": account_id,
+            "start": "2020-01-01" 
         }
         
         try:
-            print(f"[Myfxbook] 🔄 Fetching history from: {url}")
+            print(f"[Myfxbook] 🔄 Fetching FULL history (from 2020) from: {url}")
             print(f"[Myfxbook] 📋 Account ID: {account_id}")
             print(f"[Myfxbook] 🎫 Session token: {self.session_token[:12] if self.session_token else 'NONE'}...")
             
-            response = self.http_session.get(url, params=params, timeout=10)
+            response = self.http_session.get(url, params=params, timeout=30)
             
             print(f"[Myfxbook] 📡 Response status: {response.status_code}")
             
             response.raise_for_status()
             
             data = response.json()
-            print(f"[Myfxbook] 📦 Full response data: {data}")
+            # print(f"[Myfxbook] 📦 Full response data: {str(data)[:200]}...") # truncate log
             
             if data.get("error", False):
                 error_msg = data.get("message", "Unknown error")
@@ -217,13 +219,67 @@ class MyfxbookClient:
             
             history = data.get("history", [])
             print(f"[Myfxbook] ✅ Retrieved {len(history)} trades")
+
+            if history:
+                 first_trade = history[0]
+                 print(f"[Myfxbook] 🔍 First Trade Keys: {list(first_trade.keys())}")
+                 print(f"[Myfxbook] 🔍 First Trade Data (Sample): {str(first_trade)}")
             
             return history
             
         except requests.RequestException as e:
             print(f"[Myfxbook] ❌ Network error: {str(e)}")
             raise MyfxbookAPIError(f"Network error: {str(e)}")
-    
+    def get_open_trades(self, account_id: int) -> List[Dict]:
+        """
+        Get currently open trades for an account.
+        
+        Args:
+            account_id: Myfxbook account ID
+            
+        Returns:
+            List of trade dictionaries
+            
+        Raises:
+            MyfxbookAPIError: If not logged in or request fails
+        """
+        if not self.session_token:
+            raise MyfxbookAPIError("Not logged in. Call login() first.")
+        
+        print(f"[Myfxbook] Fetching OPEN trades for account: {account_id}")
+        
+        url = f"{self.BASE_URL}/get-open-trades.json"
+        params = {
+            "session": self.session_token,
+            "id": account_id
+        }
+        
+        try:
+            print(f"[Myfxbook] 🔄 Fetching open trades from: {url}")
+            
+            response = self.http_session.get(url, params=params, timeout=10)
+            
+            print(f"[Myfxbook] 📡 Response status: {response.status_code}")
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            # print(f"[Myfxbook] 📦 Full response data (Open): {data}")
+            
+            if data.get("error", False):
+                error_msg = data.get("message", "Unknown error")
+                print(f"[Myfxbook] ❌ API returned error: {error_msg}")
+                raise MyfxbookAPIError(f"Failed to get open trades: {error_msg}")
+            
+            open_trades = data.get("openTrades", [])
+            print(f"[Myfxbook] ✅ Retrieved {len(open_trades)} OPEN trades")
+            
+            return open_trades
+            
+        except requests.RequestException as e:
+            print(f"[Myfxbook] ❌ Network error (Open Trades): {str(e)}")
+            raise MyfxbookAPIError(f"Network error: {str(e)}")
+
     def calculate_consecutive_losses(self, trades: List[Dict]) -> Dict:
         """
         Calculate consecutive losses from trade history.

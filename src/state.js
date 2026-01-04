@@ -17,6 +17,8 @@ export const state = {
     isSearchPaused: false,
     isSearchPaused: false,
     isSearchStopped: false,
+    searchBasePortfolioIndex: null, // Index of the Saved Portfolio used as base
+    searchBaseStrategyIndices: new Set(), // Indices of strategies from the base portfolio to lock
 
     // --- NUEVO: Configuración de Riesgo ---
     stagnationMode: 'days', // 'days', 'trades'
@@ -119,8 +121,20 @@ export const loadSavedPortfolios = () => {
 
 export const saveSavedPortfolios = () => {
     try {
-        localStorage.setItem('savedPortfolios', JSON.stringify(state.savedPortfolios));
-        console.log('[State] Saved Portfolios saved.');
+        const minimizedPortfolios = state.savedPortfolios.map(p => ({
+            id: p.id,
+            name: p.name,
+            indices: p.indices, // Or strategyIds if available
+            weights: p.weights,
+            comments: p.comments,
+            linkedAccountId: p.linkedAccountId,
+            linkedAccountName: p.linkedAccountName,
+            // Exclude 'analysis', 'metrics', 'realMetrics' (heavy data)
+            // We expect the app to re-calculate or re-fetch analysis on load if needed,
+            // or at least not crash storage.
+        }));
+        localStorage.setItem('savedPortfolios', JSON.stringify(minimizedPortfolios));
+        console.log('[State] Saved Portfolios saved (Minified).');
     } catch (e) {
         console.error('[State] Error saving Saved Portfolios:', e);
     }

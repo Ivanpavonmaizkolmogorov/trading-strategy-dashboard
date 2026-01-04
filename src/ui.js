@@ -3,12 +3,12 @@ import { state, saveSavedPortfolios } from './state.js';
 import { updateDatabankDisplay, savePortfolioFromDatabank, updateDatabankCount } from './modules/databank.js';
 import { renderViewerForActiveTab } from './modules/viewer.js'; // NUEVO
 import { openOptimizationModal, startOptimizationWorkflow } from './modules/optimization.js';
-import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js';
+import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js?v=10';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError } from './utils.js';
 import { focusMode } from './modules/focusMode.js';
 import { renderStrategiesTable as renderStrategiesTableModule } from './modules/strategiesTable.js';
 import { renderSQAnalysis } from './modules/sqAnalysis_v2.js?v=5';
-import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig } from './modules/savedPortfoliosTable.js';
+import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig, selectedSavedPortfolios, clearSelectedSavedPortfolios } from './modules/savedPortfoliosTable.js';
 import { unlinkAccount } from './modules/myfxbookUI.js';
 import { openSlaveAccountsModal } from './modules/slaveAccounts.js';
 import { openStrategyRiskModal } from './modules/strategyRiskViewer.js';
@@ -138,7 +138,21 @@ export const displayResults = (results) => {
     // PERFORMANCE OVERHAUL: Disabled auto-rendering
     // Charts now only render via Focus Mode (user selection)
     /*
-    const savedPortfolioAnalyses = window.analysisResults.filter(r => r.isSavedPortfolio && !r.isTemporaryOriginal);
+// Listener for Data Updates (e.g. Risk Normalization)
+document.addEventListener('portfolio-data-updated', () => {
+    console.log('[UI] Received portfolio-data-updated event. Refreshing UI components...');
+    
+    // Refresh Saved Portfolios List & Chart if active
+    if (state.activeTab === 'saved-portfolios') {
+        displaySavedPortfoliosList();
+        renderPortfolioComparisonCharts(state.savedPortfolios);
+    }
+    
+    // Also refresh Strategies Table if needed (it might rely on updated metrics)
+    if (typeof renderStrategiesTable === 'function') {
+        renderStrategiesTable();
+    }
+});
     if (savedPortfolioAnalyses.length > 0 || state.comparisonPortfolioIndex !== null) {
         renderPortfolioComparisonCharts(savedPortfolioAnalyses);
     }
@@ -676,39 +690,24 @@ export const renderLorenzChart = (canvasId, analysis, color) => {
  * Muestra la lista de portafolios guardados.
  */
 export const displaySavedPortfoliosList = () => {
-    console.log("DEBUG UI.JS: Entrando a displaySavedPortfoliosList. Estado de 'savedPortfolios':", JSON.parse(JSON.stringify(state.savedPortfolios)));
-    console.log("DEBUG UI.JS: dom.savedPortfoliosContent existe?", !!dom.savedPortfoliosContent);
-    console.log("DEBUG UI.JS: dom.savedPortfoliosBody existe?", !!dom.savedPortfoliosBody);
-    console.log("DEBUG UI.JS: dom.savedPortfoliosCount existe?", !!dom.savedPortfoliosCount);
-
     // Initialize table if needed
     initSavedPortfoliosTable();
 
     let portfoliosToDisplay = [...state.savedPortfolios];
+    console.log(`[UI DEBUG] Displaying Saved Portfolios. Total in State: ${state.savedPortfolios.length}. Mode: ${state.activeViewMode}`);
 
     // Filter for Reality Check Mode
     if (state.activeViewMode === 'reality-check') {
         portfoliosToDisplay = portfoliosToDisplay.filter(p => {
             const hasTrades = p.realMetrics && p.realMetrics._tradesById && Object.keys(p.realMetrics._tradesById).length > 0;
             if (hasTrades) {
-                console.log(`[UI] Debug Filter: Portfolio "${p.name}" keys:`, Object.keys(p));
-                console.log(`[UI] Debug Filter: Portfolio "${p.name}" indices:`, p.indices);
-                if (window.analysisResults) {
-                    console.log(`[UI] Debug: window.analysisResults length: ${window.analysisResults.length}`);
-                    if (p.indices && p.indices.length > 0) {
-                        console.log(`[UI] Debug: Resolved names from indices:`, p.indices.map(i => window.analysisResults[i]?.name));
-                    }
-                } else {
-                    console.log(`[UI] Debug: window.analysisResults is undefined/null`);
-                }
+                // Keep filter logic minimal
             }
             return hasTrades;
         });
-        console.log(`[UI] Reality Check Filter: Showing ${portfoliosToDisplay.length} / ${state.savedPortfolios.length} portfolios (Linked to Myfxbook)`);
+        console.log(`[UI DEBUG] After Reality Check Filter: ${portfoliosToDisplay.length}`);
     }
-
     if (portfoliosToDisplay.length === 0) {
-        console.log("DEBUG UI.JS: No hay portafolios guardados (o filtrados), ocultando sección");
         // En el nuevo layout, el contenido siempre está visible, solo vaciamos la tabla
         if (dom.savedPortfoliosBody) {
             const message = state.activeViewMode === 'reality-check'
@@ -720,11 +719,9 @@ export const displaySavedPortfoliosList = () => {
         return;
     }
 
-    console.log("DEBUG UI.JS: Hay", portfoliosToDisplay.length, "portafolios para mostrar");
     // En el nuevo layout, la sección siempre está visible
     if (dom.savedPortfoliosCount) {
         dom.savedPortfoliosCount.textContent = `${portfoliosToDisplay.length} `;
-        console.log("DEBUG UI.JS: Actualizado contador a", portfoliosToDisplay.length);
     }
 
     // Get custom column configuration
@@ -761,6 +758,19 @@ export const displaySavedPortfoliosList = () => {
     // Clear and rebuild header using DOM (like Strategies)
     dom.savedPortfoliosHeader.innerHTML = '';
     const headerRow = document.createElement('tr');
+
+    // 0. Select All Checkbox Header (New)
+    const thSelectAll = document.createElement('th');
+    thSelectAll.className = 'px-4 py-3 w-10 text-center text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
+    thSelectAll.innerHTML = '<input type="checkbox" id="select-all-saved-portfolios" class="form-checkbox h-4 w-4 text-red-500 rounded border-gray-600 bg-gray-700 cursor-pointer" title="Select All for Deletion">';
+    headerRow.appendChild(thSelectAll);
+
+    // 1. New Base Portfolio Radio Header
+    const thBase = document.createElement('th');
+    thBase.className = 'px-4 py-3 w-10 text-center text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
+    thBase.title = 'Select as Base for Team Search';
+    thBase.innerHTML = '🛡️'; // Icon for "Base" or "Defense" or "Team"
+    headerRow.appendChild(thBase);
 
     visibleColumns.forEach(key => {
         const colInfo = ALL_METRICS[key];
@@ -846,13 +856,41 @@ export const displaySavedPortfoliosList = () => {
         row.dataset.rowType = 'saved';
         row.dataset.rowIndex = originalIndex;
 
-        // Row Click Listener (Focus Mode)
+        // 0. Checkbox Cell (New)
+        const tdCheckbox = document.createElement('td');
+        tdCheckbox.className = 'px-4 py-3 text-center';
+        tdCheckbox.innerHTML = `
+            <input type="checkbox" 
+                   class="saved-portfolio-checkbox form-checkbox h-4 w-4 text-red-500 bg-gray-700 border-gray-600 focus:ring-offset-gray-800 cursor-pointer"
+                   data-index="${originalIndex}"
+                   ${selectedSavedPortfolios.has(originalIndex) ? 'checked' : ''}>
+        `;
+        row.appendChild(tdCheckbox);
+
+        // 1. Base Portfolio Radio Cell
+        const tdBase = document.createElement('td');
+        tdBase.className = 'px-4 py-3 text-center';
+        tdBase.innerHTML = `
+            <input type="radio" 
+                   name="base-portfolio-select" 
+                   class="form-radio h-4 w-4 text-sky-500 bg-gray-700 border-gray-600 focus:ring-offset-gray-800"
+                   data-index="${originalIndex}"
+                   ${state.searchBasePortfolioIndex === originalIndex ? 'checked' : ''}
+                   title="Use as Base for Team Search">
+        `;
+        row.appendChild(tdBase);
+
+        // Row Click Listener (Focus Mode) - REMOVED
+        // Interaction is now handled by delegation in events.js to prevent duplicate listeners
+        // and allow for better control over event propagation.
+        /*
         row.addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
             if (window.focusMode) {
                 window.focusMode.toggle(p, 'saved', row);
             }
         });
+        */
 
         visibleColumns.forEach(key => {
             const colInfo = ALL_METRICS[key];
@@ -988,6 +1026,17 @@ export const displaySavedPortfoliosList = () => {
                         openRealTradesModal(originalIndex, 'saved');
                     };
                     nameGroup.appendChild(btn);
+
+                    // Risk Breakdown Button
+                    const btnRisk = document.createElement('button');
+                    btnRisk.className = 'ml-2 text-gray-400 hover:text-white transition-colors';
+                    btnRisk.title = 'Portfolio Risk Audit';
+                    btnRisk.innerHTML = '📋';
+                    btnRisk.onclick = (e) => {
+                        e.stopPropagation();
+                        if (window.openStrategyBreakdownModal) window.openStrategyBreakdownModal(originalIndex);
+                    };
+                    nameGroup.appendChild(btnRisk);
                 }
 
                 td.appendChild(container);
@@ -1002,7 +1051,12 @@ export const displaySavedPortfoliosList = () => {
                 td.textContent = p.indices ? p.indices.length : 0;
                 td.className += ' text-right';
             } else {
-                const value = p.metrics?.[key];
+                let value = p.metrics?.[key];
+
+                // Fix for Ret/DD mismatch (key is returnDD, data is profitMaxDD_Ratio or returnDDRatio)
+                if (key === 'returnDD' && value === undefined) {
+                    value = p.metrics?.['profitMaxDD_Ratio'] || p.metrics?.['returnDDRatio'];
+                }
                 if (typeof value === 'number') {
                     td.textContent = formatMetricForDisplay(value, key);
                     td.className += ' text-right';
@@ -1095,6 +1149,59 @@ export const displaySavedPortfoliosList = () => {
 
         row.appendChild(tdActions);
         dom.savedPortfoliosBody.appendChild(row);
+    }); // End of portfoliosToDisplay.forEach
+
+    // --- CHECKBOX LOGIC ---
+    const selectAllCheckbox = document.getElementById('select-all-saved-portfolios');
+    const rowCheckboxes = dom.savedPortfoliosBody.querySelectorAll('.saved-portfolio-checkbox');
+    const deleteBtn = document.getElementById('delete-selected-portfolios-btn');
+
+    const updateDeleteButton = () => {
+        if (selectedSavedPortfolios.size > 0) {
+            deleteBtn.classList.remove('hidden');
+            deleteBtn.innerHTML = `🗑️ Eliminar (${selectedSavedPortfolios.size})`;
+        } else {
+            deleteBtn.classList.add('hidden');
+        }
+    };
+
+    // Initialize button state
+    updateDeleteButton();
+
+    if (selectAllCheckbox) {
+        // Initial state of Select All
+        const allChecked = rowCheckboxes.length > 0 && Array.from(rowCheckboxes).every(cb => cb.checked);
+        const someChecked = Array.from(rowCheckboxes).some(cb => cb.checked);
+        selectAllCheckbox.checked = allChecked;
+        selectAllCheckbox.indeterminate = someChecked && !allChecked;
+
+        selectAllCheckbox.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            rowCheckboxes.forEach(cb => {
+                cb.checked = isChecked;
+                const index = parseInt(cb.dataset.index);
+                if (isChecked) selectedSavedPortfolios.add(index);
+                else selectedSavedPortfolios.delete(index);
+            });
+            updateDeleteButton();
+        });
+    }
+
+    rowCheckboxes.forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const index = parseInt(e.target.dataset.index);
+            if (e.target.checked) selectedSavedPortfolios.add(index);
+            else selectedSavedPortfolios.delete(index);
+
+            // Update Select All state
+            if (selectAllCheckbox) {
+                const all = Array.from(rowCheckboxes).every(c => c.checked);
+                const some = Array.from(rowCheckboxes).some(c => c.checked);
+                selectAllCheckbox.checked = all;
+                selectAllCheckbox.indeterminate = some && !all;
+            }
+            updateDeleteButton();
+        });
     });
 };
 
@@ -1146,25 +1253,10 @@ function autoFitSavedPortfoliosColumn(th, colId) {
 
 /**
  * Initialize Focus Mode listeners for Saved Portfolios
+ * DEPRECATED: Logic moved to events.js to prevent duplicate listeners and propagation issues.
  */
 export const initSavedPortfoliosFocus = () => {
-    if (!dom.savedPortfoliosBody) return;
-
-    dom.savedPortfoliosBody.addEventListener('click', (e) => {
-        const row = e.target.closest('tr');
-        if (!row) return;
-
-        // Ignore if clicking on buttons
-        if (e.target.closest('button')) return;
-
-        const index = row.dataset.rowIndex;
-        if (index !== undefined) {
-            const portfolio = state.savedPortfolios[index];
-            if (portfolio) {
-                focusMode.enable(portfolio, 'saved', row);
-            }
-        }
-    });
+    // Logic moved to events.js
 };
 
 // Resizer functionality for Saved Portfolios (copied from Strategies)
@@ -1452,14 +1544,39 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         const isFeatured = result.savedIndex === state.featuredPortfolioIndex;
         const analysis = result.analysis || {};
         const chartData = analysis.chartData || {};
-        const normalizedData = chartData.equityCurve || [];
+        const rawEquityCurve = chartData.equityCurve || [];
 
-        if (!normalizedData.length) {
+        if (!rawEquityCurve.length) {
             console.warn(`[UI] ⚠️ Skipping chart for ${result.name}: No equity curve data found.`, result);
             return [];
         }
 
-        console.log(`[UI] 📈 Preparing dataset for ${result.name}: ${normalizedData.length} points.`);
+        console.log(`[UI] 📈 Preparing dataset for ${result.name}: ${rawEquityCurve.length} points.`);
+        console.log(`[UI] Debug Result Object Keys:`, Object.keys(result));
+        console.log(`[UI] Debug Risk Data:`, result.riskPerStrategy);
+
+        // --- RISK NORMALIZATION SCALING ---
+        let finalData = rawEquityCurve;
+
+        // Check if this portfolio has a scaling factor applied (Risk Normalization)
+        // We look for riskPerStrategy. For global normalization, all strategies have same risk.
+        // Factor = risk / 100.
+        if (result.riskPerStrategy && result.riskPerStrategy.length > 0) {
+            // Heuristic: Use the first strategy's risk as the portfolio scaling factor.
+            // (In Portfolio Normalization mode, all are scaled equally).
+            const scaleFactor = result.riskPerStrategy[0] / 100.0;
+
+            // Apply if significantly different from 1.0
+            if (Math.abs(scaleFactor - 1.0) > 0.001) {
+                console.log(`[UI] ⚖️ Applying Risk Scaling Factor ${scaleFactor.toFixed(4)} to Chart Data for ${result.name}`);
+                finalData = rawEquityCurve.map(pt => {
+                    if (typeof pt === 'object' && pt !== null && 'y' in pt) {
+                        return { ...pt, y: pt.y * scaleFactor };
+                    }
+                    return pt * scaleFactor;
+                });
+            }
+        }
 
         let color = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + (result.savedIndex ?? index)) % STRATEGY_COLORS.length]));
 
@@ -1477,7 +1594,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         }
 
         // AUTO-ZOOM & ISOLATION: In Reality Check mode, HIDE backtest data to let Real data scale properly
-        let finalData = normalizedData;
         if (state.activeViewMode === 'reality-check') {
             // Hide backtest data completely to focus on Real Evolution
             finalData = [];
@@ -1486,7 +1602,18 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
         const returnedDatasets = [{
             label: result.name,
-            data: finalData,
+            data: finalData.map((pt, i, arr) => {
+                // Client-side Normalization: Force start at 0
+                // We use the first point as baseline.
+                // If point is object {x, y}, normalize y.
+                if (typeof pt === 'object' && pt !== null && 'y' in pt) {
+                    const firstY = arr[0].y;
+                    return { ...pt, y: pt.y - firstY };
+                }
+                // If point is number
+                const firstY = typeof arr[0] === 'number' ? arr[0] : arr[0].y;
+                return pt - firstY;
+            }),
             borderColor: color,
             borderWidth: isFeatured ? 3 : 2,
             pointRadius: 0,
@@ -1499,28 +1626,65 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
         // REALITY CHECK: Add Real Equity Curve if available AND mode is 'reality-check'
         if (state.activeViewMode === 'reality-check' && result.realMetrics && result.realMetrics._tradesById && state.magicNumberMap) {
+            console.log(`[UI] 🔍 Reality Check Block Entered for ${result.name}`);
             let allRealTrades = [];
             let strategyNames = [];
 
-            if (result.strategies && Array.isArray(result.strategies)) {
+            // PRIORITY: Use explicit strategy names if available (common in Saved Portfolios)
+            if (result.strategyNames && Array.isArray(result.strategyNames) && result.strategyNames.length > 0) {
+                strategyNames = result.strategyNames;
+            } else if (result.strategies && Array.isArray(result.strategies)) {
+                // Legacy or Strategy Object array
                 strategyNames = result.strategies.map(s => s.name || s);
             } else if (result.indices && window.analysisResults) {
+                // Fallback: Resolve via indices (Risk: window.analysisResults might be mixed)
                 strategyNames = result.indices.map(i => window.analysisResults[i]?.name).filter(Boolean);
             }
 
+            console.log(`[UI]   Found ${strategyNames.length} strategies to check.`);
+            console.log(`[UI]   Strategy Names:`, strategyNames);
+
             if (strategyNames.length > 0) {
+                // Helper to normalize strings for comparison: trim, lowercase, collapse spaces, AND remove .csv extension
+                const normalize = s => s.replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
+
                 strategyNames.forEach(stratName => {
-                    // Resolve Strategy ID from loaded files
+                    // 1. Resolve Strategy ID from loaded files with Fuzzy Matching
                     let strategyId = stratName;
-                    const file = state.loadedStrategyFiles.find(f => f.name === stratName);
+                    const normalizedStratName = normalize(stratName);
+
+                    // Try fuzzy find if exact name doesn't match
+                    const file = state.loadedStrategyFiles.find(f => normalize(f.name) === normalizedStratName);
+
                     if (file && file.strategyId) {
                         strategyId = file.strategyId;
+                        console.log(`[UI]   Resolved '${stratName}' to ID: ${strategyId}`);
+                    } else if (!file) {
+                        console.warn(`[UI]   ⚠️ Could not fuzzy match strategy file for: '${stratName}'`);
                     }
 
-                    // Try lookup by ID first, then Name
-                    const magicRaw = state.magicNumberMap[strategyId] || state.magicNumberMap[stratName];
+                    // 2. Optimized Lookup Priority
+                    // Prioritize the ID map first, then Name map.
+                    // CRITICAL: Ignore empty arrays if a better match exists.
+                    const mapById = state.magicNumberMap[strategyId];
+                    const mapByName = state.magicNumberMap[stratName];
+                    const mapByNormName = state.magicNumberMap[normalizedStratName];
 
-                    if (magicRaw) {
+                    let magicRaw = null;
+
+                    if (Array.isArray(mapById) && mapById.length > 0) {
+                        magicRaw = mapById;
+                    } else if (Array.isArray(mapByNormName) && mapByNormName.length > 0) {
+                        magicRaw = mapByNormName;
+                    } else if (Array.isArray(mapByName) && mapByName.length > 0) {
+                        magicRaw = mapByName;
+                    } else {
+                        // Fallback to whatever exists (even if empty, to reflect state)
+                        magicRaw = mapById || mapByNormName || mapByName;
+                    }
+
+                    if (magicRaw && (!Array.isArray(magicRaw) || magicRaw.length > 0)) {
+                        console.log(`[UI]   Strategy '${stratName}' mapped to ${JSON.stringify(magicRaw)}`);
                         let magics = [];
                         if (Array.isArray(magicRaw)) {
                             magics = magicRaw;
@@ -1533,13 +1697,54 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                         magics.forEach(m => {
                             if (result.realMetrics._tradesById[m]) {
                                 allRealTrades = allRealTrades.concat(result.realMetrics._tradesById[m]);
+                            } else {
+                                console.warn(`[UI]   ⚠️ Magic '${m}' mapped but not found in _tradesById. Avail keys:`, Object.keys(result.realMetrics._tradesById));
                             }
                         });
+                    } else {
+                        console.warn(`[UI]   ❌ No mapping found for strategy '${stratName}'`);
                     }
                 });
             }
 
+            console.log(`[UI]   Total Real Trades Collected: ${allRealTrades.length}`);
+
             if (allRealTrades.length > 0) {
+                // --- VERIFICATION / AUDIT LOGIC ---
+                console.group(`[UI] 🧾 AUDIT: Real Trades Verification for ${result.name}`);
+                const symbolStats = {};
+                let totalAuditProfit = 0;
+
+                allRealTrades.forEach(t => {
+                    const sym = t.symbol || 'UNKNOWN';
+                    if (!symbolStats[sym]) {
+                        symbolStats[sym] = { count: 0, profit: 0, commission: 0, swap: 0, net: 0 };
+                    }
+                    symbolStats[sym].count++;
+                    symbolStats[sym].profit += (t.profit || 0);
+                    symbolStats[sym].commission += (t.commission || 0);
+                    symbolStats[sym].swap += (t.swap || 0);
+                    // Myfxbook usually provides Net Profit as separate field or we sum it up?
+                    // Usually 'profit' is gross or net depending on source.
+                    // Let's assume t.profit + t.commission + t.swap for now, but also check if 'netProfit' exists.
+                    // Based on parsed logic from reference: Net Profit is what we want.
+                    // Let's rely on Myfxbook 'profit' + 'commission' + 'swap' as standard Net if explicit 'netProfit' doesn't exist.
+                    // But wait, the user's table has "Profit" and "Net Profit".
+
+                    const net = (t.profit || 0) + (t.commission || 0) + (t.swap || 0);
+                    symbolStats[sym].net += net;
+                    totalAuditProfit += net;
+                });
+
+                console.table(Object.keys(symbolStats).map(sym => ({
+                    Symbol: sym,
+                    Count: symbolStats[sym].count,
+                    NetProfit: parseFloat(symbolStats[sym].net.toFixed(2))
+                })));
+                console.log(`[UI] 💰 TOTAL Calculated Net Profit: ${totalAuditProfit.toFixed(2)}`);
+                console.groupEnd();
+                // ------------------------------------
+
                 // Sort by close date
                 allRealTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
 
@@ -2220,7 +2425,213 @@ export const renderStrategiesTable = () => {
 /**
  * Abre el modal de Trades Reales.
  */
-export const openRealTradesModal = (index, type = 'strategy') => {
+/**
+ * Helper to get real trades for a single strategy index using robust mapping.
+ */
+/**
+ * Helper to get real trades for a single strategy index using robust mapping.
+ * @param {number} index - The strategy index in window.analysisResults
+ * @param {Object} [portfolio] - Optional: The specific portfolio object we are auditing. If provided, we only look here.
+ */
+const getRealTradesForStrategy = (index, portfolio = null) => {
+    const normalize = s => s.replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
+    let allRealTrades = [];
+
+    // 1. Resolve Strategy ID/Name
+    let rawName;
+    let file = state.loadedStrategyFiles[index];
+
+    // Priority 1: Use Portfolio's stored strategy name if available (Most Robust)
+    if (portfolio && portfolio.indices && portfolio.strategyNames) {
+        const k = portfolio.indices.indexOf(index);
+        if (k !== -1 && portfolio.strategyNames[k]) {
+            rawName = portfolio.strategyNames[k];
+            // Update file ref if possible by matching name, for ID lookup
+            if (!file || normalize(file.name) !== normalize(rawName)) {
+                file = state.loadedStrategyFiles.find(f => normalize(f.name) === normalize(rawName));
+            }
+        }
+    }
+
+    // Priority 2: Fallback to global lists
+    if (!rawName) {
+        const strategyOrPortfolio = window.analysisResults[index];
+        if (strategyOrPortfolio && strategyOrPortfolio.name) {
+            rawName = strategyOrPortfolio.name;
+        } else if (file) {
+            rawName = file.name;
+        }
+    }
+
+    if (!rawName) return [];
+
+    const normalizedName = normalize(rawName);
+
+    // Determine sId (preferred ID, then file name, then resolved rawName)
+    const sId = file ? (file.strategyId || file.name) : rawName;
+
+    // 2. Lookups
+    const cleanName = rawName.replace(/\.csv$/i, '').trim();
+    const mapById = state.magicNumberMap[sId];
+    const mapByName = state.magicNumberMap[rawName];
+    const mapByCleanName = state.magicNumberMap[cleanName];
+    const mapByNormName = state.magicNumberMap[normalizedName];
+
+    // --- DEBUGGING MATCH FAILURES ---
+    if (!mapById && !mapByName && !mapByNormName && !mapByCleanName) {
+        console.warn(`[Mapping Fail] Could not find mapping for:`);
+        console.warn(`  - ID: ${sId}`);
+        console.warn(`  - Name: ${rawName}`);
+        console.warn(`  - Clean: ${cleanName}`);
+        console.warn(`  - Norm: ${normalizedName}`);
+        console.warn(`  - Available Keys (Sample):`, Object.keys(state.magicNumberMap).slice(0, 10));
+        if (window.analysisResults[index]) {
+            console.warn(`  - AnalysisResult Item:`, window.analysisResults[index]);
+        }
+    }
+    // --------------------------------
+
+    console.log(`[Mapping Debug] Strategy: "${rawName}" (Clean: "${cleanName}") -> IDs: ${sId}`);
+    console.log(`[Mapping Debug] Lookups -> ByID: ${mapById}, ByName: ${mapByName}, ByClean: ${mapByCleanName}, ByNorm: ${mapByNormName}`);
+
+    // 3. Priority
+    let magicRaw = null;
+    if (Array.isArray(mapById) && mapById.length > 0) magicRaw = mapById;
+    else if (Array.isArray(mapByCleanName) && mapByCleanName.length > 0) magicRaw = mapByCleanName;
+    else if (Array.isArray(mapByNormName) && mapByNormName.length > 0) magicRaw = mapByNormName;
+    else if (Array.isArray(mapByName) && mapByName.length > 0) magicRaw = mapByName;
+    else magicRaw = mapById || mapByCleanName || mapByNormName || mapByName;
+
+    if (magicRaw) {
+        const magics = Array.isArray(magicRaw) ? magicRaw : (typeof magicRaw === 'string' ? magicRaw.split(',') : [String(magicRaw)]);
+
+        // Define scope: Specific portfolio or All saved portfolios check
+        const targets = portfolio ? [portfolio] : state.savedPortfolios;
+
+        targets.forEach(p => {
+            if (p.realMetrics && p.realMetrics._tradesById) {
+                // console.log(`[Trade Lookup] Checking Portfolio: ${p.name}. Keys: ${Object.keys(p.realMetrics._tradesById).join(', ')}`);
+                magics.forEach(m => {
+                    const key = m.trim();
+                    const found = p.realMetrics._tradesById[key];
+                    if (found) {
+                        // console.log(`[Trade Lookup] Found ${found.length} trades for key '${key}' in '${p.name}'`);
+                        allRealTrades = allRealTrades.concat(found);
+                    } else {
+                        // console.log(`[Trade Lookup] Key '${key}' NOT found in '${p.name}'`);
+                    }
+                });
+            } else {
+                // console.log(`[Trade Lookup] Portfolio '${p.name}' has no realMetrics or _tradesById`);
+            }
+        });
+    }
+
+    return allRealTrades;
+};
+
+/**
+ * Audit a portfolio to ensure individual strategy trades sum up to the portfolio total.
+ */
+const auditPortfolio = (portfolioIndex) => {
+    const portfolio = state.savedPortfolios[portfolioIndex];
+    console.log(`[AUDIT] Starting audit for index: ${portfolioIndex}`, portfolio);
+
+    const auditContainer = document.getElementById('audit-report-container');
+
+    if (!portfolio || !portfolio.realMetrics) {
+        console.error('[AUDIT] No real metrics found for portfolio.');
+        if (auditContainer) auditContainer.innerHTML = '<div class="text-xs text-red-400 px-6">Error: Sin métricas reales para auditar.</div>';
+        return;
+    }
+
+    if (!portfolio.realMetrics.totalRealTrades) {
+        console.warn('[AUDIT] Portfolio has totalRealTrades = 0 or undefined.', portfolio.realMetrics);
+        // Proceeding anyway to see if calculated is also 0
+    }
+
+    console.group(`[AUDIT] Portfolio Consistency Check: ${portfolio.name}`);
+
+    let calculatedTotalTrades = 0;
+    let calculatedTotalProfit = 0;
+
+    portfolio.indices.forEach(strategyIndex => {
+        const trades = getRealTradesForStrategy(strategyIndex, portfolio);
+        calculatedTotalTrades += trades.length;
+        calculatedTotalProfit += trades.reduce((sum, t) => sum + (t.profit || 0) + (t.commission || 0) + (t.swap || 0), 0);
+    });
+
+    const reportedTotalTrades = portfolio.realMetrics.totalRealTrades || portfolio.realMetrics.tradesCount || 0;
+    const reportedTotalProfit = portfolio.realMetrics.totalRealProfit || portfolio.realMetrics.totalProfit || 0;
+
+    console.log(`Trades: Calculated ${calculatedTotalTrades} vs Reported ${reportedTotalTrades}`);
+    // Final Log
+    console.log(`Profit: Calculated ${calculatedTotalProfit.toFixed(2)} vs Reported ${reportedTotalProfit.toFixed(2)}`);
+
+    const isMatch = calculatedTotalTrades === reportedTotalTrades;
+    const diff = reportedTotalTrades - calculatedTotalTrades;
+
+    // --- UI UPDATE ---
+    // auditContainer is already defined above
+    if (auditContainer) {
+        if (isMatch) {
+            auditContainer.innerHTML = `
+                <div class="flex items-center gap-3 bg-green-900/30 border border-green-700/50 rounded-lg p-3">
+                    <span class="text-2xl">✅</span>
+                    <div class="flex-1">
+                        <h4 class="text-sm font-bold text-green-400">Consistencia Verificada</h4>
+                        <p class="text-xs text-green-200/70">
+                            La suma de estrategias (${calculatedTotalTrades} ops) coincide con el total del portafolio.
+                        </p>
+                    </div>
+                    <div>
+                         <button onclick="window.openStrategyBreakdownModal(${portfolioIndex})" 
+                            class="px-3 py-1 bg-green-800/50 hover:bg-green-700/50 text-green-200 text-xs rounded border border-green-700 transition-colors">
+                            Ver Desglose
+                         </button>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-gray-400">Ganancia Calc.</div>
+                        <div class="text-sm font-bold text-green-300">$${calculatedTotalProfit.toFixed(2)}</div>
+                    </div>
+                </div>
+            `;
+            console.log(`%c✅ TRADE COUNT MATCH`, 'color: green; font-weight: bold;');
+        } else {
+            auditContainer.innerHTML = `
+                <div class="flex items-center gap-3 bg-red-900/30 border border-red-700/50 rounded-lg p-3">
+                    <span class="text-2xl">⚠️</span>
+                    <div class="flex-1">
+                        <h4 class="text-sm font-bold text-red-400">Discrepancia Detectada</h4>
+                        <p class="text-xs text-red-200/70">
+                            Suma Estrategias: <strong>${calculatedTotalTrades}</strong> vs Portafolio: <strong>${reportedTotalTrades}</strong> (Dif: ${diff})
+                        </p>
+                    </div>
+                    <div>
+                         <button onclick="window.openStrategyBreakdownModal(${portfolioIndex})" 
+                            class="px-3 py-1 bg-red-800/50 hover:bg-red-700/50 text-red-200 text-xs rounded border border-red-700 transition-colors">
+                            Ver Desglose
+                         </button>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-gray-400">Ganancia Calc.</div>
+                        <div class="text-sm font-bold text-red-300">$${calculatedTotalProfit.toFixed(2)}</div>
+                    </div>
+                </div>
+            `;
+            console.error(`❌ TRADE COUNT MISMATCH (Diff: ${diff})`);
+        }
+    }
+
+    console.groupEnd();
+};
+
+window.toggleBreakdownTrades = (id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden');
+};
+
+export const openRealTradesModal = (index, type = 'strategy', parentPortfolioIndex = null) => {
     console.log(`[UI] Opening Real Trades Modal for index: ${index}, type: ${type}`);
 
     let strategyOrPortfolio;
@@ -2229,45 +2640,33 @@ export const openRealTradesModal = (index, type = 'strategy') => {
     if (type === 'saved') {
         strategyOrPortfolio = state.savedPortfolios[index];
         if (strategyOrPortfolio && strategyOrPortfolio.realMetrics && strategyOrPortfolio.realMetrics._tradesById) {
-            // For portfolios, trades are directly available (aggregated during analysis)
-            // But wait, are they? Yes, analysis.js aggregates them into realMetrics.
-            // Let's verify if _tradesById is flat or nested.
-            // In analysis.js: realMetrics._tradesById = { ...allTrades };
-            // So it should be a map of ticket -> trade.
-            // _tradesById is Magic -> Array of Trades. We need to flatten it.
             const tradesArrays = Object.values(strategyOrPortfolio.realMetrics._tradesById);
             allRealTrades = tradesArrays.flat().filter(t => {
                 const action = t.action || t.type;
                 return action !== 'Deposit' && action !== 'Transfer';
             });
-            console.log(`[UI] Debug Real Trades Modal: Found ${allRealTrades.length} trades after flattening and filtering.`);
-            if (allRealTrades.length > 0) {
-                console.log(`[UI] Debug First Trade:`, allRealTrades[0]);
-            }
+            console.log(`[UI] Debug Real Trades Modal: Found ${allRealTrades.length} trades.`);
+
+            // --- TRIGGER AUDIT ---
+            setTimeout(() => auditPortfolio(index), 100);
         }
     } else {
         // Strategy
         strategyOrPortfolio = window.analysisResults[index];
         if (strategyOrPortfolio) {
-            // Logic to find Real Trades (copied from strategiesTable.js)
-            // Logic to find Real Trades (copied from strategiesTable.js)
-            // Resolve Strategy ID
-            const file = state.loadedStrategyFiles[index];
-            const sId = file ? (file.strategyId || file.name) : strategyOrPortfolio.name;
-            const magicRaw = state.magicNumberMap[sId] || state.magicNumberMap[strategyOrPortfolio.name];
-
-            if (magicRaw) {
-                let magics = Array.isArray(magicRaw) ? magicRaw : (typeof magicRaw === 'string' ? magicRaw.split(',') : [String(magicRaw)]);
-
-                state.savedPortfolios.forEach(p => {
-                    if (p.realMetrics && p.realMetrics._tradesById) {
-                        magics.forEach(m => {
-                            const trades = p.realMetrics._tradesById[m.trim()];
-                            if (trades) allRealTrades = allRealTrades.concat(trades);
-                        });
+            let parentPortfolio = null;
+            if (parentPortfolioIndex !== null && state.savedPortfolios[parentPortfolioIndex]) {
+                parentPortfolio = state.savedPortfolios[parentPortfolioIndex];
+                // Fix Title Name if possible
+                if (parentPortfolio.indices && parentPortfolio.strategyNames) {
+                    const k = parentPortfolio.indices.indexOf(index);
+                    if (k !== -1 && parentPortfolio.strategyNames[k]) {
+                        // Create a temporary object with the correct name for display
+                        strategyOrPortfolio = { ...strategyOrPortfolio, name: parentPortfolio.strategyNames[k] };
                     }
-                });
+                }
             }
+            allRealTrades = getRealTradesForStrategy(index, parentPortfolio);
         }
     }
 
@@ -2280,7 +2679,114 @@ export const openRealTradesModal = (index, type = 'strategy') => {
         console.warn(`[UI] No real trades found for: ${strategyOrPortfolio.name}`);
     }
 
-    const trades = allRealTrades.sort((a, b) => new Date(b.closeTime) - new Date(a.closeTime)); // Descending order
+    // --- WARNING INJECTION FOR NORMALIZATION ---
+    const warningId = 'real-trades-normalization-warning';
+    const existingWarning = document.getElementById(warningId);
+    if (existingWarning) existingWarning.remove(); // Clean up previous
+
+    // Check Global Normalization OR Portfolio-specific Normalization
+    const normalizeCheckbox = document.getElementById('normalize-risk-checkbox'); // Primary Global Checkbox
+    const searchNormCheckbox = document.getElementById('search-normalization-enabled'); // Search Config Checkbox
+
+    // Check if either global flag is active
+    // 1. Global Toolbar Checkbox
+    // 2. Search Configuration (Persisted in State)
+    let isGlobalNormalized = (normalizeCheckbox && normalizeCheckbox.checked) ||
+        (state.currentOptimizationData && state.currentOptimizationData.normalizationEnabled);
+
+    // strategyOrPortfolio is already defined above
+    const isPortfolioNormalized = strategyOrPortfolio.riskConfig && strategyOrPortfolio.riskConfig.isScaled;
+
+    console.log(`[UI] RealTrades Warning Check: Global=${isGlobalNormalized}, Portfolio=${isPortfolioNormalized}`);
+
+    if (isGlobalNormalized || isPortfolioNormalized) {
+        const warningHTML = `
+            <div id="${warningId}" class="mx-6 mt-4 p-3 bg-yellow-900/40 border border-yellow-600/50 rounded-lg flex items-start gap-3">
+                <span class="text-xl">⚠️</span>
+                <div class="text-sm text-yellow-200">
+                    <p class="font-bold">Aviso: Datos Normalizados</p>
+                    <p class="opacity-90">Estás visualizando datos con normalización de riesgo aplicada. Para ver los datos históricos originales (Backtest/Live directo), desactiva la configuración de riesgo en el panel de búsqueda o en el portafolio.</p>
+                </div>
+            </div>
+        `;
+        // Inject after header (which is the first child of modal content)
+        const modalContent = document.getElementById('real-trades-modal-content');
+        if (modalContent) {
+            const header = modalContent.querySelector('.border-b.border-gray-700'); // The header div
+            if (header) {
+                header.insertAdjacentHTML('afterend', warningHTML);
+            } else {
+                console.warn('[UI] Warning Header not found for injection. Appending to top.');
+                modalContent.insertAdjacentHTML('afterbegin', warningHTML);
+            }
+        }
+    }
+
+    // 1. Sort Chronologically to calculate running balance and drawdown
+    allRealTrades.sort((a, b) => new Date(a.closeTime || a.closeDate) - new Date(b.closeTime || b.closeDate));
+
+    let runningBalance = 0;
+    let maxRunningBalance = -Infinity;
+    let maxBalanceDate = null;
+    let maxBalanceIndex = -1;
+
+    // Tracking Peak Real Stats for Headers
+    let peakRealDDMoney = 0;
+    let peakRealStagDays = 0;
+    let peakRealStagTrades = 0;
+
+    const tradesWithBalance = allRealTrades.map((t, idx) => {
+        const net = (t.profit || 0) + (t.commission || 0) + (t.swap || 0);
+        runningBalance += net;
+
+        let closeDate = new Date(t.closeTime || t.closeDate);
+
+        // --- Stagnation & Drawdown Calculation ---
+        let dd = 0;
+        let stagDays = 0;
+        let stagTrades = 0;
+
+        if (runningBalance >= maxRunningBalance) {
+            // New High
+            maxRunningBalance = runningBalance;
+            maxBalanceDate = closeDate;
+            maxBalanceIndex = idx;
+            dd = 0;
+            stagDays = 0;
+            stagTrades = 0;
+        } else {
+            // In Drawdown
+            dd = runningBalance - maxRunningBalance; // negative value
+
+            // Stagnation Days
+            if (maxBalanceDate) {
+                const diffTime = Math.abs(closeDate - maxBalanceDate);
+                stagDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            }
+
+            // Stagnation Trades
+            if (maxBalanceIndex !== -1) {
+                stagTrades = idx - maxBalanceIndex;
+            }
+        }
+
+        // Track Peaks
+        if (Math.abs(dd) > peakRealDDMoney) peakRealDDMoney = Math.abs(dd);
+        if (stagDays > peakRealStagDays) peakRealStagDays = stagDays;
+        if (stagTrades > peakRealStagTrades) peakRealStagTrades = stagTrades;
+
+        return {
+            ...t,
+            _balance: runningBalance,
+            _netProfit: net,
+            _drawdown: dd,
+            _stagDays: stagDays,
+            _stagTrades: stagTrades
+        };
+    });
+
+    // 2. Sort Descending for Display (Newest first)
+    const trades = tradesWithBalance.sort((a, b) => new Date(b.closeTime || b.closeDate) - new Date(a.closeTime || a.closeDate));
 
     const modalTitle = document.getElementById('real-trades-modal-title');
     const modalSubtitle = document.getElementById('real-trades-modal-subtitle');
@@ -2289,31 +2795,118 @@ export const openRealTradesModal = (index, type = 'strategy') => {
     const modalContent = document.getElementById('real-trades-modal-content');
 
     if (modalTitle) modalTitle.textContent = `${strategyOrPortfolio.name} - Real Trades`;
-    if (modalSubtitle) modalSubtitle.textContent = `Total Trades: ${trades.length}`;
+    if (modalSubtitle) modalSubtitle.textContent = `Total Trades: ${trades.length} | Net Profit: ${runningBalance.toFixed(2)}`;
+
+    // 2.5 Inject Risk Headers (Drawdown & Stagnation)
+    const updateRiskHeader = (headerId, currentPeak, btKeyMoney, btKeyPercent, isMoney = false) => {
+        const header = document.getElementById(headerId);
+        if (!header) return;
+
+        // Find BT Value
+        const findProp = (keys) => {
+            const sources = [
+                strategyOrPortfolio.metrics,
+                strategyOrPortfolio.analysis,
+                strategyOrPortfolio.sqMetrics,
+                strategyOrPortfolio
+            ];
+            for (const src of sources) {
+                if (!src) continue;
+                for (const key of keys) {
+                    if (src[key] !== undefined && src[key] !== null) return src[key];
+                }
+            }
+            return null;
+        };
+
+        let btVal = findProp(Array.isArray(btKeyMoney) ? btKeyMoney : [btKeyMoney]);
+        let isPercent = false;
+
+        // Fallback for money if not found (Drawdown case)
+        if (isMoney && btVal === null && btKeyPercent) {
+            btVal = findProp(Array.isArray(btKeyPercent) ? btKeyPercent : [btKeyPercent]);
+            if (btVal !== null) isPercent = true;
+        }
+
+        let label = '-';
+        let usedPercent = 0;
+
+        if (btVal !== null) {
+            const numBt = parseFloat(btVal);
+            if (!isNaN(numBt) && numBt !== 0) {
+                if (isPercent) {
+                    label = `${numBt.toFixed(2)}%`;
+                    // Can't calculate reliable % used if BT is % and Peak is $. 
+                } else {
+                    label = isMoney ? `$${numBt.toFixed(2)}` : numBt.toFixed(0);
+                    usedPercent = (currentPeak / numBt) * 100;
+                }
+            }
+        }
+
+        let title = isMoney ? 'Drawdown' : (headerId.includes('days') ? 'Stag (Days)' : 'Stag (Trades)');
+
+        // Coloring for "Used %"
+        let usedColor = 'text-gray-400';
+        if (usedPercent > 80) usedColor = 'text-red-500 font-bold';
+        else if (usedPercent > 50) usedColor = 'text-orange-400';
+
+        const usedHtml = (label !== '-' && !isPercent && usedPercent > 0) ? `<br><span class="${usedColor} text-[10px]">(${usedPercent.toFixed(1)}% Used)</span>` : '';
+
+        header.innerHTML = `${title}<div class="text-[10px] text-gray-400 font-normal mt-0.5 leading-tight">Max BT: ${label}${usedHtml}</div>`;
+    };
+
+    updateRiskHeader('real-trades-dd-header', peakRealDDMoney, ['maxDrawdownInDollars', 'drawdown_money'], ['maxDrawdown'], true);
+    updateRiskHeader('real-trades-stag-days-header', peakRealStagDays, ['maxStagnationDays', 'stagnationDays']);
+    updateRiskHeader('real-trades-stag-trades-header', peakRealStagTrades, ['maxStagnationTrades', 'stagnationTrades']);
 
     if (tableBody) {
+        // Prepare Audit Container Placeholders if needed
+        const modalContentArea = document.getElementById('real-trades-modal-content-area');
+
+        // Ensure container exists (now hardcoded in index.html)
+        let auditContainer = document.getElementById('audit-report-container');
+        if (auditContainer) {
+            auditContainer.innerHTML = '<div class="text-xs text-gray-500 italic animate-pulse">Verificando consistencia...</div>';
+        }
+
         if (trades.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="12" class="p-4 text-center text-gray-500">No real trades found.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="14" class="p-4 text-center text-gray-500">No real trades found.</td></tr>`;
         } else {
             tableBody.innerHTML = trades.map(t => {
-                const netProfit = (t.profit || 0) + (t.commission || 0) + (t.swap || 0);
+                const bal = t._balance;
+                const netProfit = t._netProfit;
+                const dd = t._drawdown;
+
+                const isPositiveBal = bal >= 0;
+                const isPositiveNet = netProfit >= 0;
 
                 return `
-                    <tr class="hover:bg-gray-800/50 transition-colors border-b border-gray-700/50 last:border-0">
-                        <td>${t.ticket || t.id || '-'}</td>
-                        <td>${t.openDate || t.openTime || '-'}</td>
-                        <td>${t.action || t.type || '-'}</td>
-                        <td>${t.lots || t.size || '-'}</td>
-                        <td>${t.symbol || t.item || '-'}</td>
-                        <td>${t.openPrice || '-'}</td>
-                        <td>${t.closeDate || t.closeTime || '-'}</td>
-                        <td>${t.closePrice || '-'}</td>
-                        <td class="${(t.commission || 0) < 0 ? 'text-red-400' : 'text-gray-400'}">${(t.commission || 0).toFixed(2)}</td>
-                        <td class="${(t.swap || 0) < 0 ? 'text-red-400' : 'text-gray-400'}">${(t.swap || 0).toFixed(2)}</td>
-                        <td class="${(t.profit || 0) >= 0 ? 'text-green-400' : 'text-red-400'} font-bold">${(t.profit || 0).toFixed(2)}</td>
-                        <td class="${netProfit >= 0 ? 'text-green-400' : 'text-red-400'} font-bold">${netProfit.toFixed(2)}</td>
-                    </tr>
-                `;
+                        <tr class="hover:bg-gray-800/50 transition-colors border-b border-gray-700/50 last:border-0">
+                            <td>${t.ticket || t.id || '-'}</td>
+                            <td class="text-xs text-gray-500 font-mono" title="${t.magic || t.magicNumber || t.comment || '-'}">
+                                ${(() => {
+                        const val = t.magic || t.magicNumber || t.comment || '-';
+                        return val.toString().replace(/\[.*?\]/g, '').trim();
+                    })()}
+                            </td>
+                            <td>${t.openDate || t.openTime || '-'}</td>
+                            <td>${t.action || t.type || '-'}</td>
+                            <td>${t.lots || t.size || '-'}</td>
+                            <td>${t.symbol || t.item || '-'}</td>
+                            <td>${t.openPrice || '-'}</td>
+                            <td>${t.closeDate || t.closeTime || '-'}</td>
+                            <td>${t.closePrice || '-'}</td>
+                            <td class="${(t.commission || 0) < 0 ? 'text-red-400' : 'text-gray-400'}">${(t.commission || 0).toFixed(2)}</td>
+                            <td class="${(t.swap || 0) < 0 ? 'text-red-400' : 'text-gray-400'}">${(t.swap || 0).toFixed(2)}</td>
+                            <td class="${(t.profit || 0) >= 0 ? 'text-green-400' : 'text-red-400'} font-bold">${(t.profit || 0).toFixed(2)}</td>
+                            <td class="${isPositiveNet ? 'text-green-400' : 'text-red-400'} font-bold">${netProfit.toFixed(2)}</td>
+                            <td class="text-red-400 font-bold text-right">${dd === 0 ? '-' : dd.toFixed(2)}</td>
+                            <td class="text-orange-300 text-right">${t._stagDays === 0 ? '-' : t._stagDays}</td>
+                            <td class="text-orange-300 text-right">${t._stagTrades === 0 ? '-' : t._stagTrades}</td>
+                            <td class="${isPositiveBal ? 'text-green-400' : 'text-red-400'} font-bold">${bal.toFixed(2)}</td>
+                        </tr>
+                    `;
             }).join('');
         }
     }
@@ -2325,6 +2918,13 @@ export const openRealTradesModal = (index, type = 'strategy') => {
         setTimeout(() => {
             modal.classList.remove('opacity-0');
             if (modalContent) modalContent.classList.remove('scale-95');
+
+            // Trigger Audit if it's a saved portfolio
+            if (type === 'saved') {
+                setTimeout(() => {
+                    auditPortfolio(index);
+                }, 300);
+            }
         }, 10);
     }
 };
@@ -2550,3 +3150,254 @@ function deleteSavedPortfolio(index) {
 // Map optimization button to workflow
 window.openOptimizationTab = startOptimizationWorkflow;
 window.deleteSavedPortfolio = deleteSavedPortfolio;
+
+/**
+ * Modal Logic for Portfolio Risk Breakdown (Audit per Strategy)
+ */
+window.openStrategyBreakdownModal = (portfolioIndex) => {
+    const p = state.savedPortfolios[portfolioIndex];
+    if (!p) return;
+
+    document.getElementById('strategy-breakdown-title').textContent = `Risk Breakdown: ${p.name}`;
+    const tbody = document.getElementById('strategy-breakdown-table-body');
+    const modal = document.getElementById('strategy-breakdown-modal');
+    const modalContent = document.getElementById('strategy-breakdown-modal-content');
+
+    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400 italic">Calculating metrics...</td></tr>';
+
+    // --- WARNING INJECTION FOR NORMALIZATION ---
+    const warningId = 'breakdown-normalization-warning';
+    const existingWarning = document.getElementById(warningId);
+    if (existingWarning) existingWarning.remove(); // Clean up previous
+
+    const normalizeCheckbox = document.getElementById('normalize-risk-checkbox'); // Primary
+    const searchNormCheckbox = document.getElementById('search-normalization-enabled'); // Search
+
+    const isGlobalNormalized = (normalizeCheckbox && normalizeCheckbox.checked) ||
+        (searchNormCheckbox && searchNormCheckbox.checked);
+
+    const isPortfolioNormalized = p.riskConfig && p.riskConfig.isScaled;
+
+    if (isGlobalNormalized || isPortfolioNormalized) {
+        const warningHTML = `
+            <div id="${warningId}" class="mx-6 mt-4 p-3 bg-yellow-900/40 border border-yellow-600/50 rounded-lg flex items-start gap-3">
+                <span class="text-xl">⚠️</span>
+                <div class="text-sm text-yellow-200">
+                    <p class="font-bold">Aviso: Datos Normalizados</p>
+                    <p class="opacity-90">Estás visualizando el desglose de riesgo sobre datos normalizados. Los valores mostrados pueden diferir de los históricos reales.</p>
+                </div>
+            </div>
+        `;
+        // Inject after header
+        const header = modalContent.querySelector('.border-b.border-gray-700');
+        if (header) header.insertAdjacentHTML('afterend', warningHTML);
+    }
+
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+        modal.classList.remove('opacity-0');
+        modalContent.classList.remove('scale-95');
+    }, 10);
+
+    // Timeout to allow UI render before heavy calc
+    setTimeout(() => {
+        console.log('[RiskModal] Starting calculation...');
+        // Ensure we have something to iterate over. 
+        // Saved portfolios might use 'strategyIds' or just have 'strategies' count?
+        // If p.indices is missing but we have strategyNames, use that.
+        let loopSource = p.indices;
+        if (!loopSource || loopSource.length === 0) {
+            if (p.strategyNames && p.strategyNames.length > 0) {
+                // Create dummy indices if we only have names (Saved Portfolio case)
+                loopSource = p.strategyNames.map((_, i) => i);
+                console.log(`[RiskModal] Using strategyNames as loop source. Length: ${loopSource.length}`);
+            } else {
+                console.warn('[RiskModal] No indices or strategyNames found.');
+                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No strategies found in this portfolio.</td></tr>';
+                return;
+            }
+        } else {
+            console.log(`[RiskModal] Using p.indices. Length: ${loopSource.length}`);
+        }
+
+        // Formatting helper: 2,000 -> 2 000
+        const fmt = (n, d = 0) => n.toLocaleString('en-US', {
+            minimumFractionDigits: d,
+            maximumFractionDigits: d
+        }).replace(/,/g, ' ');
+
+        let totalPortfolioBalance = 0;
+
+        const rows = loopSource.map((stratIdx, localIdx) => {
+            // 1. Resolve Strategy
+            // For Saved Portfolios without direct indices mapping to current session, we rely on strategyNames
+            let stratRef = null;
+            if (p.indices && p.indices[localIdx] !== undefined) {
+                stratRef = window.analysisResults[p.indices[localIdx]];
+            }
+
+            let stratName = stratRef ? stratRef.name : `Strategy ${localIdx + 1}`;
+            if (p.strategyNames && p.strategyNames[localIdx]) stratName = p.strategyNames[localIdx];
+
+            // Normalize Name for display
+            stratName = stratName.replace(/\.csv$/i, '').trim();
+
+            console.log(`[RiskModal] Row ${localIdx}: ${stratName} (Ref: ${!!stratRef})`);
+
+            // 2. Get Real Trades
+            const realTrades = getRealTradesForStrategy(stratIdx, p);
+            console.log(`[RiskModal]   Real Trades: ${realTrades.length}`);
+
+            // 3. Calc Real Peaks
+            let maxRealDD = 0;
+            let maxRealStagD = 0;
+            let maxRealStagT = 0;
+            const hasReal = realTrades.length > 0;
+            let runBal = 0; // Moved outside if
+
+            if (hasReal) {
+                // Sort Chrono
+                const sorted = [...realTrades].sort((a, b) => new Date(a.closeTime || a.closeDate) - new Date(b.closeTime || b.closeDate));
+                let maxRunBal = -Infinity;
+                let maxBalDate = null;
+                let maxBalIndex = -1;
+
+                sorted.forEach((t, i) => {
+                    const net = (t.profit || 0) + (t.commission || 0) + (t.swap || 0);
+                    runBal += net;
+                    const cDate = new Date(t.closeTime || t.closeDate);
+
+                    if (runBal >= maxRunBal) {
+                        maxRunBal = runBal;
+                        maxBalDate = cDate;
+                        maxBalIndex = i;
+                    } else {
+                        // Drawdown
+                        const dd = Math.abs(runBal - maxRunBal);
+                        if (dd > maxRealDD) maxRealDD = dd;
+
+                        // Stag Days
+                        if (maxBalDate) {
+                            const sd = Math.ceil(Math.abs(cDate - maxBalDate) / (1000 * 60 * 60 * 24));
+                            if (sd > maxRealStagD) maxRealStagD = sd;
+                        }
+                        // Stag Trades
+                        if (maxBalIndex !== -1) {
+                            const st = i - maxBalIndex;
+                            if (st > maxRealStagT) maxRealStagT = st;
+                        }
+                    }
+                });
+            }
+
+            // Accumulate Total
+            totalPortfolioBalance += runBal;
+
+            // 4. Get Backtest Metrics & Compare
+            const findVal = (keys) => {
+                const sources = [stratRef?.metrics, stratRef?.analysis, stratRef?.sqMetrics, stratRef];
+                for (const src of sources) {
+                    if (!src) continue;
+                    for (const key of keys) {
+                        if (src[key] !== undefined && src[key] !== null) return src[key];
+                    }
+                }
+                return null;
+            };
+
+            // Metrics: Real | Backtest | Yield
+            const renderCell = (realVal, btKeysDollar, btKeysGen, isMoney = false) => {
+                // Find BT Val
+                let btVal = findVal(btKeysDollar);
+                let isPct = false;
+                if (btVal === null && isMoney) {
+                    // Try generic, assume %
+                    btVal = findVal(btKeysGen);
+                    if (btVal !== null) isPct = true;
+                } else if (!isMoney) {
+                    btVal = findVal(btKeysGen);
+                }
+
+                const realDisp = hasReal ? (isMoney ? `$${fmt(realVal, 2)}` : fmt(realVal, 0)) : '-';
+
+                let btDisp = '-';
+                let yieldDisp = '-';
+                let yieldVal = 0;
+
+                if (btVal !== null) {
+                    const num = parseFloat(btVal);
+                    if (!isNaN(num) && num !== 0) {
+                        if (isPct) btDisp = `${num.toFixed(2)}%`;
+                        else btDisp = isMoney ? `$${fmt(num, 2)}` : fmt(num, 0);
+
+                        if (hasReal && !isPct) {
+                            yieldVal = (realVal / num) * 100;
+                            yieldDisp = `${yieldVal.toFixed(1)}%`;
+                        }
+                    }
+                }
+
+                // Styling Yield
+                let yieldClass = 'text-gray-500';
+                if (yieldVal > 80) yieldClass = 'text-red-500 font-bold';
+                else if (yieldVal > 50) yieldClass = 'text-orange-400 font-bold';
+                else if (hasReal && yieldVal > 0) yieldClass = 'text-blue-300';
+
+                return `
+                    <div class="leading-tight">
+                        <div class="font-bold text-gray-200">${realDisp}</div>
+                        <div class="text-[10px] text-gray-500 mt-0.5">
+                            Max BT: <span class="text-gray-400">${btDisp}</span>
+                        </div>
+                        ${yieldDisp !== '-' ? `<div class="text-[10px] ${yieldClass} mt-0.5">Yield: ${yieldDisp}</div>` : ''}
+                    </div>
+                `;
+            };
+
+            const cellDD = renderCell(maxRealDD, ['maxDrawdownInDollars', 'drawdown_money'], ['maxDrawdown'], true);
+            const cellDays = renderCell(maxRealStagD, [], ['maxStagnationDays', 'stagnationDays']);
+            const cellTrades = renderCell(maxRealStagT, [], ['maxStagnationTrades', 'stagnationTrades']);
+
+            const stats = hasReal ? `<span class="text-green-400 text-xs">Active</span>` : `<span class="text-gray-600 text-xs">-</span>`;
+
+            return `
+                <tr class="hover:bg-gray-800/50 transition-colors border-b border-gray-800 last:border-0">
+                    <td class="p-4 font-medium text-sky-300">
+                        <div class="flex items-center">
+                            <div class="truncate w-48" title="${stratName}">${stratName}</div>
+                            <button onclick="event.stopPropagation(); window.openRealTradesModal(${stratIdx}, 'strategy', ${portfolioIndex})" 
+                                class="ml-2 text-gray-400 hover:text-white transition-colors" 
+                                title="View Real Trades">
+                                🔍
+                            </button>
+                        </div>
+                        <div class="text-[10px] text-gray-500 mt-1">${fmt(realTrades.length)} trades</div>
+                    </td>
+                    <td class="p-4 text-center bg-gray-900/30">${cellDD}</td>
+                    <td class="p-4 text-center">${cellDays}</td>
+                    <td class="p-4 text-center bg-gray-900/30">${cellTrades}</td>
+                    <td class="p-4 text-right font-bold ${runBal >= 0 ? 'text-green-400' : 'text-red-400'}">
+                        $${fmt(runBal, 2)}
+                    </td>
+                    <td class="p-4 text-right">${stats}</td>
+                </tr>
+            `;
+
+        }); // Removed .join('') here
+
+        // Add Total Row
+        const totalRow = `
+            <tr class="bg-gray-800 border-t-2 border-gray-700 font-bold">
+                <td class="p-4 text-white text-right font-medium text-sky-300" colspan="4">TOTAL BALANCE</td>
+                <td class="p-4 text-right ${totalPortfolioBalance >= 0 ? 'text-green-300' : 'text-red-300'} text-lg">
+                    $${fmt(totalPortfolioBalance, 2)}
+                </td>
+                <td></td>
+            </tr>
+        `;
+
+        console.log(`[RiskModal] Generated ${rows.length} rows. Injecting into DOM...`);
+        tbody.innerHTML = rows.join('') + totalRow;
+        console.log('[RiskModal] Injection complete.');
+    }, 50);
+};

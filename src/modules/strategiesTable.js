@@ -4,6 +4,7 @@ import { focusMode } from './focusMode.js';
 import { CustomizableTable } from './tableEngine.js';
 import { openSearchConfigModal } from './searchConfig.js';
 import { analyzeCustomPortfolio } from './portfolioBuilder.js?v=2';
+import { showToast } from './notifications.js';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -24,19 +25,20 @@ const AVAILABLE_COLUMNS = [
     { id: 'maxDrawdown', label: 'Max DD %', minWidth: 100 }, // Extra but useful
     { id: 'cagr', label: 'CAGR %', minWidth: 80 },
     { id: 'avgTrade', label: 'Avg Trade', minWidth: 100 },
-    { id: 'maxConsecutiveLosses', label: 'Max Cons. Losses', minWidth: 100 }
+    { id: 'maxConsecutiveLosses', label: 'Max Cons. Losses', minWidth: 100 },
+    { id: 'gammaFlowScore', label: 'Gamma Flow Score', minWidth: 100 }
 ];
 
 // Default configuration
 const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn', 'maxConsecutiveLosses'],
+    visibleColumns: ['name', 'gammaFlowScore', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn', 'maxConsecutiveLosses'],
     columnWidths: {}
 };
 
 // Create table instance
 const strategiesTable = new CustomizableTable({
     id: 'strategies',
-    storageKey: 'strategiesTableConfig_v7', // Force reset for new columns
+    storageKey: 'strategiesTableConfig_v10', // Force reset for new columns
     columns: AVAILABLE_COLUMNS,
     defaultConfig: DEFAULT_CONFIG,
     containerId: 'strategies-content',
@@ -65,9 +67,6 @@ export const renderStrategiesTable = () => {
     const tableHead = document.querySelector('#strategies-content thead tr');
     const tableBody = document.getElementById('strategies-table-body');
     if (!tableBody || !tableHead) return;
-
-    console.log('[StrategiesTable] Rendering table with', window.analysisResults?.length || 0, 'strategies');
-    console.log('[StrategiesTable] Current View Mode:', state.activeViewMode);
 
     const config = strategiesTable.getConfig();
 
@@ -147,13 +146,30 @@ export const renderStrategiesTable = () => {
     // FILTER: Reality Check Mode
     if (state.activeViewMode === 'reality-check') {
         const totalStrategies = strategies.length;
+
+        // 1. Identify all strategies belonging to Linked Portfolios
+        const linkedStrategyIndices = new Set();
+        if (state.savedPortfolios) {
+            state.savedPortfolios.forEach(p => {
+                if (p.linkedAccountId && p.indices) {
+                    p.indices.forEach(idx => linkedStrategyIndices.add(idx));
+                }
+            });
+        }
+
         strategies = strategies.filter(s => {
+            // A. Check Direct Magic Number Linking
             // Get ID from loaded files using original index
             const file = state.loadedStrategyFiles[s.originalIndex];
             const id = file ? (file.strategyId || file.name) : s.name;
-            return state.magicNumberMap && state.magicNumberMap[id] && state.magicNumberMap[id].length > 0;
+            const hasDirectMap = state.magicNumberMap && state.magicNumberMap[id] && state.magicNumberMap[id].length > 0;
+
+            // B. Check Portfolio Association (Fallback)
+            const isPartofLinkedPortfolio = linkedStrategyIndices.has(s.originalIndex);
+
+            return hasDirectMap || isPartofLinkedPortfolio;
         });
-        console.log(`[StrategiesTable] 🔍 Reality Check Filter: Showing ${strategies.length} / ${totalStrategies} strategies (Linked to Myfxbook)`);
+        console.log(`[StrategiesTable] 🔍 Reality Check Filter: Showing ${strategies.length} / ${totalStrategies} strategies (Linked to Myfxbook or in Linked Portfolio)`);
     }
 
     // Update count badge
@@ -214,9 +230,7 @@ export const renderStrategiesTable = () => {
         row.appendChild(tdCheckbox);
 
         // Data Cells
-        if (index === 0) {
-            console.log('[DEBUG RENDER] Visible Columns:', config.visibleColumns);
-        }
+        // if (index === 0) { ... } // Debug removed
 
         config.visibleColumns.forEach(colId => {
             const td = document.createElement('td');
@@ -228,113 +242,7 @@ export const renderStrategiesTable = () => {
                 td.className += ' font-medium text-white';
                 td.title = value; // Tooltip for full name
 
-                // --- RISK BADGE (Reality Check Mode) ---
-                if (state.activeViewMode === 'reality-check' && state.magicNumberMap) {
-                    // Resolve Strategy ID
-                    const file = state.loadedStrategyFiles[strategy.originalIndex];
-                    const sId = file ? (file.strategyId || file.name) : value;
-                    const magicRaw = state.magicNumberMap[sId] || state.magicNumberMap[value];
-
-                    if (magicRaw) {
-                        // Get Real Trades from ANY linked portfolio
-                        let magics = Array.isArray(magicRaw) ? magicRaw : (typeof magicRaw === 'string' ? magicRaw.split(',') : [String(magicRaw)]);
-                        let allRealTrades = [];
-
-                        // Find trades in saved portfolios
-                        state.savedPortfolios.forEach(p => {
-                            if (p.realMetrics && p.realMetrics._tradesById) {
-                                magics.forEach(m => {
-                                    const trades = p.realMetrics._tradesById[m.trim()];
-                                    if (trades) allRealTrades = allRealTrades.concat(trades);
-                                });
-                            }
-                        });
-
-                        if (allRealTrades.length > 0) {
-                            // Calculate Risk % based on Mode
-                            let ddPercent = 0;
-                            let stagPercent = 0;
-                            let riskIcon = '🛡️';
-                            let riskColor = 'text-green-400';
-                            let stagLabel = '';
-
-                            // Sort trades by time
-                            allRealTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
-
-                            // Common Data Prep
-                            let maxEq = -Infinity;
-                            let lastHighIndex = 0;
-                            let lastHighTime = new Date(allRealTrades[0].closeTime).getTime();
-                            let maxRealDD = 0;
-                            let currentEq = 0;
-
-                            allRealTrades.forEach((t, index) => {
-                                currentEq += (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
-                                if (currentEq > maxEq) {
-                                    maxEq = currentEq;
-                                    lastHighIndex = index;
-                                    lastHighTime = new Date(t.closeTime).getTime();
-                                }
-                                const dd = maxEq - currentEq;
-                                if (dd > maxRealDD) maxRealDD = dd;
-                            });
-
-                            // 1. Drawdown Risk (Always)
-                            const backtestMaxDD = Math.abs(Number(metrics.maxDrawdownInDollars || metrics.maxDrawdown || 1000));
-                            ddPercent = (maxRealDD / backtestMaxDD) * 100;
-
-                            // 2. Stagnation Risk (Based on Mode)
-                            if (state.stagnationMode === 'trades') {
-                                const currentStagnationTrades = (allRealTrades.length - 1) - lastHighIndex;
-                                const limit = Number(metrics.maxStagnationTrades || 1);
-                                stagPercent = (currentStagnationTrades / limit) * 100;
-                                stagLabel = 'Stag(T)';
-                            } else {
-                                // Default: Days
-                                const lastDate = new Date(allRealTrades[allRealTrades.length - 1].closeTime).getTime();
-                                const currentStagnationDays = (lastDate - lastHighTime) / (1000 * 60 * 60 * 24);
-                                const limit = Number(metrics.maxStagnationDays || 1);
-                                stagPercent = (currentStagnationDays / limit) * 100;
-                                stagLabel = 'Stag(D)';
-                            }
-
-                            // Determine Icon (Based on Worst Risk)
-                            const maxRisk = Math.max(ddPercent, stagPercent);
-                            if (maxRisk >= 100) { riskColor = 'text-red-500 font-bold'; riskIcon = '🚨'; }
-                            else if (maxRisk >= 80) { riskColor = 'text-orange-400'; riskIcon = '⚠️'; }
-
-                            value = `${value} <span class="ml-2 ${riskColor} text-xs bg-gray-800 px-1.5 py-0.5 rounded border border-gray-600">DD: ${ddPercent.toFixed(0)}% | ${stagLabel}: ${stagPercent.toFixed(0)}% ${riskIcon}</span>`;
-
-                            // Add Magnifying Glass for Real Trades
-                            if (state.activeViewMode === 'reality-check') {
-                                const realTradesBtn = document.createElement('button');
-                                realTradesBtn.className = 'view-real-trades-btn ml-2 text-gray-400 hover:text-white transition-colors';
-                                realTradesBtn.dataset.strategyIndex = originalIndex;
-                                realTradesBtn.title = 'View Real Trades';
-                                realTradesBtn.innerHTML = '🔍';
-                                realTradesBtn.addEventListener('click', (e) => {
-                                    e.stopPropagation(); // Prevent row selection
-                                    const index = parseInt(e.currentTarget.dataset.strategyIndex);
-                                    if (window.openRealTradesModal) {
-                                        window.openRealTradesModal(index);
-                                    } else {
-                                        console.error("openRealTradesModal function not found!");
-                                    }
-                                });
-                                td.innerHTML = value; // Set the value first
-                                td.appendChild(realTradesBtn); // Then append the button
-                            } else {
-                                td.innerHTML = value; // Use innerHTML because value might contain HTML now
-                            }
-                        } else {
-                            td.innerHTML = value; // Use innerHTML because value might contain HTML now
-                        }
-                    } else {
-                        td.innerHTML = value; // Use innerHTML because value might contain HTML now
-                    }
-                } else {
-                    td.innerHTML = value; // Use innerHTML because value might contain HTML now
-                }
+                td.textContent = value;
             } else {
                 td.className += ' text-right';
                 td.textContent = formatMetricForDisplay(value, colId);
@@ -543,7 +451,10 @@ export const updateFloatingActionBar = () => {
             <span>🧪</span>
             <span>Test Selection</span>
         </button>
-        <button id="fab-deselect-all-btn" class="bg-red-500 hover:bg-red-600 px-3 py-2 rounded-full font-bold transition-all">
+        <button id="fab-delete-selection" class="bg-red-500 hover:bg-red-600 px-3 py-2 rounded-full font-bold transition-all text-white flex items-center gap-2" title="Delete selected strategies permanently">
+            <span>🗑️</span>
+        </button>
+        <button id="fab-deselect-all-btn" class="bg-gray-500 hover:bg-gray-600 px-3 py-2 rounded-full font-bold transition-all">
             Clear
         </button>
     `;
@@ -558,8 +469,64 @@ export const updateFloatingActionBar = () => {
         analyzeCustomPortfolio(selectedIndices);
     });
 
+    document.getElementById('fab-delete-selection').addEventListener('click', () => {
+        deleteSelectedStrategies();
+    });
+
     document.getElementById('fab-deselect-all-btn').addEventListener('click', () => {
         selectedStrategies.clear();
         renderStrategiesTable();
     });
+};
+
+const deleteSelectedStrategies = () => {
+    const indicesToDelete = Array.from(selectedStrategies).sort((a, b) => b - a); // Sort descending to splice correctly
+    if (indicesToDelete.length === 0) return;
+
+    if (!confirm(`Are you sure you want to PERMANENTLY delete ${indicesToDelete.length} strategies? This cannot be undone.`)) {
+        return;
+    }
+
+    // 1. Remove from State
+    indicesToDelete.forEach(originalIndex => {
+        if (state.loadedStrategyFiles[originalIndex]) {
+            state.loadedStrategyFiles.splice(originalIndex, 1);
+        }
+        if (state.rawStrategiesData[originalIndex]) {
+            state.rawStrategiesData.splice(originalIndex, 1);
+        }
+    });
+
+    // 2. Remove from Analysis Results
+    if (window.analysisResults) {
+        window.analysisResults = window.analysisResults.filter(r =>
+            // Keep if it's NOT a strategy strategy with an index in our delete list
+            // OR if it's a portfolio/special item
+            (r.originalIndex === undefined) || (!indicesToDelete.includes(r.originalIndex))
+        );
+
+        // 3. Re-index remaining strategies
+        // We only need to shift indices for items that were originally AFTER the deleted ones.
+        // But since we just filtered, the simplest way is to re-assign based on new order 
+        // assuming window.analysisResults maintains order relative to state.loadedStrategyFiles for strategies.
+        // Strategies are usually at the beginning of window.analysisResults.
+
+        // Better approach: Re-map window.analysisResults originalIndex for ALL strategies
+        // because loadedStrategyFiles has shifted.
+        let strategyCount = 0;
+        window.analysisResults.forEach(r => {
+            if (r.originalIndex !== undefined && !r.isSavedPortfolio && !r.isDatabankPortfolio && !r.isCurrentPortfolio) {
+                // Verify if this matches the file at the new index (sanity check not exhaustive here)
+                r.originalIndex = strategyCount++;
+            }
+        });
+    }
+
+    // 4. Update UI
+    selectedStrategies.clear();
+    renderStrategiesTable();
+    showToast(`${indicesToDelete.length} strategies deleted`, 'success');
+
+    // 5. Notify other modules (e.g. to update File List in Config)
+    window.dispatchEvent(new CustomEvent('strategies-deleted'));
 };

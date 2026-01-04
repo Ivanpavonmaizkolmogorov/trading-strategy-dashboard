@@ -245,8 +245,9 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
     saveBtn.onclick = () => {
         // Add to saved portfolios
         // Use 'indices' from the closure, as portfolio result from backend might not have it
-        const names = indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '').substring(0, 5)).join('+');
+        const names = indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '')).join('+');
         const strategyIds = indices.map(i => state.loadedStrategyFiles[i].strategyId);
+        const strategyNames = indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', ''));
 
         // Calculate SQ Metrics for persistence
         let allTrades = [];
@@ -270,6 +271,7 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
             name: `Manual (${names})`,
             indices: indices,
             strategyIds: strategyIds, // <--- SAVE STRATEGY IDs
+            strategyNames: strategyNames, // <--- SAVE STRATEGY NAMES
             id: generatePortfolioId(`Manual (${names})`, strategyIds),
             weights: null,
             metrics: portfolio.metrics, // Save pre-calculated metrics

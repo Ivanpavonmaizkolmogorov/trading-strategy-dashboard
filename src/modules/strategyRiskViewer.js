@@ -4,11 +4,15 @@ import { state } from '../state.js';
  * Generates the HTML for the Strategy Risk Viewer Modal.
  */
 const ensureStrategyRiskModalExists = () => {
-    if (document.getElementById('strategy-risk-modal')) return;
+    const existingModal = document.getElementById('strategy-risk-modal');
+    if (existingModal) {
+        // FORCE REMOVAL to ensure new styles and logic are applied immediately
+        existingModal.remove();
+    }
 
     const modalHTML = `
     <div id="strategy-risk-modal" class="fixed inset-0 bg-gray-900/80 backdrop-blur-sm z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
-        <div class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col transform scale-95 transition-transform duration-300" id="strategy-risk-modal-content">
+        <div class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-11/12 max-w-none max-h-[90vh] flex flex-col transform scale-95 transition-transform duration-300" id="strategy-risk-modal-content">
             <!-- Header -->
             <div class="flex justify-between items-center p-6 border-b border-gray-700 bg-gray-800/50 rounded-t-xl">
                 <div>
@@ -22,8 +26,10 @@ const ensureStrategyRiskModalExists = () => {
                 </button>
             </div>
 
-            <!-- Body -->
-            <div class="p-6 overflow-y-auto">
+            <!-- Wrapper for Scrollable Content -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar">
+                <!-- Body -->
+                <div class="p-6">
                 <div class="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3 mb-4 flex flex-col gap-2">
                     <div class="flex items-start gap-3">
                         <span class="text-blue-400 text-xl">ℹ️</span>
@@ -55,10 +61,23 @@ const ensureStrategyRiskModalExists = () => {
             
             <!-- Footer -->
             <div class="p-4 border-t border-gray-700 bg-gray-800/50 rounded-b-xl flex justify-end">
+                <button id="btn-show-correlation" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors mr-auto border border-gray-600">
+                    📊 Ver Matriz de Correlación
+                </button>
                 <button id="btn-close-risk-viewer" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                     Cerrar
                 </button>
             </div>
+            
+            <!-- Correlation Matrix Container (Hidden by default) -->
+            <div id="correlation-matrix-container" class="hidden p-6 border-t border-gray-700 bg-gray-800/50">
+                <h3 class="text-md font-bold text-gray-300 mb-3">Matriz de Correlación (PnL Diario)</h3>
+                <div id="correlation-matrix-content" class="overflow-x-auto">
+                    <p class="text-sm text-gray-500 animate-pulse">Cargando...</p>
+                </div>
+                </div>
+            </div>
+        </div>
         </div>
     </div>`;
 
@@ -82,15 +101,132 @@ const ensureStrategyRiskModalExists = () => {
         if (e.target === modal) closeModal();
     });
 
-    // Recalculate on input change
-    baseInput.addEventListener('input', () => {
-        const baseVal = parseFloat(baseInput.value) || 0;
-        document.querySelectorAll('.risk-viewer-calculated-cell').forEach(cell => {
-            const weight = parseFloat(cell.dataset.weight);
-            cell.textContent = (weight * baseVal).toFixed(0);
-        });
+    // Show Correlation Matrix
+    document.getElementById('btn-show-correlation').addEventListener('click', async () => {
+        const container = document.getElementById('correlation-matrix-container');
+        const content = document.getElementById('correlation-matrix-content');
+
+        if (container.classList.contains('hidden')) {
+            container.classList.remove('hidden');
+            // Auto-scroll to bottom
+            setTimeout(() => container.scrollIntoView({ behavior: 'smooth' }), 100);
+
+            // Fetch Data
+            content.innerHTML = '<p class="text-sm text-gray-500 animate-pulse">Calculando correlaciones...</p>';
+
+            try {
+                // Get current portfolio index from the modal title's context - we need to store it or look it up.
+                // We can get it from the openStrategyRiskModal closure if we attach it to the DOM or state.
+                // Better: Pass it via data attribute on the modal when opening.
+                const modal = document.getElementById('strategy-risk-modal');
+                const portfolioIndex = modal.dataset.portfolioIndex;
+                const source = modal.dataset.source;
+
+                if (!portfolioIndex) return;
+
+                const portfolio = source === 'databank' ? state.databankPortfolios[portfolioIndex] : state.savedPortfolios[portfolioIndex];
+                if (!portfolio) throw new Error("Portfolio not found");
+
+                let strategyIndices = [];
+                if (portfolio.strategyIds && portfolio.strategyIds.length > 0) {
+                    // Resolve IDs to current indices
+                    portfolio.strategyIds.forEach(id => {
+                        const idx = state.loadedStrategyFiles.findIndex(f => f.strategyId === id);
+                        if (idx !== -1) strategyIndices.push(idx);
+                    });
+                }
+
+                // Fallback: If ID resolution failed (linkage broken) but we have legacy indices, use them.
+                if (strategyIndices.length < 2 && portfolio.indices && portfolio.indices.length >= 2) {
+                    console.warn("[RiskViewer] ID lookup failed for correlation. Falling back to indices.");
+                    strategyIndices = portfolio.indices;
+                }
+
+                // Fallback 2: If no strategyIds/indices list but 'indices' property exists (legacy-legacy)
+                if (strategyIndices.length === 0 && portfolio.indices) {
+                    strategyIndices = portfolio.indices;
+                }
+
+                if (strategyIndices.length < 2) {
+                    content.innerHTML = '<p class="text-sm text-yellow-500">Se necesitan al menos 2 estrategias para calcular correlación.</p>';
+                    return;
+                }
+
+                // Prepare Request
+                const requestBody = {
+                    portfolio_indices: strategyIndices,
+                    strategies_data: state.rawStrategiesData
+                };
+
+                const response = await fetch('/analysis/correlation-matrix', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+
+                if (data.matrix) {
+                    renderCorrelationHeatmap(data.matrix, strategyIndices, content);
+                } else {
+                    throw new Error(data.detail || "Error desconocido");
+                }
+
+            } catch (e) {
+                console.error(e);
+                content.innerHTML = `<p class="text-sm text-red-400">Error: ${e.message}</p>`;
+            }
+        } else {
+            container.classList.add('hidden');
+        }
     });
 };
+
+function renderCorrelationHeatmap(matrix, indices, container) {
+    let html = '<table class="w-full text-xs text-center border-collapse table-auto">';
+
+    // Indices to Names (Full names)
+    const names = indices.map(idx => {
+        const file = state.loadedStrategyFiles[idx];
+        return file ? file.name.replace('.csv', '') : `Strat #${idx}`;
+    });
+
+    // Header
+    html += '<thead><tr><th class="p-1"></th>';
+    names.forEach(name => html += `<th class="p-2 text-gray-400 font-normal rotate-45 h-64 align-bottom whitespace-nowrap min-w-[80px] text-[10px]" title="${name}">${name}</th>`);
+    html += '</tr></thead><tbody>';
+
+    matrix.forEach((row, i) => {
+        html += `<tr><td class="p-2 text-gray-400 font-normal text-right whitespace-nowrap text-[10px]" title="${names[i]}">${names[i]}</td>`;
+        row.forEach((val, j) => {
+            let colorClass = 'text-gray-500';
+            let bgStyle = '';
+
+            if (i === j) {
+                colorClass = 'text-gray-600'; // Diagonal
+            } else {
+                const absVal = Math.abs(val);
+                // Color scale: Green (0) -> Yellow (0.5) -> Red (1.0)
+                // Simple traffic light logic
+                if (val > 0.7) colorClass = 'text-red-400 font-bold';
+                else if (val > 0.4) colorClass = 'text-yellow-400';
+                else colorClass = 'text-green-400';
+
+                // Background opacity for emphasis
+                const opacity = Math.max(0.1, absVal * 0.3);
+                const r = val > 0 ? 255 : 0; // Red for positive, Green/Blue for negative? Usually correlation is Red=High
+                // Let's stick to text color for now to keep it clean, maybe slight bg
+                bgStyle = `background-color: rgba(${val > 0.5 ? '255,0,0' : '0,255,0'}, ${opacity})`;
+            }
+
+            html += `<td class="p-2 border border-gray-700/50 ${colorClass}" style="${bgStyle}">${val.toFixed(2)}</td>`;
+        });
+        html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
 
 /**
  * Opens the Strategy Risk Viewer for a portfolio.
@@ -102,9 +238,42 @@ export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
     const portfolio = source === 'databank' ? state.databankPortfolios[portfolioIndex] : state.savedPortfolios[portfolioIndex];
     if (!portfolio) return;
 
+    // Store context for button handlers
+    const modal = document.getElementById('strategy-risk-modal');
+    modal.dataset.portfolioIndex = portfolioIndex;
+    modal.dataset.source = source;
+
+    // Reset View
+    document.getElementById('correlation-matrix-container').classList.add('hidden');
     document.getElementById('strategy-risk-portfolio-name').textContent = `Portafolio: ${portfolio.name}`;
     const tbody = document.getElementById('strategy-risk-table-body');
     tbody.innerHTML = '';
+
+    // --- WARNING INJECTION ---
+    const warningId = 'risk-viewer-normalization-warning';
+    const bodyContainer = modal.querySelector('.p-6'); // The main padding container
+    const existingWarning = document.getElementById(warningId);
+    if (existingWarning) existingWarning.remove();
+
+    const normalizeCheckbox = document.getElementById('normalize-risk-checkbox');
+    // Check State for Search Configuration (as element might be missing)
+    const isGlobalNormalized = (normalizeCheckbox && normalizeCheckbox.checked) ||
+        (state.currentOptimizationData && state.currentOptimizationData.normalizationEnabled);
+
+    const isPortfolioNormalized = portfolio.riskConfig && portfolio.riskConfig.isScaled;
+
+    if (isGlobalNormalized || isPortfolioNormalized) {
+        const warningHTML = `
+            <div id="${warningId}" class="bg-yellow-900/40 border border-yellow-600/50 rounded-lg p-3 mb-4 flex items-start gap-3">
+                <span class="text-xl">⚠️</span>
+                <div class="text-sm text-yellow-200">
+                    <p class="font-bold">Aviso: Datos Normalizados</p>
+                    <p class="opacity-90">Estás visualizando el desglose de riesgo sobre datos normalizados. Los valores de riesgo originales podrían diferir.</p>
+                </div>
+            </div>
+        `;
+        bodyContainer.insertAdjacentHTML('afterbegin', warningHTML);
+    }
 
     // Determine strategies and weights
     let strategies = [];
@@ -116,6 +285,12 @@ export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
 
     // Helper to get strategy count first
     const count = (portfolio.strategyIds && portfolio.strategyIds.length) || (portfolio.indices && portfolio.indices.length) || 0;
+
+    console.log("[DEBUG RISK VIEWER] Opening modal for portfolio:", portfolio);
+    console.log("[DEBUG RISK VIEWER] riskPerStrategy:", portfolio.riskPerStrategy);
+    console.log("[DEBUG RISK VIEWER] riskConfig:", portfolio.riskConfig);
+
+    const hasStoredNames = (portfolio.strategyNames && portfolio.strategyNames.length > 0);
 
     // Reset base input
     // User prefers "100 per strategy" as the mental model for default equal weights.
@@ -131,8 +306,22 @@ export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
     const defaultWeight = count > 0 ? (1 / count) : 0;
 
     if (portfolio.strategyIds && portfolio.strategyIds.length > 0) {
+        console.log(`[RiskViewer] Resolving names for portfolio: ${portfolio.name}`);
+        console.log(`[RiskViewer] Has stored strategyNames?`, !!portfolio.strategyNames, portfolio.strategyNames);
+
         strategies = portfolio.strategyIds.map((id, idx) => {
             const file = state.loadedStrategyFiles.find(f => f.strategyId === id);
+
+            // Default name: Try file name -> Try stored strategyName -> Fallback to ID
+            let name = file ? file.name.replace('.csv', '') : `Strategy ${id}`;
+            let source = file ? 'File' : 'ID-Fallback';
+
+            if (portfolio.strategyNames && portfolio.strategyNames[idx]) {
+                name = portfolio.strategyNames[idx];
+                source = 'Stored-Name';
+            }
+
+            console.log(`[RiskViewer] Strat #${idx} (ID: ${id}): Resolved Name="${name}" (Source: ${source})`);
 
             let w = defaultWeight;
             let r = null;
@@ -145,7 +334,7 @@ export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
             }
 
             return {
-                name: file ? file.name.replace('.csv', '') : `Strategy ${id}`,
+                name: name,
                 weight: w,
                 risk: r
             };
@@ -153,19 +342,31 @@ export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
     } else if (portfolio.indices) {
         strategies = portfolio.indices.map((index, idx) => {
             const file = state.loadedStrategyFiles[index];
+            // Default name: Try file name -> Try stored strategyName -> Fallback to Index
+            let name = file ? file.name.replace('.csv', '') : `Strategy ${index}`;
+            if (portfolio.strategyNames && portfolio.strategyNames[idx]) {
+                name = portfolio.strategyNames[idx];
+            }
 
             let w = defaultWeight;
             let r = null;
 
             if (hasRiskPerStrategy && riskPerStrategy[idx] !== undefined) {
                 r = riskPerStrategy[idx];
-                w = r / 100;
+                // Weight is inferred relative to base 100 if not explicit weights, or just use equal weight for display if undefined
+                // But if we have risk, we should probably show the effective weight derived from that risk relative to total risk?
+                // For now, let's keep the weight as is (likely 1/N) if not provided.
+                if (!hasWeights) {
+                    w = defaultWeight;
+                } else if (weights[idx] !== undefined) {
+                    w = weights[idx];
+                }
             } else if (hasWeights && weights[idx] !== undefined) {
                 w = weights[idx];
             }
 
             return {
-                name: file ? file.name.replace('.csv', '') : `Strategy ${index}`,
+                name: name,
                 weight: w,
                 risk: r
             };
@@ -211,7 +412,6 @@ export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
         });
     }
 
-    const modal = document.getElementById('strategy-risk-modal');
     modal.classList.remove('hidden');
     // Trigger reflow
     void modal.offsetWidth;

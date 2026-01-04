@@ -63,21 +63,32 @@ export const runAnalysis = async () => {
     dom.resultsDiv.classList.add('hidden');
 
     try {
-        const strategiesPromises = state.loadedStrategyFiles.map(file => {
+        const strategiesPromises = state.loadedStrategyFiles.map((file, index) => {
+            // Case 1: Standard File Object (Newly added via Input)
             if (file instanceof File) {
                 return parseCsv(file);
-            } else if (file.content) {
-                // If we have content string but not a File object (e.g. from manual object creation)
-                // We might need a way to parse string content directly, but parseCsv expects a Blob/File usually.
-                // For now, let's assume parseCsv handles File. 
-                // If it's not a File, we can't use FileReader on it.
-                // But wait, if we have 'content', we don't need FileReader!
-                // We can just return the content if parseCsv supports it, or parse it directly.
-                // However, parseCsv in utils.js likely uses PapaParse on a file.
-                // Let's check utils.js next. For now, just throw a clearer error.
-                throw new Error(`El archivo '${file.name}' no es válido para lectura (falta objeto File). Recarga las estrategias.`);
-            } else {
-                throw new Error(`El archivo '${file.name || 'Desconocido'}' no tiene contenido. Recarga las estrategias.`);
+            }
+            // Case 2: Placeholder from Import (Reuse existing data)
+            else if (file.isPlaceholder && state.rawStrategiesData && state.rawStrategiesData[index]) {
+                console.log(`[Analysis] Using cached data for imported file: ${file.name}`);
+                return Promise.resolve(state.rawStrategiesData[index]);
+            }
+            // Case 3: Manual Object with Content String
+            else if (file.content) {
+                // Convert string content to File object for PapaParse
+                const blob = new Blob([file.content], { type: 'text/csv' });
+                // Fix for File constructor compatibility or simple mock
+                try {
+                    const f = new File([blob], file.name || `strategy_${index}.csv`, { type: 'text/csv' });
+                    return parseCsv(f);
+                } catch (e) {
+                    // Fallback for environments where File constructor might fail (unlikely in modern browser)
+                    console.warn("File constructor fallback", e);
+                    throw new Error("Error creating file from content.");
+                }
+            }
+            else {
+                throw new Error(`El archivo '${file.name || 'Desconocido'}' (Índice ${index}) no tiene contenido válido. Si es importado, intenta recargar el archivo JSON.`);
             }
         });
         state.rawStrategiesData = await Promise.all(strategiesPromises);
@@ -103,7 +114,6 @@ export const runAnalysis = async () => {
  * @param {number} targetMaxDD - Valor objetivo para la normalización.
  */
 const getFullAnalysisFromBackend = async (strategies, portfolios, isRiskNormalized, targetMaxDD) => {
-    console.log(`%c[FRONTEND-LOG] 0.5. Llamando getFullAnalysisFromBackend`, 'color: blue;');
 
     const brokerConfig = loadBrokerConfig();
 
@@ -112,11 +122,9 @@ const getFullAnalysisFromBackend = async (strategies, portfolios, isRiskNormaliz
         benchmark_data: [], // TODO: Benchmark
         portfolios_to_analyze: portfolios,
         is_risk_normalized: isRiskNormalized,
-        normalization_metric: state.normalizationMetric || 'max_dd',
         normalization_target_value: targetMaxDD,
         broker_config: brokerConfig
     };
-    console.log('%c[FRONTEND-LOG] 1. PAYLOAD A ENVIAR AL BACKEND:', 'color: cyan; font-weight: bold;', JSON.parse(JSON.stringify(payload)));
     try {
         const response = await fetch('/analysis/full', {
             method: 'POST',
@@ -154,7 +162,6 @@ export const reAnalyzeAllData = async () => {
 
     const isRiskNormalized = dom.normalizeRiskCheckbox.checked;
     const targetValue = isRiskNormalized ? parseFloat(document.getElementById('target-max-dd').value) : 0;
-    console.log(`%c[FRONTEND-LOG] 0. Normalización Global Activada: ${isRiskNormalized}, Valor Objetivo: ${targetValue}`, 'color: yellow;');
 
     // --- CORREGIDO: Construir una lista de TODOS los portafolios que necesitan análisis del backend ---
     const portfoliosToAnalyze = [];
@@ -192,11 +199,11 @@ export const reAnalyzeAllData = async () => {
         // Using truthy check to catch both undefined and null
         const hasStagnationData = p.metrics && p.metrics.maxStagnationStart && p.metrics.maxStagnationEnd;
         const hasMaxMargin = p.metrics && p.metrics.maxMarginRequired !== undefined;
+        const hasGFS = p.metrics && p.metrics.gammaFlowScore !== undefined;
 
-        const needsRecalculation = !hasMetrics || !hasChartData || !hasStagnationData || !hasMaxMargin || isRiskNormalized; // Si hay normalización global, siempre recalcular para asegurar consistencia visual
+        const needsRecalculation = !hasMetrics || !hasChartData || !hasStagnationData || !hasMaxMargin || !hasGFS || isRiskNormalized; // Si hay normalización global, siempre recalcular para asegurar consistencia visual
 
         if (needsRecalculation) {
-            console.log(`[FRONTEND-LOG] 1.1. Preparando Portafolio Guardado (índice ${i}, id: ${p.id}) para backend. Normalización: ${isNormalizedForThisRun}, Métrica: ${metricForThisRun}, Objetivo: ${targetForThisRun}`);
 
             portfoliosToAnalyze.push({
                 indices: p.indices,
@@ -210,7 +217,7 @@ export const reAnalyzeAllData = async () => {
                 risk_per_strategy: p.riskPerStrategy || null
             });
         } else {
-            console.log(`[FRONTEND-LOG] 1.1. OMITIENDO Portafolio Guardado (índice ${i}) - Ya tiene métricas y no se requiere normalización global.`);
+            // Skipping as metrics are already present
         }
     });
 
@@ -230,7 +237,7 @@ export const reAnalyzeAllData = async () => {
             }
         });
     } else {
-        console.log('[FRONTEND-LOG] 1.2. OMITIENDO Portafolios del DataBank por estar en modo Normalización de Riesgo.');
+        // Ignoring Databank portfolios in global normalization mode
     }
 
     // 2. Añadir el portafolio "en vivo" si hay estrategias seleccionadas en la tabla de resumen.
@@ -254,7 +261,6 @@ export const reAnalyzeAllData = async () => {
     toggleLoading(true, 'Analizando Datos', `Procesando ${state.loadedStrategyFiles.length} estrategias y ${portfoliosToAnalyze.length} portafolios...`, null);
 
     try {
-        console.log(`[FRONTEND-LOG] Enviando ${portfoliosToAnalyze.length} portafolios en una sola petición.`);
         backendAnalyses = await getFullAnalysisFromBackend(state.rawStrategiesData, portfoliosToAnalyze, isRiskNormalized, targetValue);
     } catch (error) {
         console.error("Error durante el análisis:", error);
@@ -263,10 +269,9 @@ export const reAnalyzeAllData = async () => {
         toggleLoading(false);
     }
 
-    console.log("%c[FRONTEND-LOG] 4. DATOS RECIBIDOS DEL BACKEND (Acumulados):", 'color: cyan; font-weight: bold;', JSON.parse(JSON.stringify(backendAnalyses)));
-
     if (!backendAnalyses) return;
 
+    // DEBUG: Snapshot backend real metrics
     // 4. Mapear los resultados del backend al formato que espera el frontend.
     let allAnalysisResults = [];
 
@@ -296,8 +301,38 @@ export const reAnalyzeAllData = async () => {
                 const portfolioInState = state.savedPortfolios[result.saved_index];
                 console.log(`%c[FRONTEND-LOG] 5. Asignando métricas al portafolio guardado (índice ${result.saved_index})`, 'color: lightgreen;');
                 if (portfolioInState) {
+                    // DEBUG: Check if chartData exists
+                    const hasChartData = result.metrics.chartData && result.metrics.chartData.equityCurve && result.metrics.chartData.equityCurve.length > 0;
+                    console.log(`[FRONTEND-LOG] Metrics Keys: ${Object.keys(result.metrics).join(', ')}`);
+                    console.log(`[FRONTEND-LOG] Has Chart Data? ${hasChartData}`);
+
+                    if (!hasChartData && portfolioInState.analysis && portfolioInState.analysis.chartData) {
+                        console.warn("[FRONTEND-LOG] ⚠️ New analysis missing chart data! Preserving old chart data.");
+                        // Preserve old chart data if new is missing (better than nothing)
+                        result.metrics.chartData = portfolioInState.analysis.chartData;
+                    }
+
                     portfolioInState.metrics = result.metrics;
-                    portfolioInState.analysis = result.metrics;
+                    portfolioInState.analysis = result.metrics; // Analysis object often aliases metrics + extra data
+
+                    // --- CORRECCIÓN: Persistir riskPerStrategy si existe ---
+                    if (result.riskPerStrategy) {
+                        console.log(`[FRONTEND-LOG] 5.1. Actualizando riskPerStrategy para índice ${result.saved_index}`, result.riskPerStrategy);
+                        portfolioInState.riskPerStrategy = result.riskPerStrategy;
+
+                        // DEBUG: Verify it stuck
+                        console.log(`[FRONTEND-LOG] 5.2. Verification: portfolioInState.riskPerStrategy is now:`, portfolioInState.riskPerStrategy);
+
+                        // También actualizar la configuración de riesgo si fue una normalización exitosa
+                        if (!portfolioInState.riskConfig) portfolioInState.riskConfig = {};
+                        portfolioInState.riskConfig.isScaled = true;
+                        // Opcional: store metric/target if needed for UI restore
+                    } else {
+                        // Si no devuelve riskPerStrategy (ej. normalización desactivada), limpiarlo si existía
+                        console.warn('[Analysis] WARNING: Deleting riskPerStrategy for portfolio', result.saved_index);
+                        // delete portfolioInState.riskPerStrategy; // DISABLED DEBUG
+                        if (portfolioInState.riskConfig) portfolioInState.riskConfig.isScaled = false;
+                    }
                 }
             }
         } else if (result.is_databank_portfolio) {
@@ -312,14 +347,31 @@ export const reAnalyzeAllData = async () => {
         }
     }
 
+
     // Después de enriquecer, añadimos los portafolios guardados a los resultados para los gráficos.
+    const verificationTable = [];
     state.savedPortfolios.forEach((p, i) => {
-        if (p.metrics) {
-            allAnalysisResults.push({ name: p.name, analysis: p.metrics, isSavedPortfolio: true, savedIndex: i });
+        // Use p.analysis (full object with charts) if available, otherwise p.metrics
+        const analysisData = p.analysis || p.metrics;
+        if (analysisData) {
+            allAnalysisResults.push({
+                name: p.name,
+                analysis: analysisData,
+                isSavedPortfolio: true,
+                savedIndex: i,
+                // --- CORRECCIÓN FINAL: Pasar riskPerStrategy al objeto de visualización ---
+                riskPerStrategy: p.riskPerStrategy,
+                riskConfig: p.riskConfig
+            });
         }
     });
 
+
     console.log("%c[FRONTEND-LOG] 6. ESTADO FINAL de 'savedPortfolios' antes de dibujar:", 'color: orange; font-weight: bold;', JSON.parse(JSON.stringify(state.savedPortfolios)));
+
+    // Dispatch event to notify listeners (like SQ Analysis view) that data has changed
+    document.dispatchEvent(new CustomEvent('portfolio-data-updated'));
+
     displayResults(allAnalysisResults);
 };
 

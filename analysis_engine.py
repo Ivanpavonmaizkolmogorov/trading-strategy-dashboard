@@ -244,6 +244,101 @@ def calculate_max_margin(trades_df: pd.DataFrame, broker_config: dict = None) ->
 
     return max_margin, debug_log
 
+    return max_margin, debug_log
+
+def calculate_beta_moments(data: pd.Series) -> float:
+    """
+    Calculates the Beta (Rate) parameter of a Gamma distribution using Method of Moments.
+    Beta = Mean / Variance
+    """
+    if len(data) < 2: return 0.0
+    mean = data.mean()
+    var = data.var()
+    if var == 0 or mean == 0: return 0.0
+    return mean / var
+
+def calculate_gamma_flow_score(trades_df: pd.DataFrame) -> float:
+    """
+    Calculates the Gamma Flow Score (GFS).
+    GFS = (Beta_TP / Beta_SL) * (AvgWin / |AvgLoss|)
+    """
+    if trades_df.empty: return 0.0
+
+    # 1. Identify TP and SL trades
+    # Robust logic similar to frontend 'getCat'
+    # Use 'close type' or 'exit_reason' if available, fallback to 'comment'
+    
+    # Ensure columns exist and fill NaN
+    comments = trades_df['comment'].fillna('').astype(str).str.lower() if 'comment' in trades_df.columns else pd.Series([''] * len(trades_df))
+    reasons = pd.Series([''] * len(trades_df))
+    
+    if 'close type' in trades_df.columns:
+        reasons = trades_df['close type'].fillna('').astype(str).str.lower()
+    elif 'exit_reason' in trades_df.columns:
+        reasons = trades_df['exit_reason'].fillna('').astype(str).str.lower()
+
+    # Vectorized logic for categorization
+    # TP: reason has 'tp', 'take', 'pt' OR comment has 'tp', 'take profit'
+    is_tp = (reasons.str.contains('tp|take|pt', regex=True)) | (comments.str.contains('tp|take profit', regex=True))
+    
+    # SL: reason has 'sl', 'stop' AND NOT 'trailing' OR comment has 'sl', 'stop loss' AND NOT 'trailing'
+    # Important: Check Exclusions!
+    # Wait, frontend logic prioritized Trailing.
+    # If it is Trailing, it is NOT TP and NOT SL (for this score specifically).
+    # GFS spec specifically mentions TP vs SL. Trailing stops might be considered 'Quality' exits, 
+    # but strictly speaking, Beta_SL usually refers to 'Bad' stops.
+    # User's definition: "Gamma of times between Take Profits" vs "Gamma of times between Stop Losses".
+    # I will stick to strict TP and SL.
+    
+    is_trailing = (reasons.str.contains('trailing', regex=True)) | (comments.str.contains('trailing', regex=True))
+    is_sl = ((reasons.str.contains('sl|stop', regex=True)) | (comments.str.contains('sl|stop loss', regex=True))) & (~is_trailing)
+
+    tp_trades = trades_df[is_tp].sort_values('exit_date')
+    sl_trades = trades_df[is_sl].sort_values('exit_date')
+
+    # 2. Calculate Betas (Rate of arrivals)
+    # We need Inter-Arrival Times in DAYS
+    # "Time between TPs": ExitTime[i] - ExitTime[i-1]
+    
+    # Helper for inter-event times in days
+    def get_inter_times(df):
+        if len(df) < 2: return pd.Series(dtype=float)
+        # diff() of exit_date gives Timedelta
+        diffs = df['exit_date'].diff().dropna()
+        # Convert to days (float)
+        return diffs.dt.total_seconds() / (24 * 3600)
+
+    beta_tp = calculate_beta_moments(get_inter_times(tp_trades))
+    beta_sl = calculate_beta_moments(get_inter_times(sl_trades))
+
+    # 3. Calculate Payoff
+    # Avg Win $ / Avg Loss $ (abs)
+    # Note: Using ALL winning/losing trades for Payoff, or just TP/SL?
+    # Spec says "Avg Win $ of winning trades" and "Avg Loss $ of losing trades".
+    # This usually implies all winners/losers, not just those hit by TP/SL.
+    # But usually TP trades are winners and SL trades are losers.
+    # I will use ALL trades for robustness of Expected Value.
+    
+    avg_win = trades_df[trades_df['pnl'] > 0]['pnl'].mean()
+    avg_loss = abs(trades_df[trades_df['pnl'] < 0]['pnl'].mean())
+
+    if pd.isna(avg_win): avg_win = 0.0
+    if pd.isna(avg_loss) or avg_loss == 0: avg_loss = 1.0 # Avoid division by zero, though GFS=Inf is valid conceptually
+
+    payoff = avg_win / avg_loss
+
+    # 4. GFS Formula
+    # Avoid div by zero for beta_sl
+    # If beta_sl is 0 (no SLs or only 1 SL), GFS should be very high (Zen).
+    # Let's cap beta_sl at a small epsilon if 0.
+    
+    effective_beta_sl = beta_sl if beta_sl > 0 else 0.001
+    
+    gfs = (beta_tp / effective_beta_sl) * payoff
+
+    # Return components for debug
+    return gfs, beta_tp, beta_sl
+
 def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, broker_config: dict = None):
     """
     Procesa un DataFrame de trades y calcula todas las métricas de rendimiento.
@@ -257,10 +352,10 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
     # El backend a veces recibe fechas como strings y otras como Timestamps. Esta línea unifica el tipo.
     
     # DEBUG LOGS
-    print(f"--- [DEBUG ENGINE] Processing strategy. Rows: {len(trades_df)}")
-    if not trades_df.empty:
-        print(f"--- [DEBUG ENGINE] Sample Entry Date (Raw): {trades_df['entry_date'].iloc[0]}")
-        print(f"--- [DEBUG ENGINE] Sample PnL (Raw): {trades_df['pnl'].iloc[0]} (Type: {type(trades_df['pnl'].iloc[0])})")
+    # print(f"--- [DEBUG ENGINE] Processing strategy. Rows: {len(trades_df)}")
+    # if not trades_df.empty:
+    #     print(f"--- [DEBUG ENGINE] Sample Entry Date (Raw): {trades_df['entry_date'].iloc[0]}")
+    #     print(f"--- [DEBUG ENGINE] Sample PnL (Raw): {trades_df['pnl'].iloc[0]} (Type: {type(trades_df['pnl'].iloc[0])})")
 
     # 1. Ensure PnL is numeric (handle commas for European format)
     if trades_df['pnl'].dtype == object:
@@ -282,17 +377,17 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
 
     # Check how many valid dates we have
     valid_dates = trades_df['entry_date'].notna().sum()
-    print(f"--- [DEBUG ENGINE] Valid Entry Dates after parsing: {valid_dates}/{len(trades_df)}")
+    # print(f"--- [DEBUG ENGINE] Valid Entry Dates after parsing: {valid_dates}/{len(trades_df)}")
     
     # DEBUG: Check PnL validity
     valid_pnl = trades_df['pnl'].notna().sum()
-    print(f"--- [DEBUG ENGINE] Valid PnL after parsing: {valid_pnl}/{len(trades_df)}")
+    # print(f"--- [DEBUG ENGINE] Valid PnL after parsing: {valid_pnl}/{len(trades_df)}")
 
     before_drop = len(trades_df)
     trades_df = trades_df.dropna(subset=['entry_date', 'exit_date', 'pnl'])
     after_drop = len(trades_df)
     
-    print(f"--- [DEBUG ENGINE] Rows before drop: {before_drop}, After drop: {after_drop}")
+    # print(f"--- [DEBUG ENGINE] Rows before drop: {before_drop}, After drop: {after_drop}")
     if after_drop == 0 and before_drop > 0:
         print("--- [DEBUG ENGINE] ⚠️ ALL ROWS DROPPED! Checking why...")
         temp_df = trades_df_original.copy() if 'trades_df_original' in locals() else trades_df # We don't have original here easily, but let's check what failed
@@ -439,7 +534,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
 
     # --- CÁLCULO DE PÉRDIDAS CONSECUTIVAS (Para Health Monitoring) ---
     # Necesario para comparar con cuentas live de Myfxbook
-    print(f"--- [DEBUG ENGINE] Calculating consecutive losses from {total_trades} trades")
+    # print(f"--- [DEBUG ENGINE] Calculating consecutive losses from {total_trades} trades")
     
     max_consecutive_losses = 0
     current_consecutive_losses = 0
@@ -458,7 +553,7 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
             
             if current_consecutive_losses > max_consecutive_losses:
                 max_consecutive_losses = current_consecutive_losses
-                print(f"--- [DEBUG ENGINE] New max consecutive losses: {max_consecutive_losses} (at date: {trade['exit_date']})")
+                # print(f"--- [DEBUG ENGINE] New max consecutive losses: {max_consecutive_losses} (at date: {trade['exit_date']})")
         
         else:  # Winning trade (pnl >= 0, breakeven counts as win)
             current_consecutive_wins += 1
@@ -472,9 +567,9 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
     current_streak_count = current_consecutive_losses if current_streak_is_loss else current_consecutive_wins
     current_streak_type = "loss" if current_streak_is_loss else "win"
     
-    print(f"--- [DEBUG ENGINE] Max Consecutive Losses (Historic): {max_consecutive_losses}")
-    print(f"--- [DEBUG ENGINE] Max Consecutive Wins (Historic): {max_consecutive_wins}")
-    print(f"--- [DEBUG ENGINE] Current Streak: {current_streak_count} {current_streak_type}s")
+    # print(f"--- [DEBUG ENGINE] Max Consecutive Losses (Historic): {max_consecutive_losses}")
+    # print(f"--- [DEBUG ENGINE] Max Consecutive Wins (Historic): {max_consecutive_wins}")
+    # print(f"--- [DEBUG ENGINE] Current Streak: {current_streak_count} {current_streak_type}s")
 
     # Métricas de Capture Ratio (siguen necesitando una base diaria para compararse con el benchmark)
     daily_returns = equity_curve['equity'].pct_change().fillna(0)
@@ -648,6 +743,9 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
     if not np.isfinite(total_profit):
         total_profit = 0.0  # Default to 0 if invalid
     
+    # Calculate GFS
+    gfs, beta_tp, beta_sl = calculate_gamma_flow_score(trades_df)
+
     metrics_dict = {
         "profitFactor": profit_factor,
         "sortinoRatio": sortino_ratio,
@@ -658,14 +756,14 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
         "monthlyAvgProfit": monthly_avg_profit,
         "monthlyAvgProfit": monthly_avg_profit,
         "maxConsecutiveLosingMonths": max_consecutive_losing_months,
-        "ulcerIndexInDollars": ulcer_index_dollars, # <-- NUEVO KPI
+        "ulcerIndexInDollars": ulcer_index_dollars, 
         "upi": upi,
-        "sharpeRatio": sharpe_simple, # Ahora usa Sharpe Simple (CAGR/Vol) - más cercano a SQX
-        "sharpeRatioDaily": sharpe_ratio_time, # Sharpe Diario (oculto)
-        "sharpeRatioTrade": sharpe_ratio_trade, # Sharpe por Trade (oculto por defecto)
-        "sharpeRatioMonthly": sharpe_ratio_monthly, # Sharpe Mensual (para debug)
-        "sharpeRatioAnnual": sharpe_annual, # Sharpe Anual (para debug)
-        "annualizedVolatility": annualized_volatility, # Debug
+        "sharpeRatio": sharpe_simple,
+        "sharpeRatioDaily": sharpe_ratio_time,
+        "sharpeRatioTrade": sharpe_ratio_trade,
+        "sharpeRatioMonthly": sharpe_ratio_monthly,
+        "sharpeRatioAnnual": sharpe_annual,
+        "annualizedVolatility": annualized_volatility,
         "captureRatio": capture_ratio,
         "maxDrawdownInDollars": max_drawdown_dollars,
         "profitMaxDD_Ratio": profit_max_dd_ratio,
@@ -677,12 +775,17 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
         "maxStagnationStart": max_stagnation_start,
         "maxStagnationEnd": max_stagnation_end,
         "sqn": sqn,
-        "totalProfit": total_profit, # <-- Added missing metric
+        "totalProfit": total_profit,
+        "cagr": cagr,
+        # GFS Metrics
+        "gammaFlowScore": gfs,
+        "betaTP": beta_tp,
+        "betaSL": beta_sl,
         # Health Monitoring Metrics (for Myfxbook comparison)
-        "maxConsecutiveLosses": max_consecutive_losses,  # Histórico máximo
-        "maxConsecutiveWins": max_consecutive_wins,      # Histórico máximo (bonus)
-        "currentStreakCount": current_streak_count,      # Racha actual (al final del backtest)
-        "currentStreakType": current_streak_type,        # "loss" o "win"
+        "maxConsecutiveLosses": max_consecutive_losses,
+        "maxConsecutiveWins": max_consecutive_wins,
+        "currentStreakCount": current_streak_count,
+        "currentStreakType": current_streak_type,
         # Datos para gráficos
         "lorenzData": lorenz_data,
         "chartData": {
@@ -704,20 +807,20 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
             metrics_dict[key] = value.isoformat()
 
     # --- DEBUG LOG FOR USER (SURGERY) ---
-    print("\n--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---")
-    # Filter out heavy data for logging
-    debug_metrics = {k: v for k, v in metrics_dict.items() if k not in ['chartData', 'lorenzData']}
-    import json # Ensure json is available here if not at top level, though it is imported in app.py. 
-                # analysis_engine.py imports: pandas, numpy, itertools. Need json.
-    try:
-        import json
-        print(json.dumps(debug_metrics, indent=2, default=str))
-    except Exception as e:
-        print(f"Error logging metrics: {e}")
-        print(debug_metrics)
-    print("-------------------------------------------------------------------\n")
+    # print("\n--- [METRICS SURGERY] Calculated Metrics for Strategy/Portfolio ---")
+    # # Filter out heavy data for logging
+    # debug_metrics = {k: v for k, v in metrics_dict.items() if k not in ['chartData', 'lorenzData']}
+    # import json # Ensure json is available here if not at top level, though it is imported in app.py. 
+    #             # analysis_engine.py imports: pandas, numpy, itertools. Need json.
+    # try:
+    #     import json
+    #     # print(json.dumps(debug_metrics, indent=2, default=str))
+    # except Exception as e:
+    #     print(f"Error logging metrics: {e}")
+    #     # print(debug_metrics)
+    # print("-------------------------------------------------------------------\n")
 
-    print(f"DEBUG: process_strategy_data returning metrics. Keys: {list(metrics_dict.keys())}")
+    # print(f"DEBUG: process_strategy_data returning metrics. Keys: {list(metrics_dict.keys())}")
     return metrics_dict, daily_returns
 
 

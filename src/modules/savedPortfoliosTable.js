@@ -4,6 +4,16 @@ import { formatMetricForDisplay } from '../utils.js';
 import { CustomizableTable } from './tableEngine.js';
 import { initSavedPortfoliosFocus } from '../ui.js';
 
+// Selection State
+export const selectedSavedPortfolios = new Set();
+export const getSelectedSavedPortfolios = () => Array.from(selectedSavedPortfolios);
+export const clearSelectedSavedPortfolios = () => {
+    selectedSavedPortfolios.clear();
+    // Refresh button visibility if possible or let caller handle it
+    const btn = document.getElementById('delete-selected-portfolios-btn');
+    if (btn) btn.classList.add('hidden');
+};
+
 // Column definitions
 const AVAILABLE_COLUMNS = [
     { id: 'name', label: 'Portfolio Name', minWidth: 200, alwaysVisible: true },
@@ -21,26 +31,28 @@ const AVAILABLE_COLUMNS = [
     { id: 'profitFactor', label: 'Profit Factor', minWidth: 100 },
     { id: 'sqn', label: 'SQN', minWidth: 80 },
     { id: 'maxDrawdown', label: 'Max DD %', minWidth: 100 },
+    { id: 'cagr', label: 'CAGR %', minWidth: 80 },
     { id: 'captureRatio', label: 'Capture Ratio', minWidth: 100 },
     { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
-    { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
+
     { id: 'strategyCount', label: 'Strategies #', minWidth: 80 },
     { id: 'maxMarginRequired', label: 'Max Margin', minWidth: 100 }, // Added
     // Health Monitoring Metrics
     { id: 'maxConsecutiveLosses', label: 'Max Consec. Losses', minWidth: 120 },
     { id: 'maxConsecutiveWins', label: 'Max Consec. Wins', minWidth: 120 },
+    { id: 'gammaFlowScore', label: 'Gamma Flow Score', minWidth: 100 },
 ];
 
 // Default configuration
 const DEFAULT_CONFIG = {
-    visibleColumns: ['name', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxMarginRequired', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn'],
+    visibleColumns: ['name', 'gammaFlowScore', 'totalTrades', 'totalProfit', 'returnDD', 'upi', 'sortinoRatio', 'sharpeRatio', 'maxDrawdownInDollars', 'maxMarginRequired', 'maxStagnationTrades', 'maxStagnationDays', 'winningPercentage', 'profitFactor', 'sqn'],
     columnWidths: {}
 };
 
 // Create table instance
 const savedPortfoliosTable = new CustomizableTable({
     id: 'saved-portfolios',
-    storageKey: 'savedPortfoliosTableConfig_v5',
+    storageKey: 'savedPortfoliosTableConfig_v7',
     columns: AVAILABLE_COLUMNS,
     defaultConfig: DEFAULT_CONFIG,
     containerId: 'saved-portfolios-content',

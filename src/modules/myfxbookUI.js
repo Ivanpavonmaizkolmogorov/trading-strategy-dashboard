@@ -513,7 +513,8 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
         const data = await response.json();
 
         if (response.ok && data.success) {
-            console.log(`[Myfxbook] History synced. ${data.count} trades.`);
+            console.log(`[Myfxbook] History synced. ${data.count} closed trades, ${data.openCount || 0} open trades.`);
+            console.log('[Myfxbook] Open Trades Data:', data.openTrades);
 
             const strategyBreakdown = {};
             const magicMap = state.magicNumberMap || {};
@@ -522,10 +523,18 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
             const tradesById = {};
             // Aseguramos que data.history sea un array
             const history = Array.isArray(data.history) ? data.history : [];
+            // Merge OPEN trades as well, to capture comments from active trades
+            const openTrades = Array.isArray(data.openTrades) ? data.openTrades : [];
+            const allTradesCombined = [...history, ...openTrades];
 
-            console.log(`[Myfxbook] Processing ${history.length} trades for normalization...`);
+            console.log(`[Myfxbook] Processing ${allTradesCombined.length} total trades (History + Open) for normalization...`);
 
-            history.forEach(trade => {
+            if (allTradesCombined.length > 0) {
+                // console.log(">>> [DEBUG KEYS] KEYS DE MYFXBOOK (PRIMER TRADE):", Object.keys(allTradesCombined[0]).join(', '));
+                // console.log(">>> [DEBUG DATA] DATOS DE EJEMPLO:", JSON.stringify(allTradesCombined[0]));
+            }
+
+            allTradesCombined.forEach(trade => {
                 // Prioridad: Comentario completo > Magic Number > Magic
                 let rawId = trade.comment || trade.magicNumber || trade.magic;
 
@@ -536,9 +545,8 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
                     const isNumeric = /^\d+$/.test(idStr);
                     const normalizedId = isNumeric ? idStr : normalizeComment(idStr);
 
-                    // if (history.length < 50) { // Log first few for debug
-                    //     console.log(`[Myfxbook] Norm: "${idStr}" -> "${normalizedId}"`);
-                    // }
+                    // Debug specific comments if needed
+                    // console.log(`[Myfxbook] Raw: "${idStr}" -> Norm: "${normalizedId}"`);
 
                     if (!tradesById[normalizedId]) {
                         tradesById[normalizedId] = [];
@@ -548,6 +556,8 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
                     tradesById[normalizedId].push(trade);
                 }
             });
+
+            console.log('[Myfxbook] Unique Keys Found:', Object.keys(tradesById));
 
             // 2. Calcular estadísticas generales por ID Normalizado (para el Mapper)
             const magicStats = {};
@@ -564,19 +574,27 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
                     symbol: topSymbol,
                     totalProfit: trades.reduce((sum, t) => sum + (t.profit || 0), 0),
                     tradesCount: trades.length,
-                    lastTradeDate: trades.reduce((max, t) => t.closeDate > max ? t.closeDate : max, '')
+                    lastTradeDate: trades.reduce((max, t) => {
+                        const date = t.closeDate || t.openTime; // Use openTime for open trades if closeDate is missing
+                        return date > max ? date : max;
+                    }, '')
                 };
             });
 
             // Calculate portfolio-wide metrics locally to ensure accuracy/fallback
-            const allTrades = history.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+            // NOTE: For metric calculation (Drawdown, etc), we usually only care about CLOSED trades.
+            // Using open trades for "Realized" metrics might be confusing.
+            // However, Current Drawdown DEFINITELY involves open trades.
+            // But 'allTrades' below is used for "Historic Max Drawdown" logic which assumes closed equity curve.
+            // So we will keep 'history' for the metric calc loop to avoid breaking the logic with incomplete open trades.
+            const closedTradesSorted = history.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
             let portMaxLosses = 0;
             let portCurrentLosses = 0;
             let portRunningBalance = 0;
             let portMaxBalance = 0;
             let portMaxDD = 0;
 
-            allTrades.forEach(t => {
+            closedTradesSorted.forEach(t => {
                 const profit = parseFloat(t.profit || 0) + parseFloat(t.swap || 0) + parseFloat(t.commission || 0);
 
                 // Consecutive Losses

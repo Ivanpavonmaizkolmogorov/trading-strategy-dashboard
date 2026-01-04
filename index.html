@@ -388,7 +388,7 @@
             </div>
 
             <!-- SOURCE PANEL (Bottom Panel - Dockable) -->
-            <div id="source-panel" class="h-80 bg-gray-800 flex flex-col flex-shrink-0 min-h-[150px] max-h-[80vh]">
+            <div id="source-panel" class="h-80 bg-gray-800 flex flex-col flex-shrink-0 max-h-[80vh]">
                 <!-- Panel Tabs -->
                 <div class="flex border-b border-gray-700 bg-gray-800">
                     <button
@@ -419,12 +419,12 @@
 
                     <!-- Panel Toolbar (Contextual) -->
                     <div id="panel-toolbar" class="flex items-center px-2 gap-2">
+                        <button id="findDatabankPortfoliosBtn"
+                            class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold py-1 px-2 rounded">
+                            🔍 Buscar
+                        </button>
                         <!-- Databank Controls -->
                         <div id="databank-controls" class="flex items-center gap-2">
-                            <button id="findDatabankPortfoliosBtn"
-                                class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold py-1 px-2 rounded">
-                                🔍 Buscar
-                            </button>
                             <button id="pause-search-btn"
                                 class="bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-bold py-1 px-2 rounded"
                                 disabled>
@@ -443,15 +443,39 @@
                                 class="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold py-1 px-2 rounded">
                                 💾 Guardar Sel.
                             </button>
+                            <button id="export-databank-btn"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1 px-2 rounded flex items-center gap-1">
+                                📤 CSV
+                            </button>
+                        </div>
+
+                        <!-- Saved Portfolios Controls (Hidden by default) -->
+                        <div id="saved-portfolios-controls" class="hidden flex items-center gap-2">
+                            <button id="delete-selected-portfolios-btn"
+                                class="hidden bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-1 px-2 rounded flex items-center gap-1 transition-colors">
+                                🗑️ Eliminar Sel.
+                            </button>
+                            <button id="export-saved-portfolios-btn"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1 px-2 rounded flex items-center gap-1">
+                                📤 Exportar CSV
+                            </button>
+                        </div>
+
+                        <!-- Strategies Controls (Hidden by default) -->
+                        <div id="strategies-controls" class="hidden flex items-center gap-2">
+                            <button id="export-strategies-btn"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1 px-2 rounded flex items-center gap-1">
+                                📤 Exportar CSV
+                            </button>
                         </div>
                     </div>
                 </div>
 
                 <!-- Panel Content Area -->
-                <div class="flex-1 overflow-hidden relative bg-gray-900">
+                <div class="flex-1 overflow-hidden relative bg-gray-900 min-h-0">
 
                     <!-- 1. DataBank Content -->
-                    <div id="databank-content" class="tab-content active h-full flex flex-col">
+                    <div id="databank-content" class="tab-content active h-full flex flex-col min-h-0 overflow-hidden">
 
                         <!-- Status Indicator (visible durante búsquedas) -->
                         <div id="databank-status-bar" class="hidden bg-gray-800/90 border-b border-gray-700 px-4 py-2">
@@ -465,7 +489,7 @@
                             </div>
                         </div>
 
-                        <div class="flex-1 overflow-y-auto">
+                        <div class="flex-1 overflow-y-auto h-full">
                             <table class="w-full text-sm text-left text-gray-300">
                                 <thead class="bg-gray-800 text-xs uppercase sticky top-0 z-10"
                                     id="databank-table-header">
@@ -482,8 +506,8 @@
                     </div>
 
                     <!-- 2. Saved Portfolios Content -->
-                    <div id="saved-portfolios-content" class="tab-content h-full flex flex-col">
-                        <div class="flex-1 overflow-y-auto">
+                    <div id="saved-portfolios-content" class="tab-content h-full flex flex-col min-h-0 overflow-hidden">
+                        <div class="flex-1 overflow-y-auto h-full">
                             <table class="w-full text-sm text-left text-gray-300">
                                 <thead id="saved-portfolios-header"
                                     class="bg-gray-800 text-xs uppercase sticky top-0 z-10">
@@ -497,8 +521,9 @@
                     </div>
 
                     <!-- 3. Strategies Content -->
-                    <div id="strategies-content" class="tab-content hidden h-full flex flex-col">
-                        <div class="flex-1 overflow-y-auto">
+                    <div id="strategies-content"
+                        class="tab-content hidden h-full flex flex-col min-h-0 overflow-hidden">
+                        <div class="flex-1 overflow-y-auto h-full">
                             <table class="w-full text-sm text-left text-gray-300">
                                 <thead class="bg-gray-800 text-xs uppercase sticky top-0 z-10">
                                     <tr>
@@ -557,11 +582,13 @@
                                             class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white">
                                             <option value="sortinoRatio">Sortino Ratio</option>
                                             <option value="sharpeRatio">Sharpe Ratio</option>
+                                            <option value="cagr">CAGR %</option>
                                             <option value="upi">UPI</option>
                                             <option value="profitMaxDD_Ratio">Ret/DD</option>
                                             <option value="sqn">SQN</option>
                                             <option value="profitFactor">Profit Factor</option>
                                             <option value="maxMarginRequired">Max Margin Req.</option>
+                                            <option value="gammaFlowScore">Gamma Flow Score</option>
                                         </select>
                                     </div>
 
@@ -756,7 +783,7 @@
 
     <!-- Real Trades Modal -->
     <div id="real-trades-modal"
-        class="fixed inset-0 bg-gray-900 bg-opacity-95 hidden items-center justify-center z-50 backdrop-blur-sm transition-opacity duration-300 opacity-0">
+        class="fixed inset-0 bg-gray-900 bg-opacity-95 hidden items-center justify-center z-[60] backdrop-blur-sm transition-opacity duration-300 opacity-0">
         <div id="real-trades-modal-content"
             class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col border border-gray-700 transform scale-95 transition-transform duration-300">
             <!-- Header -->
@@ -781,6 +808,7 @@
                     <thead class="text-xs text-gray-400 uppercase bg-gray-900/50 sticky top-0 z-10">
                         <tr>
                             <th class="p-3 font-semibold rounded-tl-lg">Ticket</th>
+                            <th class="p-3 font-semibold text-center">Magic</th>
                             <th class="p-3 font-semibold">Open Time</th>
                             <th class="p-3 font-semibold">Type</th>
                             <th class="p-3 font-semibold text-right">Size</th>
@@ -791,7 +819,14 @@
                             <th class="p-3 font-semibold text-right">Commission</th>
                             <th class="p-3 font-semibold text-right">Swap</th>
                             <th class="p-3 font-semibold text-right">Profit</th>
-                            <th class="p-3 font-semibold text-right rounded-tr-lg">Net Profit</th>
+                            <th class="p-3 font-semibold text-right">Net Profit</th>
+                            <th id="real-trades-dd-header" class="p-3 font-semibold text-right text-red-400">Drawdown
+                            </th>
+                            <th id="real-trades-stag-days-header" class="p-3 font-semibold text-right text-orange-400">
+                                Stag (Days)</th>
+                            <th id="real-trades-stag-trades-header"
+                                class="p-3 font-semibold text-right text-orange-400">Stag (Trades)</th>
+                            <th class="p-3 font-semibold text-right rounded-tr-lg">Balance</th>
                         </tr>
                     </thead>
                     <tbody id="real-trades-table-body" class="text-sm divide-y divide-gray-700/50">
@@ -799,6 +834,9 @@
                     </tbody>
                 </table>
             </div>
+
+            <!-- Audit Report Container (Hardcoded) -->
+            <div id="audit-report-container" class="px-6 pb-2"></div>
 
             <!-- Footer -->
             <div class="p-4 border-t border-gray-700 bg-gray-800/50 rounded-b-xl flex justify-end">
@@ -1020,8 +1058,58 @@
         </div>
     </div>
 
+    <!-- Strategy Breakdown Modal -->
+
     <script type="module" src="src/main.js?v=3.91"></script>
 
+    <!-- Strategy Breakdown Modal (Portfolio Risk) -->
+    <div id="strategy-breakdown-modal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+        <div id="strategy-breakdown-modal-content"
+            class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-[95%] max-w-6xl h-[90vh] flex flex-col transform scale-95 transition-transform duration-300">
+            <!-- Header -->
+            <div
+                class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 rounded-t-xl">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span class="text-2xl">🛡️</span>
+                        <span id="strategy-breakdown-title">Portfolio Risk Breakdown</span>
+                    </h3>
+                    <p class="text-gray-400 text-sm mt-1">Detailed risk audit per strategy (Real vs Backtest)</p>
+                </div>
+                <button onclick="document.getElementById('strategy-breakdown-modal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white transition-colors text-2xl font-bold">&times;</button>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 overflow-auto p-0 customize-scrollbar bg-gray-900/50">
+                <table class="w-full text-left border-collapse">
+                    <thead
+                        class="bg-gray-800 text-xs text-gray-400 uppercase tracking-wider sticky top-0 z-10 shadow-lg">
+                        <tr>
+                            <th class="p-4 font-semibold">Strategy</th>
+                            <th class="p-4 font-semibold text-center">Drawdown ($) <br><span
+                                    class="text-[10px] lowercase text-gray-500">Real / MaxBT / Yield</span></th>
+                            <th class="p-4 font-semibold text-center">Stag (Days) <br><span
+                                    class="text-[10px] lowercase text-gray-500">Real / MaxBT / Yield</span></th>
+                            <th class="p-4 font-semibold text-center">Stag (Trades) <br><span
+                                    class="text-[10px] lowercase text-gray-500">Real / MaxBT / Yield</span></th>
+                            <th class="p-4 font-semibold text-right">Balance</th>
+                            <th class="p-4 font-semibold text-right">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="strategy-breakdown-table-body" class="text-sm divide-y divide-gray-800">
+                        <!-- Rows populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-800 bg-gray-800/30 text-right text-xs text-gray-500">
+                Risk Yield = (Real Peak / Max Backtest) * 100
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

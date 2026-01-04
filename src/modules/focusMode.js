@@ -23,6 +23,17 @@ export const focusMode = {
         console.log('[FocusMode] enable() called. Type:', type, 'Item:', item.name || item.id);
         const id = item.id || item.name; // Use name as fallback ID if needed
 
+        // --- FIX: ALWAYS Refresh data from Global State ---
+        // The item passed from click event might be stale (captured at render time).
+        let freshItem = item;
+        if (type === 'saved') {
+            const index = item.index !== undefined ? item.index : state.savedPortfolios.findIndex(p => p.id === id);
+            if (index !== -1 && state.savedPortfolios[index]) {
+                freshItem = { ...state.savedPortfolios[index], index: index }; // Preserve index if active
+                console.log(`[FocusMode] 🔄 Refreshed item data from state. Risk keys present?`, Object.keys(freshItem.riskPerStrategy || {}));
+            }
+        }
+
         if (this.focusedItems.has(id)) {
             // Deselect if already selected
             console.log('[FocusMode] Item already selected, deselecting:', id);
@@ -36,7 +47,7 @@ export const focusMode = {
             const colorIndex = this.focusedItems.size % STRATEGY_COLORS.length;
             const color = STRATEGY_COLORS[colorIndex];
 
-            this.focusedItems.set(id, { ...item, type, rowElement, color });
+            this.focusedItems.set(id, { ...freshItem, type, rowElement, color });
             this.highlightRow(rowElement, color);
         }
 
@@ -150,7 +161,60 @@ export const focusMode = {
         // Prepare data for renderPortfolioComparisonCharts
         const analyses = [];
         this.focusedItems.forEach(item => {
-            let analysis = item.analysis;
+            // REFRESH DATA: Ensure we use the latest state (e.g. for Risk Normalization updates)
+            if (item.type === 'saved') {
+                const freshItem = state.savedPortfolios.find(p => p.id === item.id);
+                if (freshItem) {
+                    // Update existing reference with fresh data properties
+                    console.log(`[FocusMode] Refreshing data for ${item.name}. Risk present?`, !!freshItem.riskPerStrategy, freshItem.riskPerStrategy);
+                    item.riskPerStrategy = freshItem.riskPerStrategy;
+                    item.analysis = freshItem.analysis;
+                    item.metrics = freshItem.metrics;
+
+                    // Essential for Reality Check
+                    item.realMetrics = freshItem.realMetrics;
+                    item.linkedAccountId = freshItem.linkedAccountId;
+                    item.linkedAccountId = freshItem.linkedAccountId;
+                    item.linkedAccountName = freshItem.linkedAccountName;
+                    item.strategyNames = freshItem.strategyNames; // CRITICAL: Propagate strategy names to UI
+
+                    // === PORTFOLIO SMART CONNECT ===
+                    // Proactively try to fuzzy-match ALL strategies in this portfolio
+                    // This ensures the portfolio chart (which aggregates strategies) works even if strategies aren't clicked individually
+                    if (item.realMetrics && item.realMetrics._tradesById && state.magicNumberMap) {
+                        const availableKeys = Object.keys(item.realMetrics._tradesById);
+                        let strategyNames = item.strategyNames || [];
+
+                        // If no strategy names, try to resolve from indices if available
+                        if (strategyNames.length === 0 && item.indices && window.analysisResults) {
+                            strategyNames = item.indices.map(i => window.analysisResults[i]?.name).filter(Boolean);
+                        }
+
+                        // CRITICAL: Ensure these names are saved to the item for UI.js to use
+                        if (strategyNames.length > 0) {
+                            item.strategyNames = strategyNames;
+                            console.log(`[FocusMode] 🧠 Pre-scanning ${strategyNames.length} strategies for portfolio '${item.name}'...`);
+                            strategyNames.forEach(stratName => {
+                                // Skip if already mapped
+                                if (state.magicNumberMap[stratName]) return;
+
+                                // findBestMatch now returns an array of matches (strings)
+                                const matches = findBestMatch(stratName, null, availableKeys, item.realMetrics._tradesById);
+
+                                if (matches && matches.length > 0) {
+                                    state.magicNumberMap[stratName] = matches;
+                                    console.log(`[FocusMode] 💾 Auto-mapped (Portfolio Scan): '${stratName}' -> [${matches.join(', ')}]`);
+                                }
+                            });
+                        }
+                    }
+                } else {
+                    console.warn(`[FocusMode] Could not find fresh item for ${item.id}`);
+                }
+            }
+
+
+            let analysis = item.analysis || item.metrics;
 
             // For DataBank items, compute the portfolio by combining individual strategies
             if (item.type === 'databank' && !analysis && item.indices) {
@@ -243,8 +307,50 @@ export const focusMode = {
                     strategyId = item.name;
                 }
 
-                const magicRaw = state.magicNumberMap[strategyId] || state.magicNumberMap[item.name];
+                let magicRaw = state.magicNumberMap[strategyId] || state.magicNumberMap[item.name];
                 console.log(`[FocusMode] 🔍 Looking up real data for strategy: ${item.name} (ID: ${strategyId})`);
+
+                // DEBUG MAP
+                if (state.magicNumberMap) {
+                    // console.log(`[FocusMode] Magic Number Map Keys (First 5): ${Object.keys(state.magicNumberMap).slice(0, 5)}`);
+                    // console.log(`[FocusMode] Direct Lookup '${strategyId}':`, state.magicNumberMap[strategyId]);
+                    // console.log(`[FocusMode] Name Lookup '${item.name}':`, state.magicNumberMap[item.name]);
+                } else {
+                    console.warn('[FocusMode] state.magicNumberMap is undefined!');
+                }
+
+                // FALLBACK: Smart Connection via Linked Portfolios
+                // FALLBACK: Smart Connection via Linked Portfolios
+                if (!magicRaw) {
+                    // Find parent portfolio
+                    const parentPortfolio = state.savedPortfolios.find(p =>
+                        p.indices && p.indices.includes(item.originalIndex) &&
+                        p.realMetrics && p.realMetrics._tradesById
+                    );
+
+                    if (parentPortfolio) {
+                        const availableKeys = Object.keys(parentPortfolio.realMetrics._tradesById);
+
+                        // Use Helper
+                        const bestMatch = findBestMatch(item.name, strategyId, availableKeys, parentPortfolio.realMetrics._tradesById);
+
+                        if (bestMatch) {
+                            console.log(`[FocusMode] 🧠 Smart Connection (Fuzzy): Matched '${item.name}' to '${bestMatch}'`);
+
+                            // CRITICAL: Save to map so UI.js can find it
+                            if (!state.magicNumberMap[item.name]) {
+                                state.magicNumberMap[item.name] = [bestMatch];
+                                console.log(`[FocusMode] 💾 Auto-saved mapping to state.magicNumberMap`);
+                            }
+
+                            magicRaw = [bestMatch];
+                        } else {
+                            console.log('[FocusMode] 🧠 Smart Connection Failed. Available Keys in Portfolio:', availableKeys);
+                            console.log(`[FocusMode] 🧠 Tried matching against: ${item.name} and ${strategyId}`);
+                        }
+                    }
+                }
+
                 console.log(`[FocusMode] 🔢 Magic Number(s) found: ${magicRaw}`);
 
                 if (magicRaw) {
@@ -354,7 +460,9 @@ export const focusMode = {
                 color: item.color,
                 savedIndex: savedIndex,
                 realMetrics: realMetrics,
-                indices: item.indices // Pass indices for Saved Portfolios
+                indices: item.indices, // Pass indices for Saved Portfolios
+                riskPerStrategy: item.riskPerStrategy, // Pass risk metrics for scaling
+                strategyNames: item.strategyNames // CRITICAL: Pass strategy names to UI
             };
 
             // For single strategies, we need to pass the name as a strategy so magic number lookup works
@@ -438,6 +546,10 @@ export const focusMode = {
                     // Or maybe it's a databank portfolio?
                     console.warn(`[FocusMode] Could not find parent portfolio for strategy ${strategyId} to update SQ Analysis.`);
                 }
+            } else if (item.type === 'saved') {
+                // If a Saved Portfolio is focused, update SQ Analysis to show that portfolio
+                console.log(`[FocusMode] Updating SQ Analysis for focused portfolio index: ${item.index}`);
+                renderSQAnalysis(item.index, 'saved', 'all');
             }
         } else {
             // If multiple or zero, maybe reset to 'all'?
@@ -586,7 +698,7 @@ export const focusMode = {
 
                 if (item) {
                     // Ensure item has analysis property (skip check for DataBank since it's computed later)
-                    if (!item.analysis && type !== 'databank') {
+                    if (!item.analysis && !item.metrics && type !== 'databank') {
                         console.warn(`[FocusMode] Item ${item.name} has NO analysis data!`);
                         failCount++;
                         return;
@@ -683,3 +795,114 @@ document.addEventListener('DOMContentLoaded', () => {
         clearAllBtn.addEventListener('click', () => focusMode.clearAll());
     }
 });
+
+// Helper for Smart Fuzzy Matching
+function findBestMatch(strategyName, strategyId, availableKeys, tradesById) {
+    if (!availableKeys || availableKeys.length === 0) return null;
+
+    let bestMatch = null;
+    let highestScore = 0;
+
+    availableKeys.forEach(key => {
+        // Clean names to improve matching score
+        // Remove common suffixes: " - Improved X.X", ".csv", "(1)", etc.
+        const cleanName = strategyName
+            .replace(/ - Improved \d+(\.\d+)?/gi, '')
+            .replace(/\(\d+\)/g, '')
+            .replace(/\.csv$/i, '')
+            .trim();
+
+        // Try matching against Clean Name, Original Name, and ID
+        const scoreClean = calculateSimilarity(cleanName, key);
+        const scoreName = calculateSimilarity(strategyName, key);
+        const scoreId = strategyId ? calculateSimilarity(strategyId, key) : 0;
+
+        // Take the best score approach
+        let score = Math.max(scoreClean, scoreName, scoreId);
+
+        // Prioritize keys with more trades (heuristic to avoid empty test keys)
+        // If tradesById is provided, check count
+        if (tradesById) {
+            const tradeCount = tradesById[key]?.length || 0;
+            if (tradeCount < 5) score *= 0.5; // Penalize very small trade counts
+        }
+
+        if (score > 0.6) { // High confidence threshold for multi-match
+            if (!bestMatch) bestMatch = [];
+            bestMatch.push(key);
+            // Keep track of the highest score just for reference or single-match fallback
+            if (score > highestScore) highestScore = score;
+        } else if (score > highestScore) {
+            highestScore = score;
+            bestMatch = [key]; // Reset if we find a better single match that isn't "high confidence" enough to keep others? 
+            // Actually, let's simplify: Collect ALL reasonable matches > 0.4, but sort by score?
+        }
+    });
+
+    // New Logic: Return ALL matches above threshold
+    const allMatches = [];
+    availableKeys.forEach(key => {
+        // ... (same cleaning logic) ...
+        const cleanName = strategyName
+            .replace(/ - Improved \d+(\.\d+)?/gi, '')
+            .replace(/\(\d+\)/g, '')
+            .replace(/\.csv$/i, '')
+            .trim();
+
+        const scoreClean = calculateSimilarity(cleanName, key);
+        const scoreName = calculateSimilarity(strategyName, key);
+        const scoreId = strategyId ? calculateSimilarity(strategyId, key) : 0;
+        let score = Math.max(scoreClean, scoreName, scoreId);
+
+        if (tradesById) {
+            const tradeCount = tradesById[key]?.length || 0;
+            if (tradeCount < 5) score *= 0.5;
+        }
+
+        if (score > 0.35) { // Slightly stricter threshold for multi-match
+            allMatches.push({ key, score });
+        }
+    });
+
+    if (allMatches.length > 0) {
+        // Sort by score descending
+        allMatches.sort((a, b) => b.score - a.score);
+        // Return just the keys
+        return allMatches.map(m => m.key);
+    }
+
+    return null;
+}
+
+// Helper for Fuzzy Matching (Levenshtein Distance)
+function calculateSimilarity(s1, s2) {
+    if (!s1 || !s2) return 0;
+    const longer = s1.length > s2.length ? s1 : s2;
+    const shorter = s1.length > s2.length ? s2 : s1;
+    if (longer.length === 0) return 1.0;
+
+    const editDistance = (s1, s2) => {
+        s1 = s1.toLowerCase();
+        s2 = s2.toLowerCase();
+        const costs = new Array();
+        for (let i = 0; i <= s1.length; i++) {
+            let lastValue = i;
+            for (let j = 0; j <= s2.length; j++) {
+                if (i == 0) costs[j] = j;
+                else {
+                    if (j > 0) {
+                        let newValue = costs[j - 1];
+                        if (s1.charAt(i - 1) != s2.charAt(j - 1))
+                            newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                        costs[j - 1] = lastValue;
+                        lastValue = newValue;
+                    }
+                }
+            }
+            if (i > 0) costs[s2.length] = lastValue;
+        }
+        return costs[s2.length];
+    }
+
+    return (longer.length - editDistance(longer, shorter)) / longer.length;
+}

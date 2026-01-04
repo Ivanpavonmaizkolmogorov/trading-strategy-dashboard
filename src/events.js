@@ -9,12 +9,34 @@ import { exportAnalysis, importAnalysis } from './modules/importExport.js';
 import { showToast } from './modules/notifications.js';
 import { initializeLayout } from './modules/layout.js'; // <-- NUEVO
 import { initMyfxbookUI, openMyfxbookModal, refreshAllAccounts } from './modules/myfxbookUI.js'; // <-- MYFXBOOK
-import { generateStrategyId } from './utils.js'; // <-- ID GENERATOR
+import { generateStrategyId, generatePortfolioId } from './utils.js'; // <-- ID GENERATOR
 import { initLiveMonitor, renderLiveMonitor } from './modules/liveMonitor.js'; // <-- LIVE MONITOR
 import { openSlaveAccountsModal } from './modules/slaveAccounts.js'; // <-- SLAVE ACCOUNTS
 import { openStrategyRiskModal } from './modules/strategyRiskViewer.js'; // <-- STRATEGY RISK VIEWER
+import { focusMode } from './modules/focusMode.js'; // <-- FOCUS MODE
 
 export function initializeEventListeners() {
+    // --- SANITIZATION: Check for duplicate IDs in saved portfolios ---
+    if (state.savedPortfolios && state.savedPortfolios.length > 0) {
+        const idMap = new Map();
+        let fixedCount = 0;
+        state.savedPortfolios.forEach(p => {
+            if (idMap.has(p.id)) {
+                // Duplicate found! Regenerate ID
+                const oldId = p.id;
+                p.id = generatePortfolioId(p.name, p.strategyIds || p.indices);
+                console.warn(`[Events] Duplicate ID found (${oldId}) for portfolio "${p.name}". Regenerated to: ${p.id}`);
+                fixedCount++;
+            } else {
+                idMap.set(p.id, true);
+            }
+        });
+        if (fixedCount > 0) {
+            saveSavedPortfolios();
+            console.log(`[Events] Fixed ${fixedCount} duplicate portfolio IDs.`);
+        }
+    }
+
     // Inicializar el nuevo Layout (Sidebar, Tabs, Resizer)
     initializeLayout();
 
@@ -110,8 +132,23 @@ export function initializeEventListeners() {
         if (e.target.classList.contains('remove-file-btn')) {
             const indexToRemove = parseInt(e.target.dataset.index, 10);
             state.loadedStrategyFiles.splice(indexToRemove, 1);
+            if (state.rawStrategiesData && state.rawStrategiesData.length > indexToRemove) {
+                state.rawStrategiesData.splice(indexToRemove, 1);
+            }
             updateTradesFilesList();
         }
+    });
+
+    // --- NUEVO: Listener para actualización remota (e.g. desde FAB Delete) ---
+    window.addEventListener('strategies-deleted', () => {
+        updateTradesFilesList();
+        // Also ensure analysis mode filter is updated since options depend on file list
+        // updateAnalysisModeSelector(); // (Checking if imported... if not, might need import or it's handled in ui.js)
+        // ui.js exports updateAnalysisModeSelector but events.js imports it.
+        // Let's add it.
+        import('./ui.js').then(({ updateAnalysisModeSelector }) => {
+            updateAnalysisModeSelector();
+        });
     });
 
     dom.analysisModeSelect.addEventListener('change', () => {
@@ -261,9 +298,7 @@ export function initializeEventListeners() {
     }
 
     // Body Listener (Actions)
-    console.log('[Events] Checking dom.savedPortfoliosBody:', dom.savedPortfoliosBody);
     if (dom.savedPortfoliosBody) {
-        console.log('[Events] Attaching click listener to savedPortfoliosBody');
         // Helper function for name editing
         const savePortfolioName = (inputEl) => {
             const newName = inputEl.value.trim();
@@ -283,7 +318,7 @@ export function initializeEventListeners() {
                     import('./modules/liveMonitor.js').then(({ renderLiveMonitor }) => renderLiveMonitor());
                 }
             }
-            const displayEl = inputEl.closest('.portfolio-name-group').querySelector('.portfolio-name-display');
+            const displayEl = inputEl.closest('.portfolio-name-container').querySelector('.portfolio-name-display');
             if (displayEl) displayEl.classList.remove('hidden');
             inputEl.classList.add('hidden');
         };
@@ -355,7 +390,7 @@ export function initializeEventListeners() {
             }
 
             // --- Edit Portfolio Name in List ---
-            const nameContainer = e.target.closest('.portfolio-name-group'); // Updated class
+            const nameContainer = e.target.closest('.portfolio-name-container'); // Updated class match
             if (nameContainer && (e.target.closest('.portfolio-name-display') || e.target.closest('.edit-portfolio-name-btn'))) {
                 const displayEl = nameContainer.querySelector('.portfolio-name-display');
                 const inputEl = nameContainer.querySelector('.portfolio-name-input');
@@ -366,6 +401,73 @@ export function initializeEventListeners() {
                     inputEl.select(); // Select text for easy editing
                 }
                 e.stopPropagation(); // Prevent bubbling to row click
+                return; // Stop processing to avoid selection
+            }
+
+            const row = e.target.closest('tr');
+
+            // --- Base Portfolio Selection ---
+            if (e.target.name === 'base-portfolio-select') {
+                const index = parseInt(e.target.dataset.index, 10);
+
+                // Toggle Logic: 
+                // If the clicked radio is ALREADY the one stored in state, it means the user wants to deselect it.
+                // (Browser keeps it checked by default on click, so we must manually uncheck it).
+                if (state.searchBasePortfolioIndex === index) {
+                    // Toggle Off
+                    e.target.checked = false;
+                    state.searchBasePortfolioIndex = null;
+                    state.searchBaseStrategyIndices.clear();
+                    console.log('[Events] Base Portfolio Deselected');
+
+                    // Hide Search Button
+                    if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.classList.add('hidden');
+
+                    if (window.renderBaseStrategiesConfig) {
+                        window.renderBaseStrategiesConfig();
+                    }
+                } else {
+                    // New Selection (Browser already checked it visually)
+                    state.searchBasePortfolioIndex = index;
+
+                    const portfolio = state.savedPortfolios[index];
+                    if (portfolio) {
+                        state.searchBaseStrategyIndices.clear();
+                        if (portfolio.strategyIds && portfolio.strategyIds.length > 0) {
+                            portfolio.strategyIds.forEach(id => {
+                                const currentIdx = state.loadedStrategyFiles.findIndex(f => f.strategyId === id);
+                                if (currentIdx !== -1) state.searchBaseStrategyIndices.add(currentIdx);
+                            });
+                        } else if (portfolio.indices) {
+                            portfolio.indices.forEach(idx => state.searchBaseStrategyIndices.add(idx));
+                        }
+
+                        console.log('[Events] Base Portfolio Selected:', portfolio.name);
+
+                        // Show Search Button
+                        if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.classList.remove('hidden');
+
+                        if (window.renderBaseStrategiesConfig) {
+                            window.renderBaseStrategiesConfig();
+                        }
+                    }
+                }
+
+                e.stopPropagation();
+                return;
+            }
+
+            if (row && !e.target.closest('button') && !e.target.closest('input')) {
+                const index = row.dataset.rowIndex;
+                if (index !== undefined) {
+                    const portfolio = state.savedPortfolios[index];
+                    if (portfolio) {
+                        console.log(`[Events] Clicking row ${index}. ID: ${portfolio.id}`);
+                        console.log(`[Events] State Item riskPerStrategy present?`, !!portfolio.riskPerStrategy, portfolio.riskPerStrategy);
+                        // Pass index explicitly so focusMode can use it for SQ Analysis
+                        focusMode.enable({ ...portfolio, index: parseInt(index, 10) }, 'saved', row);
+                    }
+                }
             }
         });
 
@@ -385,7 +487,7 @@ export function initializeEventListeners() {
                 e.target.blur(); // Trigger focusout to ensure consistency
             } else if (e.target.classList.contains('portfolio-name-input') && e.key === 'Escape') {
                 const inputEl = e.target;
-                const displayEl = inputEl.closest('.portfolio-name-group').querySelector('.portfolio-name-display');
+                const displayEl = inputEl.closest('.portfolio-name-container').querySelector('.portfolio-name-display');
                 if (displayEl) displayEl.classList.remove('hidden');
                 inputEl.classList.add('hidden');
                 // Reset value

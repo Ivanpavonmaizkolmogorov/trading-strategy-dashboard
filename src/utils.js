@@ -71,9 +71,14 @@ export const parseCsv = (file) => {
                     'profit/loss': 'pnl', 'profit': 'pnl', 'net profit': 'pnl', 'gain': 'pnl', 'p/l': 'pnl',
                     'time': 'date', 'fecha': 'date', 'gmt time': 'date', 'timestamp': 'date', 'datetime': 'date',
                     'close': 'price', 'precio': 'price', 'cierre': 'price', 'last': 'price', 'value': 'price',
-                    'open price': 'open_price', 'close price': 'close_price'
+                    'open price': 'open_price', 'close price': 'close_price',
+                    'swap': 'swap', 'commission': 'commission', 'taxes': 'commission', 'comm': 'commission', 'fee': 'commission'
                 };
-                return map[header] || header;
+                if (map[header]) return map[header];
+                if (header.includes('swap')) return 'swap';
+                if (header.includes('commission') || header.includes('comm') || header.includes('fee') || header.includes('taxes')) return 'commission';
+                if (header.includes('profit') || header.includes('gain') || header.includes('p/l')) return 'pnl';
+                return header;
             },
             complete: (results) => {
                 if (results.errors.length) return reject(new Error(`Error al parsear ${file.name}: ${results.errors[0].message}`));
@@ -113,7 +118,9 @@ export const formatMetricForDisplay = (value, metricName) => {
     if (Number.isNaN(value)) return 'N/A';
     if (!Number.isFinite(value)) return '∞';
 
-    const isPercent = ['maxDrawdown', 'winningPercentage', 'upsideCapture', 'downsideCapture'].includes(metricName) || (metricName && metricName.toLowerCase().includes('%'));
+    if (metricName === 'gammaFlowScore') return value.toFixed(4);
+
+    const isPercent = ['maxDrawdown', 'winningPercentage', 'upsideCapture', 'downsideCapture', 'cagr'].includes(metricName) || (metricName && metricName.toLowerCase().includes('%'));
 
     if (isPercent) return `${value.toFixed(2)}%`;
 
@@ -133,6 +140,83 @@ export const formatMetricForDisplay = (value, metricName) => {
     return value.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 };
 
+/**
+ * Exporta el contenido visible de una tabla HTML a CSV.
+ * @param {string} tableId - ID de la tabla o del tbody (se buscará la tabla padre).
+ * @param {string} filename - Nombre del archivo CSV a descargar.
+ */
+export const exportTableToCSV = (tableId, filename) => {
+    console.log(`[ExportCSV] Iniciando exportación para tabla: ${tableId}, archivo: ${filename}`);
+    const el = document.getElementById(tableId);
+    if (!el) {
+        console.error(`[ExportCSV] Tabla no encontrada: ${tableId}`);
+        return;
+    }
+
+    // Encontrar el elemento <table> padre si se pasó un tbody
+    const table = el.tagName === 'TABLE' ? el : el.closest('table');
+    if (!table) {
+        console.error(`[ExportCSV] Elemento padre <table> no encontrado para: ${tableId}`);
+        return;
+    }
+
+    console.log(`[ExportCSV] Tabla encontrada. Procesando filas...`);
+
+    const rows = Array.from(table.querySelectorAll('tr'));
+
+    // Filtrar filas y celdas visibles
+    // Nota: 'offsetParent' es null si el elemento (o un padre) tiene display: none.
+    // Esto asegura que solo exportamos las columnas/filas visibles (respetando los KPIs activos).
+    const csvContent = [];
+
+    rows.forEach(row => {
+        // Ignorar filas ocultas
+        if (row.offsetParent === null) return;
+
+        const cells = Array.from(row.querySelectorAll('th, td'));
+        const rowData = [];
+
+        cells.forEach(cell => {
+            // Ignorar celdas/columnas ocultas
+            if (cell.offsetParent === null) return;
+
+            // Limpiar el texto: quitar saltos de línea y comillas dobles
+            let text = cell.innerText.replace(/(\r\n|\n|\r)/gm, '').trim();
+
+            // Escapar comillas dobles (CSV estándar: "" para una comilla)
+            text = text.replace(/"/g, '""');
+
+            // Envolver en comillas si contiene separadores (coma, punto y coma)
+            if (text.includes(',') || text.includes(';')) {
+                text = `"${text}"`;
+            }
+
+            rowData.push(text);
+        });
+
+        if (rowData.length > 0) {
+            csvContent.push(rowData.join(','));
+        }
+    });
+
+    if (csvContent.length === 0) {
+        alert("No hay datos visibles para exportar.");
+        return;
+    }
+
+    const csvString = csvContent.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
 // ===== ID GENERATION FOR HEALTH MONITORING =====
 
 /**
@@ -145,7 +229,8 @@ function generateShortHash(str) {
         hash = ((hash << 5) - hash) + char;
         hash = hash & hash;
     }
-    return Math.abs(hash).toString(36).substring(0, 4).toUpperCase();
+    // Make it longer and mixed case to reduce collisions
+    return Math.abs(hash).toString(36) + Math.random().toString(36).substring(2, 6);
 }
 
 /**
@@ -153,18 +238,23 @@ function generateShortHash(str) {
  * NOW DETERMINISTIC: Depends only on fileName to allow persistence across sessions.
  */
 export function generateStrategyId(fileName) {
-    // Removed timestamp to ensure stability across reloads for the same file
-    const input = `${fileName}`;
-    const hash = generateShortHash(input);
-    return `STRAT_${hash}`;
+    // Keep deterministic for strategies based on filename
+    let hash = 0;
+    for (let i = 0; i < fileName.length; i++) {
+        const char = fileName.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    const hashStr = Math.abs(hash).toString(36).toUpperCase();
+    return `STRAT_${hashStr}`;
 }
 
 /**
  * Generates unique ID for portfolios (format: PORT_XXXX)
  */
 export function generatePortfolioId(name, strategyIds = [], timestamp = Date.now()) {
-    const input = `${name}_${strategyIds.join('_')}_${timestamp}`;
-    const hash = generateShortHash(input);
+    const input = `${name}_${strategyIds.join('_')}_${timestamp}_${Math.random()}`;
+    const hash = generateShortHash(input).toUpperCase();
     return `PORT_${hash}`;
 }
 
@@ -173,7 +263,7 @@ export function generatePortfolioId(name, strategyIds = [], timestamp = Date.now
  */
 export function generateAccountId(broker, accountNumber, timestamp = Date.now()) {
     const input = `${broker}_${accountNumber}_${timestamp}`;
-    const hash = generateShortHash(input);
+    const hash = generateShortHash(input).toUpperCase();
     const brokerPrefix = broker.substring(0, 2).toUpperCase();
     return `ACC_${brokerPrefix}_${hash}`;
 }

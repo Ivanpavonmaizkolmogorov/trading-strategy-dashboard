@@ -1,8 +1,11 @@
 import { dom } from '../dom.js';
-import { state } from '../state.js';
+import { state, saveSavedPortfolios } from '../state.js';
 import { renderViewerForActiveTab } from './viewer.js';
 import { renderStrategiesTable, displaySavedPortfoliosList } from '../ui.js';
 import { initStrategiesTable } from './strategiesTable.js';
+import { exportTableToCSV } from '../utils.js';
+import { selectedSavedPortfolios, clearSelectedSavedPortfolios } from './savedPortfoliosTable.js';
+import { showToast } from './notifications.js';
 
 /**
  * Inicializa la lógica del layout: Sidebar, Tabs y Resizer.
@@ -43,6 +46,107 @@ const initSidebar = () => {
 const initBottomPanelTabs = () => {
     if (!dom.panelTabs) return;
 
+    // --- References to Control Groups ---
+    const databankControls = document.getElementById('databank-controls');
+    const savedPortfoliosControls = document.getElementById('saved-portfolios-controls');
+    const strategiesControls = document.getElementById('strategies-controls');
+
+    // --- Helper to Toggle Controls ---
+    const updateControlsVisibility = (targetId) => {
+        // Hide all first
+        if (databankControls) databankControls.classList.add('hidden');
+        if (savedPortfoliosControls) savedPortfoliosControls.classList.add('hidden');
+        if (strategiesControls) strategiesControls.classList.add('hidden');
+
+        // Show specific
+        if (targetId === 'databank-content' && databankControls) {
+            databankControls.classList.remove('hidden');
+            if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.classList.remove('hidden');
+        } else if (targetId === 'saved-portfolios-content' && savedPortfoliosControls) {
+            savedPortfoliosControls.classList.remove('hidden');
+            // Hide search button unless base portfolio is selected
+            if (dom.findDatabankPortfoliosBtn) {
+                if (state.searchBasePortfolioIndex !== null) {
+                    dom.findDatabankPortfoliosBtn.classList.remove('hidden');
+                } else {
+                    dom.findDatabankPortfoliosBtn.classList.add('hidden');
+                }
+            }
+        } else if (targetId === 'strategies-content' && strategiesControls) {
+            strategiesControls.classList.remove('hidden');
+            // strategies tab likely doesn't need search button
+            if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.classList.add('hidden');
+        }
+    };
+
+    // --- Initialize Export Buttons (One-time setup) ---
+    const exportDatabankBtn = document.getElementById('export-databank-btn');
+    if (exportDatabankBtn) {
+        console.log('[Layout] Export Databank Button found. Attaching listener.');
+        exportDatabankBtn.addEventListener('click', () => {
+            console.log('[Layout] Export Databank Button Clicked!');
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            exportTableToCSV('databank-table-body', `databank_export_${timestamp}.csv`);
+        });
+    } else {
+        console.warn('[Layout] Export Databank Button NOT found during init!');
+    }
+
+    const deleteSelectedBtn = document.getElementById('delete-selected-portfolios-btn');
+    if (deleteSelectedBtn) {
+        console.log('[Layout] Delete Selected Portfolios Button found. Attaching listener.');
+        deleteSelectedBtn.addEventListener('click', () => {
+            const count = selectedSavedPortfolios.size;
+            if (count === 0) return;
+
+            if (confirm(`¿Estás seguro de que quieres eliminar ${count} portafolios seleccionados? Esto no se puede deshacer.`)) {
+                const indicesToDelete = new Set(selectedSavedPortfolios);
+                // Filter out the deleted ones
+                state.savedPortfolios = state.savedPortfolios.filter((_, index) => !indicesToDelete.has(index));
+
+                saveSavedPortfolios();
+                clearSelectedSavedPortfolios();
+                displaySavedPortfoliosList();
+                showToast(`${count} portafolios eliminados correctamente.`, 'success');
+            }
+        });
+    } else {
+        console.warn('[Layout] Delete Selected Portfolios Button NOT found during init!');
+    }
+
+    const exportSavedBtn = document.getElementById('export-saved-portfolios-btn');
+    if (exportSavedBtn) {
+        console.log('[Layout] Export Saved Portfolios Button found. Attaching listener.');
+        exportSavedBtn.addEventListener('click', () => {
+            console.log('[Layout] Export Saved Portfolios Button Clicked!');
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            exportTableToCSV('saved-portfolios-body', `saved_portfolios_${timestamp}.csv`);
+        });
+    } else {
+        console.warn('[Layout] Export Saved Portfolios Button NOT found during init!');
+    }
+
+    const exportStrategiesBtn = document.getElementById('export-strategies-btn');
+    if (exportStrategiesBtn) {
+        console.log('[Layout] Export Strategies Button found. Attaching listener.');
+        exportStrategiesBtn.addEventListener('click', () => {
+            console.log('[Layout] Export Strategies Button Clicked!');
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            exportTableToCSV('strategies-table-body', `strategies_export_${timestamp}.csv`);
+        });
+    } else {
+        console.warn('[Layout] Export Strategies Button NOT found during init!');
+    }
+
+    // 0. Sync Initial State
+    const activeContent = document.querySelector('.tab-content.active');
+    if (activeContent) {
+        if (activeContent.id === 'databank-content') state.activeTab = 'databank';
+        else if (activeContent.id === 'saved-portfolios-content') state.activeTab = 'saved-portfolios';
+        else if (activeContent.id === 'strategies-content') state.activeTab = 'strategies';
+        console.log(`[Layout] Initial active tab synced to: ${state.activeTab}`);
+    }
+
     dom.panelTabs.forEach(btn => {
         btn.addEventListener('click', (e) => {
             // 1. Remove active class from all tabs
@@ -63,6 +167,10 @@ const initBottomPanelTabs = () => {
             // 4. Show target content
             const targetId = targetBtn.dataset.target;
             const targetContent = document.getElementById(targetId);
+
+            // 4.5 Update Controls Visibility
+            updateControlsVisibility(targetId);
+
             if (targetContent) {
                 targetContent.classList.remove('hidden');
                 targetContent.classList.add('active', 'flex');
@@ -152,8 +260,11 @@ const initPanelResizer = () => {
         maxChartBtn.addEventListener('mousedown', (e) => e.stopPropagation()); // Prevent drag start
         maxChartBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            // Maximize Chart = Minimize Bottom Panel
-            sourcePanel.style.height = '40px'; // Min height for tabs
+            // Maximize Bottom Panel (User Requested Swap)
+            const containerHeight = document.querySelector('main').clientHeight;
+            // Leave 44px (raised 4 more points as requested)
+            sourcePanel.style.height = `${containerHeight - 44}px`;
+
             triggerResize();
         });
     }
@@ -172,9 +283,11 @@ const initPanelResizer = () => {
         maxBottomBtn.addEventListener('mousedown', (e) => e.stopPropagation());
         maxBottomBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            // Maximize Bottom Panel = Max height
-            const containerHeight = document.querySelector('main').clientHeight;
-            sourcePanel.style.height = `${containerHeight - 100}px`; // Leave space for header/chart
+            e.stopPropagation();
+            // Maximize Chart / Minimize Bottom Panel (User Requested Swap)
+            // Leave 4px visible (a couple points higher than 0)
+            sourcePanel.style.height = '4px';
+
             triggerResize();
         });
     }

@@ -359,7 +359,7 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
                 num_simulations: numSimulations,
                 target_metric: elements.targetMetricSelect.value,
                 target_goal: elements.targetGoalSelect.value,
-                min_weight: parseFloat(dom.minWeightFilter.value) / 100,
+                min_weight: dom.minWeightFilter ? parseFloat(dom.minWeightFilter.value) / 100 : 0,
                 metrics_for_balance: metricsForBalance,
             }
         };
@@ -641,36 +641,54 @@ function applyOptimizedWeights(weights, nameSuffix, analysis, isNew = false) {
     const portfolioIndex = state.currentOptimizationData.portfolioIndex;
     const portfolio = state.savedPortfolios[portfolioIndex];
 
-    if (isNew) {
-        // Crear nuevo portafolio
-        const baseName = portfolio.name.split('(')[0].trim();
-        const newPortfolio = {
-            name: `${baseName} ${nameSuffix}`,
-            indices: portfolio.indices,
-            id: state.nextPortfolioId++,
-            weights: weights,
-            metrics: analysis.metrics,
-            comments: `Optimizado desde '${portfolio.name}'`,
-            riskConfig: portfolio.riskConfig || {}
-        };
-        state.savedPortfolios.push(newPortfolio);
-        console.log('[Optimization] Nuevo portafolio creado:', newPortfolio.name);
-        showToast(`✅ Nuevo portafolio creado: ${newPortfolio.name}`, 'success');
-    } else {
-        // Sobrescribir original
-        portfolio.weights = weights;
-        portfolio.name = `${portfolio.name.split('(')[0].trim()} ${nameSuffix}`;
-        portfolio.metrics = analysis.metrics;
-        console.log('[Optimization] Portafolio actualizado:', portfolio.name);
-        showToast(`✅ Portafolio actualizado: ${portfolio.name}`, 'success');
-    }
+    import('../utils.js').then(({ generatePortfolioId }) => {
+        if (isNew) {
+            // Crear nuevo portafolio
+            const baseName = portfolio.name.split('(')[0].trim();
+            const newName = `${baseName} ${nameSuffix}`;
 
-    // Cerrar modal
-    closeOptimizationModal();
+            const newPortfolio = {
+                name: newName,
+                indices: portfolio.indices,
+                strategyIds: portfolio.strategyIds, // Preserve IDs
+                strategyNames: portfolio.strategyNames, // Preserve Names
+                id: generatePortfolioId(newName, portfolio.strategyIds || []), // Robust ID
+                weights: weights,
+                metrics: analysis.metrics,
+                comments: `Optimizado desde '${portfolio.name}'`,
+                riskConfig: portfolio.riskConfig || {}
+            };
+            state.savedPortfolios.push(newPortfolio);
+            console.log('[Optimization] Nuevo portafolio creado:', newPortfolio.name);
+            import('../modules/notifications.js').then(({ showToast }) => {
+                showToast(`✅ Nuevo portafolio creado: ${newPortfolio.name}`, 'success');
+            });
+        } else {
+            // Sobrescribir original
+            portfolio.weights = weights;
+            portfolio.name = `${portfolio.name.split('(')[0].trim()} ${nameSuffix}`;
+            portfolio.metrics = analysis.metrics;
+            // Ensure strategy meta is preserved (it should be, but just in case)
+            if (!portfolio.strategyIds && state.currentOptimizationData.portfolio.strategyIds) {
+                portfolio.strategyIds = state.currentOptimizationData.portfolio.strategyIds;
+            }
+            if (!portfolio.strategyNames && state.currentOptimizationData.portfolio.strategyNames) {
+                portfolio.strategyNames = state.currentOptimizationData.portfolio.strategyNames;
+            }
 
-    // Actualizar UI
-    import('../ui.js').then(module => {
-        module.displaySavedPortfoliosList();
+            console.log('[Optimization] Portafolio actualizado:', portfolio.name);
+            import('../modules/notifications.js').then(({ showToast }) => {
+                showToast(`✅ Portafolio actualizado: ${portfolio.name}`, 'success');
+            });
+        }
+
+        // Cerrar modal
+        closeOptimizationModal();
+
+        // Actualizar UI
+        import('../ui.js').then(module => {
+            module.displaySavedPortfoliosList();
+        });
     });
 }
 
@@ -991,7 +1009,7 @@ async function startOptimizationInTab() {
                 num_simulations: numSimulations,
                 target_metric: targetMetric,
                 target_goal: goal,
-                min_weight: parseFloat(dom.minWeightFilter.value) / 100,
+                min_weight: dom.minWeightFilter ? parseFloat(dom.minWeightFilter.value) / 100 : 0,
                 metrics_for_balance: metricsForBalance,
             }
         };

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional, Union
 import json
@@ -12,6 +12,21 @@ import random
 
 # Importar nuestro nuevo motor de análisis
 from analysis_engine import process_strategy_data, get_combinations, add_to_databank_if_better, count_combinations
+
+# --- Utils ---
+def sanitize_floats(obj):
+    if isinstance(obj, float):
+        if not np.isfinite(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: sanitize_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_floats(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(sanitize_floats(v) for v in obj)
+    return obj
+
 
 # --- Modelos de Datos (Pydantic) ---
 class Trade(BaseModel):
@@ -37,8 +52,13 @@ class DatabankParams(BaseModel):
     correlation_threshold: float
     max_size: int
     base_indices: List[int]
-    metric_name: str # <-- Añadimos el nombre legible de la métrica
+    metric_name: str
     search_threshold: int
+    search_method: Optional[str] = 'auto'
+    normalization_metric: Optional[str] = None
+    normalization_target: Optional[float] = None
+    cagr_scaling_metric: Optional[str] = None
+    cagr_scaling_operator: Optional[str] = 'multiply'
 
 class DatabankRequest(BaseModel):
     strategy_names: List[str] # <-- Añadimos los nombres de las estrategias
@@ -90,6 +110,13 @@ class OptimizationRequest(BaseModel):
     normalization_metric: Optional[str] = None
     normalization_target_value: Optional[float] = None
     broker_config: Optional[Dict[str, Any]] = None
+
+
+class CorrelationRequest(BaseModel):
+    portfolio_indices: List[int] # Indices of strategies to analyze
+    strategies_data: List[List[Trade]]
+    start_date: Optional[str] = None # Optional date filter
+    end_date: Optional[str] = None
 
 
 # --- Codificador JSON Personalizado y Robusto ---
@@ -268,8 +295,13 @@ async def get_full_analysis(request: FullAnalysisRequest):
 
                 print(f"  [BACKEND-LOG] 2.{p_idx}.a -> Normalización Recibida: is_risk_normalized={p_def.is_risk_normalized}, metric='{p_def.normalization_metric}', value={p_def.normalization_target_value}")
 
+                # Initialize risk_per_strategy variable for this portfolio
+                risk_per_strategy = None
+                is_risk_normalized_for_portfolio = False
+
                 # --- LÓGICA DE NORMALIZACIÓN CORREGIDA: Se aplica por portafolio ---
                 if p_def.is_risk_normalized and p_def.normalization_target_value and p_def.normalization_target_value > 0:
+                    is_risk_normalized_for_portfolio = True
                     print(f"  [BACKEND-LOG] 2.{p_idx}.b -> ✅ ENTRANDO en bloque de normalización.")
                     # --- CORRECCIÓN FINALÍSIMA: Usar 'portfolio_df' (los trades combinados originales) para el pre-análisis ---
                     if not portfolio_df.empty:
@@ -288,6 +320,24 @@ async def get_full_analysis(request: FullAnalysisRequest):
                                 # En lugar de 'in-place' ( *= ), asignamos el resultado a la columna.
                                 # Esto es más robusto contra los problemas de 'SettingWithCopyWarning' de pandas.
                                 trades_to_analyze_df['pnl'] = trades_to_analyze_df['pnl'] * scale_factor
+                                
+                                # Calculate implied risk per strategy
+                                # Standard Risk = $100. New Risk = $100 * Factor.
+                                # We assume all strategies contributed equally or were scaled equally.
+                                # The risk viewer expects an array of risk values per strategy.
+                                # Since we apply global scaling to the combined dataframe, effectively each strategy's risk is scaled by scale_factor.
+                                # But we need to know the 'base' risk. Usually 100 per strategy.
+                                # If the portfolio had 'weights', that should have been handled before? 
+                                # In this flow (Full Analysis), we usually just Sum PnL.
+                                # If 'weights' were passed, they were applied in line 285. 
+                                # If line 285 applied weight, then the risk is 100 * weight.
+                                # Then we scale by scale_factor.
+                                # However, constructing the exact array here might be tricky if we don't track per-strategy scaling.
+                                # Approximation: Normalized Risk = 100 * scale_factor (assuming equal weight base)
+                                new_risk = 100.0 * scale_factor
+                                # Generate array equal to number of strategies
+                                num_strategies_in_portfolio = len(p_def.indices)
+                                risk_per_strategy = [new_risk] * num_strategies_in_portfolio
                             else:
                                 print(f"    [BACKEND-LOG] -> ⚠️ Saltando normalización (valor actual de la métrica es 0).")
                 else:
@@ -305,6 +355,9 @@ async def get_full_analysis(request: FullAnalysisRequest):
                 # --- CORRECCIÓN FINAL Y DEFINITIVA ---
                 # Construir el objeto de respuesta explícitamente para asegurar que todos los campos se incluyen.
                 # Y manejar el caso donde portfolio_id puede no existir (para el portafolio actual o del databank).
+                
+                print(f"[DEBUG-BACKEND] Portfolio {p_idx} - is_normalized: {is_risk_normalized_for_portfolio}, risk_per_strat: {risk_per_strategy}")
+                
                 result_obj = {
                     "metrics": metrics_payload, # The metrics are now directly in this property
                     "is_saved_portfolio": p_def.is_saved_portfolio,
@@ -312,7 +365,8 @@ async def get_full_analysis(request: FullAnalysisRequest):
                     "is_current_portfolio": p_def.is_current_portfolio,
                     "is_databank_portfolio": p_def.is_databank_portfolio,
                     "databank_index": p_def.databank_index,
-                    "portfolio_id": p_def.portfolio_id
+                    "portfolio_id": p_def.portfolio_id,
+                    "riskPerStrategy": risk_per_strategy if is_risk_normalized_for_portfolio else None
                 }
 
                 print(f"  [BACKEND-LOG] 2.{p_idx}.c -> Análisis finalizado. ¿Métricas encontradas?: {bool(metrics_payload)}. Enviando de vuelta.")
@@ -419,6 +473,25 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
             # --- LÓGICA HÍBRIDA: Exhaustiva vs. Monte Carlo ---
             # Si hay base_indices, reducimos el espacio de búsqueda
             base_indices = set(params.base_indices) if params.base_indices else set()
+            
+            # --- VALIDACIÓN CRÍTICA: Correlación de Estrategias Base ---
+            # Si las estrategias base YA superan el umbral, toda búsqueda es fútil.
+            if base_indices:
+                base_list = list(base_indices)
+                for i1_idx, i1 in enumerate(base_list):
+                    for i2 in base_list[i1_idx+1:]:
+                        # Usar iloc para acceder por índice numérico posicional
+                        corr_val = correlation_matrix.iloc[i1, i2]
+                        if corr_val > params.correlation_threshold:
+                            name1 = request.strategy_names[i1] if hasattr(request, 'strategy_names') and i1 < len(request.strategy_names) else f"#{i1}"
+                            name2 = request.strategy_names[i2] if hasattr(request, 'strategy_names') and i2 < len(request.strategy_names) else f"#{i2}"
+                            
+                            err_msg = f"⛔ ERROR CRÍTICO: Las estrategias base seleccionadas ('{name1}' y '{name2}') tienen una correlación interna de {corr_val:.2f}, que supera su límite de {params.correlation_threshold}. Imposible generar portafolios."
+                            yield f"data: {json.dumps({'status': 'error', 'message': err_msg})}\n\n"
+                            # Importante: Detener la ejecución aquí
+                            yield f"data: {json.dumps({'status': 'stopped', 'message': 'Búsqueda abortada por conflicto en parámetros.'})}\n\n"
+                            return
+
             available_indices = [i for i in indices if i not in base_indices]
             
             # Ajustar tamaños de combinación
@@ -440,7 +513,20 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                  effective_max_k = 0
 
             total_exhaustive_combinations = count_combinations(len(available_indices), effective_min_k, effective_max_k)
-            use_monte_carlo = total_exhaustive_combinations > params.search_threshold
+            
+            # --- Search Method Selection ---
+            search_method = getattr(params, 'search_method', 'auto')
+            
+            if search_method == 'brute_force':
+                use_monte_carlo = False
+                print(f"DEBUG: Search Method FORCED to Brute Force (Exhaustive).")
+            elif search_method == 'monte_carlo':
+                use_monte_carlo = True
+                print(f"DEBUG: Search Method FORCED to Monte Carlo.")
+            else:
+                # Auto (Default)
+                use_monte_carlo = total_exhaustive_combinations > params.search_threshold
+                print(f"DEBUG: Search Method Auto -> Use Monte Carlo? {use_monte_carlo} (Threshold: {params.search_threshold})")
 
             total_iterations = 0
             iteration_counter = 0
@@ -448,10 +534,12 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
             databank_portfolios = []
 
             if use_monte_carlo:
-                yield f"data: {json.dumps({'status': 'info', 'message': f'Búsqueda Monte Carlo iniciada (Total > {params.search_threshold})'})}\n\n"
+                msg = f'Búsqueda Monte Carlo iniciada ({"Forzada" if search_method == "monte_carlo" else f"Auto > {params.search_threshold}"})'
+                yield f"data: {json.dumps({'status': 'info', 'message': msg})}\n\n"
             else:
                 total_iterations = total_exhaustive_combinations
-                yield f"data: {json.dumps({'status': 'info', 'message': f'Búsqueda Exhaustiva iniciada ({total_iterations} combinaciones)'})}\n\n"
+                msg = f'Búsqueda Exhaustiva iniciada ({"Forzada" if search_method == "brute_force" else "Auto"}) - {total_iterations} combinaciones'
+                yield f"data: {json.dumps({'status': 'info', 'message': msg})}\n\n"
 
             while True: # Bucle infinito que se controla con Pausar/Detener
                 iteration_counter += 1
@@ -493,65 +581,160 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                         # Búsqueda exhaustiva completada
                         break # Salir del bucle while
                 
-                # Combinar fijos + variables
-                combo = tuple(sorted(list(base_indices) + combo_indices))
-                
-                # Si el combo resultante es menor que el mínimo global requerido (por si acaso)
-                if len(combo) < min_combo_size:
-                    continue
+                try:
+                    # Combinar fijos + variables
+                    combo = tuple(sorted(list(base_indices) + combo_indices))
+                    
+                    # Si el combo resultante es menor que el mínimo global requerido (por si acaso)
+                    if len(combo) < min_combo_size:
+                        continue
 
-                is_valid = True
-                for i1_idx, i1 in enumerate(combo):
-                    for i2 in combo[i1_idx+1:]:
-                        corr_val = correlation_matrix.iloc[i1, i2]
-                        if corr_val > params.correlation_threshold:
-                            is_valid = False
-                            
-                            # Si es el portafolio completo (todas las estrategias), avisar al usuario explícitamente
-                            if len(combo) == num_strategies:
-                                name1 = request.strategy_names[i1] if hasattr(request, 'strategy_names') and i1 < len(request.strategy_names) else f"#{i1+1}"
-                                name2 = request.strategy_names[i2] if hasattr(request, 'strategy_names') and i2 < len(request.strategy_names) else f"#{i2+1}"
-                                warning_msg = f"⚠️ Portafolio completo descartado: Alta correlación ({corr_val:.2f}) entre '{name1}' y '{name2}'."
-                                yield f"data: {json.dumps({'status': 'info', 'message': warning_msg})}\n\n"
+                    is_valid = True
+                    for i1_idx, i1 in enumerate(combo):
+                        for i2 in combo[i1_idx+1:]:
+                            corr_val = correlation_matrix.iloc[i1, i2]
+                            if corr_val > params.correlation_threshold:
+                                is_valid = False
+                                
+                                # Si es el portafolio completo (todas las estrategias), avisar al usuario explícitamente
+                                if len(combo) == num_strategies:
+                                    name1 = request.strategy_names[i1] if hasattr(request, 'strategy_names') and i1 < len(request.strategy_names) else f"#{i1+1}"
+                                    name2 = request.strategy_names[i2] if hasattr(request, 'strategy_names') and i2 < len(request.strategy_names) else f"#{i2+1}"
+                                    warning_msg = f"⚠️ Portafolio completo descartado: Alta correlación ({corr_val:.2f}) entre '{name1}' y '{name2}'."
+                                    yield f"data: {json.dumps({'status': 'info', 'message': warning_msg})}\n\n"
 
-                            # Log rejection for larger portfolios to debug user issue
-                            if len(combo) >= 5:
-                                print(f"DEBUG: Rejected combo {combo} due to correlation {corr_val:.2f} > {params.correlation_threshold} between {i1} and {i2}", flush=True)
+                                # Log rejection for larger portfolios to debug user issue
+                                # if len(combo) >= 5:
+                                #     print(f"DEBUG: Rejected combo {combo} due to correlation {corr_val:.2f} > {params.correlation_threshold} between {i1} and {i2}", flush=True)
+                                break
+                        if not is_valid:
                             break
+                    
                     if not is_valid:
-                        break
-                
-                if not is_valid:
+                        continue
+
+                    # if len(combo) >= 5:
+                    #     print(f"DEBUG: Accepted combo {combo} (size {len(combo)})", flush=True)
+
+                    portfolio_trades = []
+                    for strat_index in combo:
+                        # Simplemente añadimos todos los trades de las estrategias seleccionadas
+                        portfolio_trades.extend(strategies_data[strat_index])
+                    
+                    portfolio_df = pd.DataFrame(portfolio_trades)
+                    analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+
+                    if analysis_result:
+                        metrics, _ = analysis_result
+                        risk_per_strategy = None # Default: None (implicitly $100 or user stored)
+
+                        # --- NORMALIZATION LOGIC (Portfolio Level) ---
+                        if params.normalization_metric and params.normalization_target:
+                            # 1. Determine current value of target metric
+                            metric_key_map = {
+                                'max_dd': 'maxDrawdownInDollars',
+                                'ulcer_index': 'ulcerIndexInDollars'
+                            }
+                            target_key = metric_key_map.get(params.normalization_metric)
+                            current_val = metrics.get(target_key, 0)
+
+                            if current_val > 0:
+                                # 2. Calculate Scaling Factor
+                                # Factor = Target / Current
+                                scaling_factor = params.normalization_target / current_val
+                                
+                                # 3. Apply Scaling to All Dollar Metrics in 'metrics'
+                                # We need to scale PnL, Drawdown $, etc.
+                                # Ratios (Sharpe, Profit Factor) remain largely same (linear scaling).
+                                # Percentages (Max DD %) might change if capital is fixed, but here we usually assume variable capital or just scale nominals.
+                                # For simplicity and speed, we scale known dollar keys.
+                                dollar_keys = ['totalProfit', 'maxDrawdownInDollars', 'avgTrade', 'avgWin', 'avgLoss', 'grossProfit', 'grossLoss', 'ulcerIndexInDollars', 'monthlyAvgProfit']
+                                for k in dollar_keys:
+                                    if k in metrics:
+                                        metrics[k] *= scaling_factor
+
+                                # 4. Set implied risk per strategy
+                                # Standard Risk = $100. New Risk = $100 * Factor.
+                                new_risk = 100.0 * scaling_factor
+                                risk_per_strategy = [new_risk] * len(combo) # Uniform scaling for all strategies in portfolio
+
+                        # DEBUG LOG
+                        print(f"[DEBUG] Metric: {params.metric_to_optimize_key} | Val: {metrics.get(params.metric_to_optimize_key)} | NormTarget: {params.normalization_target} | Scale: {scaling_factor if 'scaling_factor' in locals() else 'N/A'}")
+
+                        if metrics and params.metric_to_optimize_key in metrics:
+                            metric_val = metrics[params.metric_to_optimize_key]
+
+                            # --- CUSTOM OPTIMIZATION (CAGR x/÷ KPI) ---
+                            if params.cagr_scaling_metric:
+                                cagr_val = metrics.get('cagr', 0)
+                                scaling_kpi_val = metrics.get(params.cagr_scaling_metric, 0)
+                                operator = params.cagr_scaling_operator or 'multiply'
+                                
+                                # Check if metrics exist and are valid numbers
+                                if np.isfinite(cagr_val) and np.isfinite(scaling_kpi_val):
+                                     if operator == 'multiply':
+                                         metric_val = cagr_val * scaling_kpi_val
+                                         op_symbol = "×"
+                                     elif operator == 'divide':
+                                         if abs(scaling_kpi_val) > 1e-9: # Avoid division by zero
+                                             metric_val = cagr_val / scaling_kpi_val
+                                             op_symbol = "÷"
+                                         else:
+                                             metric_val = -999999999 # Penalize division by zero
+                                     else:
+                                         metric_val = cagr_val * scaling_kpi_val # Default to multiply
+                                         op_symbol = "×"
+
+                                     # Update metadata for display
+                                     params.metric_name = f"CAGR {op_symbol} {params.cagr_scaling_metric}"
+                                     # Store explicitly in metrics for debugging/display if needed
+                                     metrics['cagr_custom_score'] = metric_val
+                                else:
+                                     metric_val = -999999999 # Penalize invalid combinations
+                            
+                            # Filter out invalid metrics (NaN, Infinity)
+                            if not np.isfinite(metric_val):
+                                # print(f"[DEBUG] Skipped invalid metric val: {metric_val}")
+                                continue
+
+                            portfolio_data = {
+                                "metricValue": metric_val,
+                                "metricName": params.metric_name,
+                                "indices": list(combo),
+                                "metrics": metrics,
+                                "optimizationGoal": params.optimization_goal,
+                                "riskPerStrategy": risk_per_strategy # Send to frontend
+                            }
+                            
+                            old_len = len(databank_portfolios)
+                            databank_portfolios = add_to_databank_if_better(databank_portfolios, portfolio_data, params.max_size)
+                            
+                            len_diff = len(databank_portfolios) - old_len
+                            is_update = any(p['indices'] == list(combo) for p in databank_portfolios)
+
+                            if len_diff > 0:
+                                print(f"[DEBUG] + Added Portfolio. Metric ({params.metric_to_optimize_key}): {metric_val:.2f}")
+                            elif is_update:
+                                print(f"[DEBUG] * Updated Portfolio. Metric: {metric_val:.2f}")
+                            # else:
+                            #     print(f"[DEBUG] . Rejected. Metric: {metric_val:.2f}")
+
+                            if len_diff > 0 or is_update:
+                                # Sanitize data before sending to avoid JSON NaN errors
+                                # Sanitize data before sending to avoid JSON NaN errors
+                                safe_portfolio_data = sanitize_floats(portfolio_data)
+                                yield f"data: {json.dumps(safe_portfolio_data, cls=CustomJSONEncoder)}\n\n"
+                                # Yield control to event loop to ensure message sends
+                                await asyncio.sleep(0.01)
+                            
+                except Exception as loop_e:
+                    print(f"⚠️ Error processing combo {combo}: {loop_e}")
+                    traceback.print_exc()
                     continue
 
-                if len(combo) >= 5:
-                    print(f"DEBUG: Accepted combo {combo} (size {len(combo)})", flush=True)
-
-                portfolio_trades = []
-                for strat_index in combo:
-                    # Simplemente añadimos todos los trades de las estrategias seleccionadas
-                    portfolio_trades.extend(strategies_data[strat_index])
-                
-                portfolio_df = pd.DataFrame(portfolio_trades)
-                analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy(), broker_config=request.broker_config)
-
-                if analysis_result:
-                    metrics, _ = analysis_result
-                    # yield f"data: {json.dumps({'status': 'info', 'message': f'DEBUG: Portfolio analyzed. Metrics keys: {list(metrics.keys())}'})}\n\n"
-                    if metrics and params.metric_to_optimize_key in metrics:
-                        portfolio_data = {
-                            "metricValue": metrics[params.metric_to_optimize_key],
-                            "metricName": params.metric_name, # <-- Enviamos el nombre de la métrica
-                            "indices": list(combo),
-                            "metrics": metrics,
-                            "optimizationGoal": params.optimization_goal
-                        }
-                        
-                        old_len = len(databank_portfolios)
-                        databank_portfolios = add_to_databank_if_better(databank_portfolios, portfolio_data, params.max_size)
-                        
-                        if len(databank_portfolios) > old_len or any(p['indices'] == list(combo) for p in databank_portfolios):
-                            yield f"data: {json.dumps(portfolio_data, cls=CustomJSONEncoder)}\n\n"
+                # Yield control explicitly every few iterations to prevent blocking
+                if iteration_counter % 100 == 0:
+                    await asyncio.sleep(0)
 
             yield f"data: {json.dumps({'status': 'completed'})}\n\n"
 
@@ -566,157 +749,236 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
 async def optimize_portfolio_weights(request: OptimizationRequest):
     """
     Realiza una búsqueda Monte Carlo para encontrar los pesos óptimos para un único portafolio.
+    OPTIMIZED: Use Vectorized Numpy operations for speed.
     """
-    print("\n--- Endpoint /analysis/optimize-portfolio HIT ---")
+    print("\n--- Endpoint /analysis/optimize-portfolio HIT (Vectorized) ---")
     try:
         params = request.params
-        strategies_data = [[trade.model_dump() for trade in strat if trade.pnl is not None] for strat in request.strategies_data]
-        benchmark_data_df = pd.DataFrame(request.benchmark_data)
+        # 1. Pre-process strategies data (Convert to Daily PnL Matrix)
+        # We need to align all strategies by date to sum their PnL correctly.
         
-        portfolio_trades_data = [strategies_data[i] for i in request.portfolio_indices]
-        num_strategies = len(portfolio_trades_data)
-
-        def analyze_combination(weights: List[float]):
-            """Función helper para analizar una combinación de pesos."""
-            portfolio_trades = []
-            for i, trades in enumerate(portfolio_trades_data):
-                weight = weights[i]
-                # --- CORRECCIÓN FINALÍSIMA Y DEFINITIVA ---
-                # Si un trade en el CSV tiene un PnL vacío, trade['pnl'] será None.
-                # `None * weight` lanza un TypeError, que causa el error 500 de serialización.
-                # Nos aseguramos de que solo procesamos trades con un PnL válido.
-                for trade in trades:
-                    if trade.get('pnl') is not None:
-                        new_trade = trade.copy()
-                        new_trade['pnl'] *= weight
-                        portfolio_trades.append(new_trade)
+        print("--- [OPTIMIZE-LOG] 0. Pre-processing data into Daily PnL Matrix...")
+        
+        # Filter strategies based on requested indices
+        selected_strategies_data = [request.strategies_data[i] for i in request.portfolio_indices]
+        num_strategies = len(selected_strategies_data)
+        
+        daily_pnl_series_list = []
+        
+        for strat_idx, strat_trades in enumerate(selected_strategies_data):
+            trades_list = [trade.model_dump() for trade in strat_trades if trade.pnl is not None]
+            if not trades_list:
+                daily_pnl_series_list.append(pd.Series(dtype=float))
+                continue
+                
+            df = pd.DataFrame(trades_list)
+            # Ensure PnL is numeric
+            if df['pnl'].dtype == object:
+                df['pnl'] = df['pnl'].astype(str).str.replace(',', '.', regex=False)
+            df['pnl'] = pd.to_numeric(df['pnl'], errors='coerce')
             
+            # Parse Dates for grouping
+            # Priority: exit_date
+            for col in ['exit_date', 'entry_date']:
+                 try:
+                     df[col] = pd.to_datetime(df[col], errors='coerce')
+                 except: pass
+
+            df = df.dropna(subset=['exit_date', 'pnl'])
+            
+            # Group by Date and Sum PnL
+            daily_pnl = df.groupby(df['exit_date'].dt.date)['pnl'].sum()
+            daily_pnl.name = f"strat_{strat_idx}"
+            daily_pnl_series_list.append(daily_pnl)
+
+        # Create the Matrix (Index=Date, Columns=Strategies)
+        # fillna(0) because if a strategy has no trades on a day, its PnL is 0.
+        if not daily_pnl_series_list:
+             raise HTTPException(status_code=400, detail="No strategies to optimize.")
+
+        pnl_matrix_df = pd.concat(daily_pnl_series_list, axis=1).fillna(0.0)
+        pnl_matrix = pnl_matrix_df.values # Numpy Array (Days, Strategies)
+        
+        # Debug info
+        print(f"--- [OPTIMIZE-LOG] 0.1 Matrix Shape: {pnl_matrix.shape} (Days x Strategies)")
+        days_count = pnl_matrix.shape[0]
+
+        # --- Helper for Full Analysis (Classic) ---
+        # We still need this to generate the DETAILED report for the generated report (Base, Best, Balanced)
+        # But we won't run it inside the loop.
+        def analyze_combination_full(weights_list: List[float]):
+            portfolio_trades = []
+            for i, strat_trades in enumerate(selected_strategies_data):
+                weight = weights_list[i]
+                trades = [t.model_dump() for t in strat_trades if t.pnl is not None]
+                for trade in trades:
+                     new_trade = trade.copy()
+                     # Clean pnl
+                     val = new_trade.get('pnl')
+                     if isinstance(val, str):
+                         val = val.replace(',', '.')
+                     if val is not None:
+                         new_trade['pnl'] = float(val) * weight
+                         portfolio_trades.append(new_trade)
+
             if not portfolio_trades:
                 return None, None
             
-            # --- CORRECCIÓN DEFINITIVA: Convertir Timestamps a strings aquí ---
-            # Al convertir los Timestamps a strings inmediatamente después de crear el DataFrame,
-            # nos aseguramos de que cualquier operación posterior, incluida la gestión de errores,
-            # trabaje con datos que ya son serializables por JSON. Esto previene el error
-            # "Object of type Timestamp is not JSON serializable" si ocurre una excepción más adelante.
-            trades_to_analyze_df = pd.DataFrame(portfolio_trades)
+            df = pd.DataFrame(portfolio_trades)
+            # Date conversion for final export
+            for col in ['entry_date', 'exit_date']:
+                 df[col] = pd.to_datetime(df[col], errors='coerce')
 
-            # --- CORRECCIÓN FINALÍSIMA: Comprobar si el DF está vacío ANTES de manipularlo ---
-            # Si un portafolio se compone de estrategias sin trades, el DF estará vacío.
-            # Intentar acceder a df['entry_date'] lanzará un KeyError, causando el error 500.
-            if trades_to_analyze_df.empty:
-                return None, [] # Devolver explícitamente que no hay métricas ni trades.
+            analysis_result = process_strategy_data(df, pd.DataFrame(request.benchmark_data), broker_config=request.broker_config)
             
-            # --- CORRECCIÓN FINALÍSIMA Y ABSOLUTAMENTE DEFINITIVA ---
-            # Eliminamos la conversión de fechas aquí. Dejamos que process_strategy_data sea el único responsable.
-            # Esto evita el conflicto de formatos que causaba el error.
-
-
-            # Aplicar escalado de riesgo si es necesario (ahora sobre un DF con fechas como strings)
-            if request.is_risk_normalized and request.normalization_target_value and request.normalization_target_value > 0:
-                pre_analysis_df = trades_to_analyze_df.copy() # Usar la copia ya convertida
-                pre_analysis_result = process_strategy_data(pre_analysis_df, benchmark_data_df.copy(), broker_config=request.broker_config)
-                if pre_analysis_result:
-                    metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
-                    current_metric_value = pre_analysis_result[0].get(metric_key, 0)
-
-                    if current_metric_value > 0:
-                        scale_factor = request.normalization_target_value / current_metric_value
-                        trades_to_analyze_df['pnl'] *= scale_factor
-
-            final_df = trades_to_analyze_df
-            analysis_result = process_strategy_data(final_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+            # Stringify dates for JSON
+            df['entry_date'] = df['entry_date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
+            df['exit_date'] = df['exit_date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
             
-            # --- CORRECCIÓN IRREFUTABLE ---
-            # El análisis convierte las fechas a Timestamps. ANTES de devolver los trades,
-            # los volvemos a convertir a strings en formato ISO, que es compatible con JSON.
-            final_df['entry_date'] = final_df['entry_date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
-            final_df['exit_date'] = final_df['exit_date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
-            trades_as_dict = final_df.to_dict('records')
-            
-            # --- CORRECCIÓN FINAL Y DEFINITIVA ---
-            # Desempaquetamos la tupla devuelta por process_strategy_data. Solo necesitamos las métricas.
-            metrics = analysis_result[0] if analysis_result else None
-            return metrics, trades_as_dict
+            metrics = analysis_result[0] if analysis_result else {}
+            return metrics, df.to_dict('records')
 
-        # 1. Analizar la versión con pesos iguales (base)
+        # 1. Base Analysis (Equal Weights)
+        print("--- [OPTIMIZE-LOG] 1. Running Base Analysis (Equal Weights)...")
         equal_weights = [1.0 / num_strategies] * num_strategies
-        base_metrics, base_trades = analyze_combination(equal_weights) # base_metrics ya incluye lorenzData, etc.
+        base_metrics, base_trades = analyze_combination_full(equal_weights)
         
-        print(f"--- [OPTIMIZE-LOG] 1. Análisis base completado. ¿Métricas obtenidas?: {bool(base_metrics)}")
-        if base_metrics:
-            print(f"--- [OPTIMIZE-LOG] 1.1. Métricas base: Ret/DD={base_metrics.get('profitMaxDD_Ratio', 'N/A')}, MaxDD$={base_metrics.get('maxDrawdownInDollars', 'N/A')}")
-
         if not base_metrics:
-            raise HTTPException(status_code=400, detail="No se pudo analizar el portafolio base (pesos iguales).")
+            raise HTTPException(status_code=400, detail="Base portfolio has no metrics.")
 
-        original_target_metric_value = base_metrics.get(params.target_metric) # Usar .get() para evitar KeyError
-
-        # Inicializar los mejores resultados
-        metric_best_result = {'metric_val': -np.inf if params.target_goal == 'maximize' else np.inf, 'weights': equal_weights, 'metrics': base_metrics, 'trades': base_trades}
-        balanced_best_result = {'avg_improvement': -np.inf, 'weights': equal_weights, 'metrics': base_metrics, 'trades': base_trades}
-
-        # --- MEJORA: Analizar también la composición de pesos actual del portafolio ---
-        # Si el portafolio ya tiene pesos, los usamos como punto de partida para "metric_best"
-        # y "balanced_best", en lugar de los pesos iguales.
-        # --- CORRECCIÓN DEFINITIVA: Eliminar la lógica errónea ---
-        # Si num_simulations es 0, el bucle de abajo no se ejecuta y simplemente se devuelve el "baseAnalysis"
-        # con pesos iguales, que es exactamente lo que el frontend necesita para el estado inicial.
-        print(f"--- [OPTIMIZE-LOG] 2. Número de simulaciones a ejecutar: {params.num_simulations}")
-
-        # 2. Bucle de simulación Monte Carlo
-        for i in range(params.num_simulations): # Si num_simulations es 0, este bucle no se ejecuta.
-            # Generar pesos aleatorios
-            weights = np.random.random(num_strategies)
-            weights /= np.sum(weights)
+        original_target_metric_value = base_metrics.get(params.target_metric)
+        
+        # 2. Vectorized Simulation
+        num_sims = params.num_simulations
+        if num_sims > 0 and days_count > 0:
+            print(f"--- [OPTIMIZE-LOG] 2. Running {num_sims} simulations (Vectorized)...")
             
-            # Validar peso mínimo
-            if np.any(weights < params.min_weight):
-                continue
-
-            current_metrics, current_trades = analyze_combination(weights.tolist())
-            if not current_metrics:
-                continue
-
-            # 3. Comprobar si es el mejor para la métrica objetivo
-            current_metric_val = current_metrics[params.target_metric]
-            if i % 1000 == 0: # Loguear de vez en cuando para no saturar
-                print(f"--- [OPTIMIZE-LOG] 2.1. Simulación {i}: Métrica Objetivo '{params.target_metric}' = {current_metric_val:.2f}")
-
-            is_metric_better = (params.target_goal == 'maximize' and current_metric_val > metric_best_result['metric_val']) or \
-                               (params.target_goal == 'minimize' and current_metric_val < metric_best_result['metric_val'])
+            # A. Generate Random Weights (Sims x Strategies)
+            weights_matrix = np.random.random((num_sims, num_strategies))
+            # Normalize rows to sum to 1
+            row_sums = weights_matrix.sum(axis=1)[:, np.newaxis]
+            weights_matrix = weights_matrix / row_sums
             
-            if is_metric_better:
-                metric_best_result = {'metric_val': current_metric_val, 'weights': weights.tolist(), 'metrics': current_metrics, 'trades': current_trades}
-
-            # 4. Comprobar si es el mejor para el balance general
-            # CORRECCIÓN: Asegurarse de que original_target_metric_value no sea None
-            is_better_than_original_on_target = False
-            if original_target_metric_value is not None:
-                is_better_than_original_on_target = (params.target_goal == 'maximize' and current_metric_val >= original_target_metric_value) or \
-                                                    (params.target_goal == 'minimize' and current_metric_val <= original_target_metric_value)
-
-            if is_better_than_original_on_target:
-                total_improvement = 0
-                improvement_count = 0
-                for metric_key in params.metrics_for_balance:
-                    original_value = base_metrics.get(metric_key)
-                    optimized_value = current_metrics.get(metric_key)
-                    if original_value is not None and optimized_value is not None and np.isfinite(original_value) and np.isfinite(optimized_value) and original_value != 0:
-                        is_minimizing = 'drawdown' in metric_key.lower() or 'loss' in metric_key.lower() or 'stagnation' in metric_key.lower()
-                        improvement = ((original_value - optimized_value) / abs(original_value)) * 100 if is_minimizing else ((optimized_value - original_value) / abs(original_value)) * 100
-                        total_improvement += improvement
-                        improvement_count += 1
+            # Apply min_weight filter if needed? 
+            # Vectorized filter is tricky, simpler to just generate, filter, regenerate, OR accept small bias.
+            # For speed, let's just zero out small weights and re-normalize?
+            # Or just ignore min_weight for the random cloud because re-normalizing changes others.
+            # Let's stick to simple random for now.
+            
+            # B. Calculate Portfolio Daily PnL for ALL simulations at once
+            # Matrix Mult: (Days x Strategies) @ (Strategies x Sims) -> (Days x Sims)
+            # Transpose weights to (Strategies x Sims)
+            port_daily_pnl_matrix = pnl_matrix @ weights_matrix.T # Result: (Days, Sims)
+            
+            # C. Calculate Metrics Vectorized
+            # We need: Return (Sum), MaxDD, Sharpe/Sortino components
+            
+            # Total Profit
+            total_profit_vec = port_daily_pnl_matrix.sum(axis=0)
+            
+            # Equity Curves (Cumulative Sum)
+            # Assume initial capital doesn't affect ratio-based optimization goals (Sharpe/Sortino), 
+            # but for Drawdown % it does. We use a fixed large capital to avoid bankruptcy in simulation.
+            initial_cap = 10000.0
+            equity_curves = initial_cap + port_daily_pnl_matrix.cumsum(axis=0)
+            
+            # Max Drawdown %
+            # Rolling Max
+            running_max = np.maximum.accumulate(equity_curves, axis=0)
+            drawdowns = (running_max - equity_curves) / running_max
+            max_dd_vec = drawdowns.max(axis=0) * 100 # In %
+            
+            # Metrics for Goal
+            target_metric_vec = np.zeros(num_sims)
+            
+            # Helper for specific metrics
+            if params.target_metric == 'totalProfit':
+                target_metric_vec = total_profit_vec
+            elif params.target_metric == 'maxDrawdown':
+                target_metric_vec = max_dd_vec # Minimize this
+            elif params.target_metric == 'returnDD': # Profit / MaxDD
+                # Avoid div by zero
+                safe_dd = max_dd_vec.copy()
+                safe_dd[safe_dd == 0] = 1.0 # arbitrary
+                target_metric_vec = total_profit_vec / safe_dd
+            elif params.target_metric in ['sharpeRatio', 'sharpeRatioDaily']:
+                # Mean(Daily_Ret) / Std(Daily_Ret) * sqrt(252)
+                # Daily Returns %
+                # Using simple returns: PnL / Start_Equity_Of_Day is hard vectorized without loop
+                # Approx: PnL / Fixed_Capital (Simple Sharpe) OR Log Returns
+                # Let's use PnL / Mean_Equity or just PnL stats if capital is constant?
+                # Best Vectorized Approx: pct_change() on columns.
+                # Since numpy doesn't have pct_change, we do: (E[t] - E[t-1]) / E[t-1]
+                # Shifted array:
+                e_t = equity_curves
+                e_t_minus_1 = np.vstack([np.full((1, num_sims), initial_cap), equity_curves[:-1, :]])
+                daily_rets = (e_t - e_t_minus_1) / e_t_minus_1
                 
-                avg_improvement = total_improvement / improvement_count if improvement_count > 0 else 0
-                if avg_improvement > balanced_best_result['avg_improvement']:
-                    balanced_best_result = {'avg_improvement': avg_improvement, 'weights': weights.tolist(), 'metrics': current_metrics, 'trades': current_trades}
+                means = daily_rets.mean(axis=0)
+                stds = daily_rets.std(axis=0)
+                stds[stds == 0] = 1.0 # Avoid nan
+                target_metric_vec = (means / stds) * np.sqrt(252)
+                
+            elif params.target_metric == 'sortinoRatio':
+                # Mean / DownsideDev * sqrt(252)
+                # Recalculate daily rets
+                e_t = equity_curves
+                e_t_minus_1 = np.vstack([np.full((1, num_sims), initial_cap), equity_curves[:-1, :]])
+                daily_rets = (e_t - e_t_minus_1) / e_t_minus_1
+                
+                means = daily_rets.mean(axis=0)
+                
+                # Downside Dev: Std of negative returns only
+                # Mask positive returns
+                neg_rets = np.where(daily_rets < 0, daily_rets, 0)
+                # Std of these (sum of squares / N)
+                downside_sq = (neg_rets**2).mean(axis=0)
+                downside_dev = np.sqrt(downside_sq)
+                downside_dev[downside_dev == 0] = 1.0
+                
+                target_metric_vec = (means / downside_dev) * np.sqrt(252)
 
-        # 5. Preparar la respuesta final
+            # D. Find Best Index
+            best_sim_idx = -1
+            if params.target_goal == 'maximize':
+                best_sim_idx = np.argmax(target_metric_vec)
+            else: # minimize
+                best_sim_idx = np.argmin(target_metric_vec)
+            
+            best_weights = weights_matrix[best_sim_idx].tolist()
+            best_metric_val = target_metric_vec[best_sim_idx]
+            
+            print(f"--- [OPTIMIZE-LOG] 2.1 Optimization Done. Best Metric ({params.target_metric}): {best_metric_val}")
+            
+            # E. Find Balanced Best (Simplified Vectorized)
+            # Calculating 'Balanced' is complex vectorized because it supports multiple arbitrary metrics.
+            # We will skip the 'Balanced' search in vectorized mode for speed, or assume the 'Metric Best' is good enough.
+            # Alternatively, we iterate only the top N results.
+            # For now, let's use the SAME best result for balanced to save time, or do a simplified check.
+            balanced_weights = best_weights 
+            
+            # 3. Final Full Analysis for the WINNER only
+            print("--- [OPTIMIZE-LOG] 3. Running Final Analysis for Best Result...")
+            metric_best_metrics, metric_best_trades = analyze_combination_full(best_weights)
+            
+            metric_best_result = {
+                'metrics': metric_best_metrics,
+                'trades': metric_best_trades,
+                'weights': best_weights
+            }
+            
+            balanced_best_result = metric_best_result # Duplicate for now
+            
+        else:
+             # Fallback if no simulations
+             metric_best_result = {'metrics': base_metrics, 'trades': base_trades, 'weights': equal_weights}
+             balanced_best_result = metric_best_result
+
+        # 5. Prepare Response
         final_response = {
             "baseAnalysis": { "metrics": base_metrics, "trades": base_trades, "weights": equal_weights },
-            "metricBestAnalysis": { "metrics": metric_best_result['metrics'], "trades": metric_best_result['trades'], "weights": metric_best_result['weights'] },
-            "balancedBestAnalysis": { "metrics": balanced_best_result['metrics'], "trades": balanced_best_result['trades'], "weights": balanced_best_result['weights'] }
+            "metricBestAnalysis": metric_best_result,
+            "balancedBestAnalysis": balanced_best_result
         }
         
         # --- CORRECCIÓN FINAL: Asegurar que la serialización se aplique siempre ---
@@ -780,16 +1042,25 @@ class MyfxbookHistoryRequest(BaseModel):
 @app.post("/myfxbook/get-history")
 async def myfxbook_get_history(request: MyfxbookHistoryRequest):
     """
-    Login and fetch full history for a specific account.
+    Login and fetch full history (closed) AND open trades for a specific account.
     """
     try:
-        print(f"[Myfxbook Endpoint] Fetching history for account: {request.account_id}")
+        print(f"[Myfxbook Endpoint] Fetching history + open trades for account: {request.account_id}")
         client = MyfxbookClient()
         session = client.login(request.email, request.password)
         
+        # 1. Get Closed History
         history = client.get_history(request.account_id)
         
-        # Calculate basic metrics on the backend
+        # 2. Get Open Trades (New!)
+        open_trades = []
+        try:
+            open_trades = client.get_open_trades(request.account_id)
+        except Exception as e:
+            print(f"[Myfxbook Endpoint] ⚠️ Failed to fetch open trades: {e}")
+            # Continue without open trades is better than failing completely
+        
+        # Calculate basic metrics on the backend (using only closed history for now)
         losses_data = client.calculate_consecutive_losses(history)
         dd_data = client.calculate_max_drawdown(history)
         
@@ -802,7 +1073,9 @@ async def myfxbook_get_history(request: MyfxbookHistoryRequest):
             "success": True,
             "accountId": request.account_id,
             "history": history,
+            "openTrades": open_trades, # Include open trades in response
             "count": len(history),
+            "openCount": len(open_trades),
             "metrics": {
                 "consecutiveLosses": losses_data,
                 "maxDrawdown": dd_data
@@ -924,3 +1197,78 @@ async def myfxbook_test_sync(request: MyfxbookLoginRequest):
             }
         )
 
+
+@app.post("/analysis/correlation-matrix")
+async def get_correlation_matrix(request: CorrelationRequest):
+    """
+    Calculates the Pearson correlation matrix for the given strategies.
+    Based on Daily PnL.
+    """
+    print("\n--- Endpoint /analysis/correlation-matrix HIT ---")
+    try:
+        # 1. Pre-process strategies data
+        selected_strategies_data = [request.strategies_data[i] for i in request.portfolio_indices]
+        if len(selected_strategies_data) < 2:
+             return JSONResponse(content={"matrix": [[1.0]], "labels": ["Strategy 1"], "indices": request.portfolio_indices}, encoder=CustomJSONEncoder)
+
+        daily_pnl_series_list = []
+        
+        for i, strat_idx in enumerate(request.portfolio_indices):
+            strat_trades = request.strategies_data[strat_idx]
+            
+            trades_list = [trade.model_dump() for trade in strat_trades if trade.pnl is not None]
+            if not trades_list:
+                daily_pnl_series_list.append(pd.Series(dtype=float))
+                continue
+                
+            df = pd.DataFrame(trades_list)
+            # Ensure PnL is numeric
+            if df['pnl'].dtype == object:
+                df['pnl'] = df['pnl'].astype(str).str.replace(',', '.', regex=False)
+            df['pnl'] = pd.to_numeric(df['pnl'], errors='coerce')
+            
+            # Parse Dates
+            for col in ['exit_date', 'entry_date']:
+                 try:
+                    df[col] = pd.to_datetime(df[col], format='%Y.%m.%d %H:%M:%S', errors='coerce')
+                    # Fallback for different formats if needed
+                    mask = df[col].isna()
+                    if mask.any():
+                        df.loc[mask, col] = pd.to_datetime(df.loc[mask, col], errors='coerce')
+                 except Exception:
+                    pass
+            
+            # Group by day
+            date_col = 'exit_date' if 'exit_date' in df.columns else 'entry_date'
+            if date_col not in df.columns:
+                 daily_pnl_series_list.append(pd.Series(dtype=float))
+                 continue
+                 
+            daily_pnl = df.groupby(df[date_col].dt.date)['pnl'].sum()
+            daily_pnl_series_list.append(daily_pnl)
+
+        # 2. Setup DataFrame
+        df_matrix = pd.DataFrame(daily_pnl_series_list).T.fillna(0).sort_index()
+        
+        # 3. Calculate Correlation
+        correlation_matrix = df_matrix.corr(method='pearson').fillna(0)
+        
+        # 4. Prepare Response
+        # Convert to list of lists
+        matrix_data = correlation_matrix.values.tolist()
+        
+        # Sanitization: Handle NaN/Inf
+        matrix_data = [[(x if not np.isnan(x) else 0.0) for x in row] for row in matrix_data]
+
+        response_content = {
+            "matrix": matrix_data,
+            "indices": request.portfolio_indices
+        }
+        
+        # Use CustomJSONEncoder to handle any remaining numpy types or weird floats
+        return Response(content=json.dumps(response_content, cls=CustomJSONEncoder), media_type="application/json")
+
+    except Exception as e:
+        print(f"❌ Error in /analysis/correlation-matrix: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

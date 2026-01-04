@@ -3,6 +3,34 @@ import { showToast } from './notifications.js';
 import { renderLiveMonitor } from './liveMonitor.js';
 import { fetchLinkedAccountData, normalizeComment, cleanMetrics, recalculateStrategyBreakdown } from './myfxbookUI.js';
 
+// Helper for fuzzy matching
+function calculateMatchScore(strategyName, idStr) {
+    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const sName = normalize(strategyName);
+    const sId = normalize(idStr);
+
+    // Exact containment
+    if (sId.includes(sName) || sName.includes(sId)) return 1.0;
+
+    // Check for specific date patterns often mangled (e.g. 1.5.23 vs 1_5_2)
+    const extractDigits = (s) => s.match(/\d+/g)?.join('') || '';
+    const digitsName = extractDigits(strategyName);
+    const digitsId = extractDigits(idStr);
+
+    if (digitsName.length > 3 && digitsId.includes(digitsName)) return 0.9;
+    if (digitsId.length > 3 && digitsName.includes(digitsId)) return 0.9;
+
+    // Consonants-only match (Handles abbreviations like BuyStopPlus -> ByStpPls)
+    const consonants = (s) => s.toLowerCase().replace(/[aeiou]/g, '').replace(/[^a-z0-9]/g, '');
+    const cName = consonants(strategyName);
+    const cId = consonants(idStr);
+
+    // High threshold for consonant match
+    if (cId.length > 4 && (cId.includes(cName) || cName.includes(cId))) return 0.85;
+
+    return 0.0;
+}
+
 let mapperModal = null;
 let currentPortfolio = null;
 let selectedStrategyId = null;
@@ -84,11 +112,28 @@ function createMapperModal() {
                     </h2>
                     <p class="text-gray-400 text-sm mt-1">Select a strategy on the left, then check the corresponding Myfxbook IDs on the right.</p>
                 </div>
-                <button id="close-mapper-modal" class="text-gray-400 hover:text-white text-3xl">×</button>
+                <div class="flex items-center gap-4">
+                     <button id="mapper-debug-btn" class="text-gray-500 hover:text-yellow-400 transition-colors" title="Show Raw IDs">
+                        🐞
+                    </button>
+                    <button id="close-mapper-modal" class="text-gray-400 hover:text-white text-3xl">×</button>
+                </div>
+            </div>
+            
+            <!-- Unmapped Alert (Dynamic) -->
+            <div id="mapper-unmapped-alert" class="hidden mx-6 mt-4 bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-3 flex items-start gap-3">
+                <span class="text-xl">⚠️</span>
+                <div class="flex-1">
+                    <h4 class="text-sm font-bold text-yellow-200">Unmapped Myfxbook Comments Detected</h4>
+                    <p class="text-xs text-yellow-100/70 mt-1">
+                        There are <span id="mapper-unmapped-count" class="font-bold text-white">0</span> unique comments in your Myfxbook data that are not linked to any strategy. 
+                        Please review the "Available" list to ensure all trades are accounted for.
+                    </p>
+                </div>
             </div>
             
             <!-- Content -->
-            <div class="flex flex-1 overflow-hidden">
+            <div class="flex flex-1 overflow-hidden" id="mapper-content-area">
                 <!-- Left Column: Strategies -->
                 <div class="w-1/4 border-r border-gray-700 flex flex-col bg-gray-900/30 min-w-[300px]">
                     <div class="p-3 border-b border-gray-700 font-bold text-gray-400 text-xs uppercase tracking-wider">
@@ -143,7 +188,35 @@ function createMapperModal() {
     modal.querySelector('#cancel-mapper-btn').onclick = closeMapperModal;
 
     modal.querySelector('#save-mapper-btn').onclick = () => {
-        state.magicNumberMap = JSON.parse(JSON.stringify(tempMapping));
+        console.log('[Magic Mapper DEBUG] Saving with tempMapping:', JSON.stringify(tempMapping));
+
+        // Update state.magicNumberMap with both ID and Name keys for Robustness
+        const newMap = JSON.parse(JSON.stringify(tempMapping));
+
+        // iterate strategies in current portfolio to finding matching names for IDs
+        currentPortfolio.indices.forEach(idx => {
+            const strat = state.loadedStrategyFiles[idx];
+            if (!strat) return;
+            const sId = strat.strategyId || strat.name;
+            const sName = strat.name;
+
+            // If we have a mapping for the ID...
+            if (newMap[sId]) {
+                const magics = newMap[sId];
+                // ... ensure we also map the Name to it
+                if (sName && sName !== sId) {
+                    newMap[sName] = magics;
+
+                    // Also Map the Clean Name (no csv) just in case
+                    const cleanName = sName.replace(/\.csv$/i, '').trim();
+                    if (cleanName !== sName) {
+                        newMap[cleanName] = magics;
+                    }
+                }
+            }
+        });
+
+        state.magicNumberMap = newMap;
         saveMagicNumbers();
 
         // Recalculate metrics based on new mapping
@@ -160,6 +233,18 @@ function createMapperModal() {
         renderIdsList();
     });
 
+    // Debug Button
+    const debugBtn = modal.querySelector('#mapper-debug-btn');
+    if (debugBtn) {
+        debugBtn.onclick = () => {
+            const magicStats = currentPortfolio.realMetrics?.magicStats || {};
+            const keys = Object.keys(magicStats);
+            const msg = `Found ${keys.length} IDs:\n\n${keys.join('\n')}`;
+            console.log('[Magic Mapper DEBUG] Keys:', keys);
+            alert(msg);
+        };
+    }
+
     modal.querySelector('#mapper-auto-link-all').onclick = () => {
         const magicStats = currentPortfolio.realMetrics?.magicStats || {};
         const potentialMatches = [];
@@ -173,8 +258,10 @@ function createMapperModal() {
             const strategyName = strategy.name;
 
             Object.values(magicStats).forEach(stat => {
-                const score = calculateSimilarity(strategyName, String(stat.id));
-                if (score > 0.6) {
+                // Use improved calculateMatchScore instead of generic calculateSimilarity
+                const score = calculateMatchScore(strategyName, String(stat.id));
+                // Lower threshold slightly as calculateMatchScore is stricter
+                if (score >= 0.8) {
                     potentialMatches.push({ strategyId, id: String(stat.id), score });
                 }
             });
@@ -296,8 +383,8 @@ function getVisibleIds() {
         const strategyName = strategyIdx ? state.loadedStrategyFiles[strategyIdx].name : '';
 
         availableIds.sort((a, b) => {
-            const simA = calculateSimilarity(strategyName, String(a.id));
-            const simB = calculateSimilarity(strategyName, String(b.id));
+            const simA = calculateMatchScore(strategyName, String(a.id));
+            const simB = calculateMatchScore(strategyName, String(b.id));
             // Sort descending by similarity
             if (Math.abs(simA - simB) > 0.1) return simB - simA;
             // Fallback to trade count
@@ -306,7 +393,7 @@ function getVisibleIds() {
 
         // Add similarity score to objects for highlighting
         availableIds.forEach(stat => {
-            stat._similarity = calculateSimilarity(strategyName, String(stat.id));
+            stat._similarity = calculateMatchScore(strategyName, String(stat.id));
         });
     } else {
         // Default sort by trade count
@@ -348,9 +435,10 @@ function renderIdsList() {
     const currentMappedIds = tempMapping[selectedStrategyId] || [];
 
 
-    // Split into Assigned and Available
-    const assignedItems = [];
-    const availableItems = [];
+    // Split into 3 Categories
+    const assignedItems = []; // Assigned to THIS strategy
+    const unassignedItems = []; // Globally available (not assigned to anyone)
+    const otherAssignedItems = []; // Assigned to other strategies (stealable)
 
     // Collect all IDs assigned to OTHER strategies
     const otherAssignedIds = new Set();
@@ -364,41 +452,47 @@ function renderIdsList() {
         const idStr = String(stat.id);
         if (currentMappedIds.includes(idStr)) {
             assignedItems.push(stat);
-        } else if (!otherAssignedIds.has(idStr)) {
-            // Only add if NOT assigned to any other strategy
-            availableItems.push(stat);
+        } else if (otherAssignedIds.has(idStr)) {
+            otherAssignedItems.push(stat);
+        } else {
+            unassignedItems.push(stat);
         }
     });
 
     // Helper to render a section
-    const renderSection = (title, items, isAssignedSection) => {
+    const renderSection = (title, items, type) => {
+        if (items.length === 0 && type !== 'unassigned') return; // Skip empty assigned sections
+
         const section = document.createElement('div');
         section.className = 'flex flex-col gap-2';
 
         const header = document.createElement('div');
-        header.className = 'flex items-center gap-2 pb-2 border-b border-gray-700/50';
+        header.className = `flex items-center gap-2 pb-2 border-b ${type === 'current' ? 'border-blue-500/50' : 'border-gray-700/50'} mt-2`;
+
+        let titleColor = 'text-gray-400';
+        if (type === 'current') titleColor = 'text-blue-400';
+        if (type === 'unassigned') titleColor = 'text-green-400';
+
         header.innerHTML = `
-            <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider">${title}</h3>
+            <h3 class="text-sm font-bold ${titleColor} uppercase tracking-wider">${title}</h3>
             <span class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded-full">${items.length}</span>
         `;
         section.appendChild(header);
 
         const list = document.createElement('div');
-        list.className = 'flex flex-col gap-1'; // Compact list
+        list.className = 'flex flex-col gap-1';
 
         if (items.length === 0) {
-            list.innerHTML = `<div class="text-xs text-gray-600 italic p-2">No items available.</div>`;
+            list.innerHTML = `<div class="text-xs text-gray-600 italic p-2">No unassigned items available.</div>`;
         } else {
             items.forEach(stat => {
                 const idStr = String(stat.id);
-                const isChecked = isAssignedSection; // By definition
-                const isRecommended = stat._similarity > 0.6;
+                const isChecked = type === 'current';
+                const isRecommended = (stat._similarity || 0) > 0.8;
 
-                // Check ownership for available items
+                // Determine Owner if Other
                 let ownerName = null;
-                // Note: With the new filtering, ownerName will always be null for availableItems
-                // But we keep the logic in case we want to revert or for robustness
-                if (!isChecked) {
+                if (type === 'other') {
                     const ownerStrategyId = Object.keys(tempMapping).find(sId =>
                         sId !== selectedStrategyId &&
                         tempMapping[sId] &&
@@ -414,15 +508,12 @@ function renderIdsList() {
                 }
 
                 const label = document.createElement('label');
-                const isOwnedByOther = !!ownerName;
-
                 // Compact Row Styles
                 label.className = `flex items-center gap-3 p-2 rounded border transition-all cursor-pointer group
                     ${isChecked
                         ? 'bg-blue-900/20 border-blue-500/50 hover:bg-blue-900/30'
-                        : 'bg-gray-700/20 border-gray-700 hover:bg-gray-700/40'}
-                    ${isRecommended && !isChecked && !isOwnedByOther ? 'ring-1 ring-green-500/30 bg-green-900/5' : ''}
-                    ${isOwnedByOther ? 'opacity-75 border-dashed border-gray-600' : ''}
+                        : type === 'unassigned' ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' : 'opacity-70 border-dashed border-gray-700 hover:opacity-100'}
+                    ${isRecommended && !isChecked ? 'ring-1 ring-green-500/50 bg-green-900/10' : ''}
                 `;
 
                 label.innerHTML = `
@@ -435,16 +526,16 @@ function renderIdsList() {
                                 <span class="font-mono text-xs font-bold ${isChecked ? 'text-blue-200' : 'text-gray-300'} truncate" title="${stat.exampleRaw || stat.id}">
                                     ${stat.id}
                                 </span>
-                                ${isRecommended && !isOwnedByOther ? '<span class="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-800">MATCH</span>' : ''}
-                                ${isOwnedByOther ? `<span class="text-[9px] bg-orange-900/30 text-orange-300 px-1.5 py-0.5 rounded border border-orange-800/50 truncate max-w-[120px]" title="Linked to: ${ownerName}">🔗 ${ownerName}</span>` : ''}
+                                ${isRecommended ? '<span class="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-800 animate-pulse">RECOMMENDED</span>' : ''}
+                                ${ownerName ? `<span class="text-[9px] bg-orange-900/30 text-orange-300 px-1.5 py-0.5 rounded border border-orange-800/50 truncate max-w-[150px]" title="Linked to: ${ownerName}">🔗 ${ownerName}</span>` : ''}
                             </div>
                         </div>
                     </div>
 
-                    <!-- Metrics (Right Side) -->
+                    <!-- Metrics -->
                     <div class="flex items-center gap-3 text-xs whitespace-nowrap">
                         <span class="font-medium text-gray-500 w-12 text-right">${stat.symbol}</span>
-                        <span class="font-mono w-16 text-right ${stat.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}">$${stat.totalProfit.toFixed(0)}</span>
+                         <span class="font-mono w-16 text-right ${stat.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}">$${stat.totalProfit.toFixed(0)}</span>
                         <span class="bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded text-[10px] min-w-[24px] text-center">${stat.tradesCount}</span>
                     </div>
                 `;
@@ -464,6 +555,7 @@ function renderIdsList() {
                         if (!tempMapping[selectedStrategyId].includes(idStr)) {
                             tempMapping[selectedStrategyId].push(idStr);
                         }
+                        console.log(`[Magic Mapper DEBUG] Added ${idStr} to ${selectedStrategyId}. New list:`, tempMapping[selectedStrategyId]);
                     } else {
                         if (tempMapping[selectedStrategyId]) {
                             tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(id => id !== idStr);
@@ -480,26 +572,25 @@ function renderIdsList() {
         idsList.appendChild(section);
     };
 
-    // Render Available First (Top)
-    renderSection('Available (Unassigned)', availableItems, false);
+    // Find strategy name for title
+    const strategyIdx = currentPortfolio.indices.find(idx => {
+        const s = state.loadedStrategyFiles[idx];
+        return (s.strategyId || s.name) === selectedStrategyId;
+    });
+    const strategyName = strategyIdx !== undefined ? state.loadedStrategyFiles[strategyIdx].name : 'Current Strategy';
 
-    // Render Assigned Second (Bottom)
-    if (assignedItems.length > 0) {
-        // Add a visual separator/arrow
-        const separator = document.createElement('div');
-        separator.className = 'flex justify-center py-2';
-        separator.innerHTML = `<span class="text-gray-600 text-lg">⬇️</span>`;
-        idsList.appendChild(separator);
+    // 1. Assigned (Current) - Top priority
+    renderSection(`Assigned to: ${strategyName}`, assignedItems, 'current');
 
-        // Find strategy name for title
-        const strategyIdx = currentPortfolio.indices.find(idx => {
-            const s = state.loadedStrategyFiles[idx];
-            return (s.strategyId || s.name) === selectedStrategyId;
-        });
-        const strategyName = strategyIdx !== undefined ? state.loadedStrategyFiles[strategyIdx].name : 'Current Strategy';
+    // 2. Unassigned (Available) - Main pool
+    renderSection('Available (Unassigned)', unassignedItems, 'unassigned');
 
-        renderSection(`Assigned to: ${strategyName}`, assignedItems, true);
-    }
+    // 3. Assigned to Others (Stealable) - Bottom
+    renderSection('Assigned to Other Strategies', otherAssignedItems, 'other');
+
+    // Hide Auto-Link button as requested
+    const autoLinkBtn = mapperModal.querySelector('#mapper-auto-link-all');
+    if (autoLinkBtn) autoLinkBtn.classList.add('hidden');
 }
 
 function renderStrategiesList() {
@@ -533,6 +624,33 @@ function renderStrategiesList() {
 }
 
 function renderMapperContent() {
+    // 1. Calculate Unmapped Count
+    const magicStats = currentPortfolio.realMetrics?.magicStats || {};
+    const allAvailableIds = Object.keys(magicStats);
+
+    // Collect all assigned IDs across all strategies
+    const assignedIds = new Set();
+    Object.values(tempMapping).forEach(ids => {
+        if (Array.isArray(ids)) {
+            ids.forEach(id => assignedIds.add(String(id)));
+        }
+    });
+
+    const unmappedCount = allAvailableIds.filter(id => !assignedIds.has(String(id))).length;
+
+    // 2. Update Alert
+    const alertBox = mapperModal.querySelector('#mapper-unmapped-alert');
+    const countSpan = mapperModal.querySelector('#mapper-unmapped-count');
+
+    if (alertBox && countSpan) {
+        if (unmappedCount > 0) {
+            alertBox.classList.remove('hidden');
+            countSpan.textContent = unmappedCount;
+        } else {
+            alertBox.classList.add('hidden');
+        }
+    }
+
     renderStrategiesList();
     renderIdsList();
 }

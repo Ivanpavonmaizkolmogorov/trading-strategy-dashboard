@@ -1,8 +1,8 @@
 import { state } from '../state.js';
 import { dom } from '../dom.js';
-import { ALL_METRICS, SELECTION_COLORS } from '../config.js'; // ALL_METRICS y SELECTION_COLORS se siguen usando
+import { ALL_METRICS, SELECTION_COLORS } from '../config.js?v=7'; // ALL_METRICS y SELECTION_COLORS se siguen usando
 import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '../utils.js'; // Estas utilidades se siguen usando
-import { initDatabankTable, getDatabankTableConfig } from './databankTable.js';
+import { initDatabankTable, getDatabankTableConfig, ensureColumnVisible, hideColumn } from './databankTable.js?v=8';
 import { focusMode } from './focusMode.js';
 import { generatePortfolioId } from '../utils.js'; // Import ID generator
 import { loadBrokerConfig } from './brokerConfig.js';
@@ -93,13 +93,52 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
             optimization_goal: customConfig.goal || dom.optimizationGoalSelect.value,
             correlation_threshold: customConfig.correlationThreshold !== undefined
                 ? customConfig.correlationThreshold
-                : parseFloat(dom.correlationFilterInput.value),
+                : (dom.correlationFilterInput ? parseFloat(dom.correlationFilterInput.value) : 0.90),
             max_size: customConfig.maxSize || (dom.databankSizeInput ? parseInt(dom.databankSizeInput.value, 10) : 20),
-            base_indices: customConfig.fixedIndices || Array.from(state.selectedPortfolioIndices),
+            base_indices: (state.searchBasePortfolioIndex !== null && state.searchBaseStrategyIndices.size > 0)
+                ? Array.from(state.searchBaseStrategyIndices)
+                : (customConfig.fixedIndices || Array.from(state.selectedPortfolioIndices)),
             metric_name: customConfig.metricName || dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text,
-            search_threshold: dom.searchThresholdInput ? parseInt(dom.searchThresholdInput.value, 10) : 500000, // Default: 500000
+            search_threshold: dom.searchThresholdInput ? parseInt(dom.searchThresholdInput.value, 10) : 500000,
             use_all_dates: customConfig.useAllDates !== undefined ? customConfig.useAllDates : true,
+            search_method: customConfig.searchMethod || 'auto',
+
+            // Normalization
+            normalization_metric: customConfig.normalizationEnabled ? customConfig.normalizationMetric : null,
+            normalization_target: customConfig.normalizationEnabled ? customConfig.normalizationTarget : null,
+
+            // Custom Optimization
+            cagr_scaling_metric: customConfig.cagrScalingEnabled ? customConfig.cagrScalingMetric : null,
+            cagr_scaling_operator: customConfig.cagrScalingEnabled ? customConfig.cagrScalingOperator : 'multiply'
         }
+    };
+
+    // --- Dynamic Column Visibility Logic ---
+    console.log('[DEBUG DATABANK] Checking column visibility for optimization metrics...');
+    if (customConfig.cagrScalingEnabled) {
+        // Show CAGR, the scaled metric, AND the resulting custom score
+        ensureColumnVisible('cagr');
+        ensureColumnVisible('cagr_custom_score');
+        if (customConfig.cagrScalingMetric) {
+            ensureColumnVisible(customConfig.cagrScalingMetric);
+        }
+    } else {
+        // Show standard optimization metric
+        const mainMetricKey = requestBody.params.metric_to_optimize_key;
+        if (mainMetricKey) {
+            ensureColumnVisible(mainMetricKey);
+        }
+        // User requested Optimized Score to be visible and at the start
+        ensureColumnVisible('cagr_custom_score');
+    }
+    // ---------------------------------------
+
+    console.log('[DEBUG DATABANK] Starting search with maxSize:', requestBody.params.max_size, 'Base Indices:', requestBody.params.base_indices);
+
+    // Save configuration to state for global access (e.g. UI checks for normalization)
+    state.currentOptimizationData = {
+        ...requestBody.params,
+        normalizationEnabled: customConfig.normalizationEnabled // Ensure boolean is strictly saved
     };
 
     try {
@@ -162,7 +201,12 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
 
                                 // Mostrar advertencias importantes como errores persistentes
                                 if (data.message.startsWith('⚠️')) {
-                                    displayError(data.message, 10000); // Mostrar por 10 segundos
+                                    // Ignorar advertencias de correlación para no spamear la UI (el usuario ya lo ve en el status)
+                                    if (!data.message.toLowerCase().includes('correlación')) {
+                                        displayError(data.message, 10000); // Mostrar por 10 segundos
+                                    } else {
+                                        console.warn("[Backend Warning]", data.message);
+                                    }
                                 }
                             } else if (data.status === 'paused') {
                                 dom.pauseSearchBtn.textContent = 'Reanudar';
@@ -197,7 +241,14 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
                                 reader.cancel();
                             } else {
                                 const newPortfolio = data;
+                                console.log("[DEBUG DATABANK] Received portfolio candidate:", newPortfolio);
+                                if (newPortfolio.metrics && newPortfolio.metrics.cagr_custom_score !== undefined) {
+                                    console.log(`[DataBank] Portfolio cagr_custom_score: ${newPortfolio.metrics.cagr_custom_score}`);
+                                } else {
+                                    console.log(`[DataBank] Portfolio metrics:`, newPortfolio.metrics);
+                                }
                                 if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i + 1}`).join(', ');
+                                console.log("[DEBUG DATABANK] Attempting to add to databank...");
                                 addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput?.value || 20, 10));
                                 // Throttle: Solo actualizar la UI cada 500ms para mantenerla responsive
                                 if (!window.databankUpdateScheduled) {
@@ -216,7 +267,7 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
                 }
             }
         }
-        processStream(); // Inicia la lectura del stream
+        await processStream(); // Inicia la lectura del stream y espera a que termine (o falle)
 
     } catch (error) {
         console.error("Error iniciando la búsqueda en DataBank:", error);
@@ -266,6 +317,9 @@ const addToDatabankIfBetter = (portfolioData, maxSize) => {
 
     if (state.databankPortfolios.length > maxSize) {
         state.databankPortfolios = state.databankPortfolios.slice(0, maxSize);
+        console.log(`[DEBUG DATABANK] Sliced to maxSize (${maxSize}). New count: ${state.databankPortfolios.length}`);
+    } else {
+        console.log(`[DEBUG DATABANK] Portfolio added/updated. Current count: ${state.databankPortfolios.length} (Max: ${maxSize})`);
     }
 };
 
@@ -354,11 +408,13 @@ export const updateDatabankDisplay = () => {
                 // Save this default width
                 if (!config.columnWidths) config.columnWidths = {};
                 config.columnWidths[key] = '300px';
-                localStorage.setItem('databankTableConfig_v3', JSON.stringify(config));
+                localStorage.setItem('databankTableConfig_v6', JSON.stringify(config));
             } else {
                 setTimeout(() => autoFitDatabankColumn(th, key), 0);
             }
         }
+
+
 
         // Click to sort
         th.addEventListener('click', (e) => {
@@ -393,8 +449,7 @@ export const updateDatabankDisplay = () => {
 
     state.databankPortfolios.forEach((p, index) => {
         if (index === 0) {
-            console.log("[DEBUG FRONTEND] First Portfolio Metrics:", p.metrics);
-            console.log("[DEBUG FRONTEND] First Portfolio Object:", p);
+            // Debugging removed
         }
         let rowClass = (index < 3 && state.databankSortConfig.key === 'metricValue') ? 'databank-top3' : '';
         const selectionIndex = state.selectedRows.databank.indexOf(index);
@@ -434,23 +489,28 @@ export const updateDatabankDisplay = () => {
                     value = p.metricValue;
                 } else if (key === 'strategyCount') {
                     value = p.indices ? p.indices.length : 0;
-                    console.log(`[DEBUG] Row ${index} - strategyCount:`, value, 'Indices:', p.indices);
+                    // console.log(`[DEBUG] Row ${index} - strategyCount:`, value, 'Indices:', p.indices);
                 } else if (key === 'returnDD') {
                     // Mapping for Ret/DD
                     const metrics = p.metrics || p.analysis?.metrics || p.analysis || {};
                     value = metrics['profitMaxDD_Ratio'];
+                } else if (key === 'cagr_custom_score') {
+                    // Fallback to metricValue (Optimization Goal) if specific custom score is missing
+                    value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.metricValue;
                 } else {
                     value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.analysis?.[key];
                 }
 
                 if (index === 0) {
-                    console.log(`[DEBUG FRONTEND] Col '${key}': Value extracted:`, value);
+                    // console.log(`[DEBUG FRONTEND] Col '${key}': Value extracted:`, value);
                 }
 
                 html += `<td class="px-4 py-3 text-gray-300 text-right whitespace-nowrap">${formatMetricForDisplay(value, key)}</td>`;
             }
         });
 
+
+        // Add action column
         html += `<td class="px-4 py-3 text-center sticky right-0 bg-gray-800 z-10 whitespace-nowrap">
                     <button class="view-strategy-risk-btn text-gray-400 hover:text-sky-400 text-lg px-1 mr-2" title="Ver Riesgo Base" data-index="${index}" data-source="databank">👁️</button>
                     <button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button>
@@ -577,6 +637,132 @@ function stopDatabankResize() {
 /**
  * Ordena la tabla del DataBank.
  */
+// Make globally accessible
+window.renderBaseStrategiesConfig = renderBaseStrategiesConfig;
+
+/**
+ * Renders the configuration panel for Base Strategies (Locked/Fixed)
+ */
+export function renderBaseStrategiesConfig() {
+    // 1. Find or Create Container
+    // We want to insert it before the "Find Portfolios" button or controls area.
+    // Let's assume there is a container holding the search button.
+    const searchBtn = document.getElementById('find-databank-portfolios-btn');
+    if (!searchBtn) return;
+
+    const parentContainer = searchBtn.closest('.flex.flex-wrap') || searchBtn.parentElement;
+    let configContainer = document.getElementById('base-strategies-config-container');
+
+    if (state.searchBasePortfolioIndex === null) {
+        if (configContainer) configContainer.classList.add('hidden');
+        return;
+    }
+
+    if (!configContainer) {
+        configContainer = document.createElement('div');
+        configContainer.id = 'base-strategies-config-container';
+        configContainer.className = 'w-full bg-slate-800/50 border border-slate-700 rounded p-3 mb-4 mt-2';
+        parentContainer.insertBefore(configContainer, parentContainer.firstChild); // Insert at top of controls
+    }
+
+    configContainer.classList.remove('hidden');
+
+    // 2. Get Portfolio Data
+    const portfolio = state.savedPortfolios[state.searchBasePortfolioIndex];
+    if (!portfolio) {
+        configContainer.classList.add('hidden');
+        return;
+    }
+
+    // 3. Render Content
+    let strategiesListHTML = '';
+
+    // Use indices approach for rendering logic
+    // We already resolved indices into state.searchBaseStrategyIndices
+    // But we need to map them back to names/files to show checks
+
+    // Get ALL strategies that were originally in the portfolio (even if unchecked now, we need to show them)
+    // We can iterate state.loadedStrategyFiles and check if they are in the 'original' set.
+    // BUT we didn't store the 'original set' separately from the 'active set'.
+    // We should re-derive the list from the portfolio object every time, 
+    // but check the state.searchBaseStrategyIndices for the checked state.
+
+    let potentialIndices = [];
+    if (portfolio.strategyIds && portfolio.strategyIds.length > 0) {
+        portfolio.strategyIds.forEach(id => {
+            const idx = state.loadedStrategyFiles.findIndex(f => f.strategyId === id);
+            if (idx !== -1) potentialIndices.push(idx);
+        });
+    } else if (portfolio.indices) {
+        potentialIndices = portfolio.indices;
+    }
+
+    potentialIndices.forEach(idx => {
+        const file = state.loadedStrategyFiles[idx];
+        if (!file) return;
+
+        const isChecked = state.searchBaseStrategyIndices.has(idx);
+
+        strategiesListHTML += `
+            <label class="flex items-center space-x-2 text-xs bg-slate-900/50 p-1.5 rounded cursor-pointer hover:bg-slate-700 transition-colors">
+                <input type="checkbox" 
+                       class="form-checkbox h-3 w-3 text-sky-500 rounded border-gray-600 bg-gray-800 focus:ring-sky-600 base-strategy-checkbox" 
+                       value="${idx}"
+                       ${isChecked ? 'checked' : ''}>
+                <span class="truncate max-w-[150px] text-gray-300" title="${file.name}">${file.name.replace('.csv', '')}</span>
+            </label>
+        `;
+    });
+
+    configContainer.innerHTML = `
+        <div class="flex items-center justify-between mb-2 border-b border-slate-700/50 pb-1">
+            <h4 class="text-xs font-semibold text-sky-400 flex items-center gap-2">
+                <span>🛡️ Base Team: ${portfolio.name}</span>
+                <span class="text-[10px] text-gray-500 font-normal">(${state.searchBaseStrategyIndices.size} locked)</span>
+            </h4>
+            <button class="text-[10px] text-gray-400 hover:text-white hover:bg-red-900/30 px-2 rounded" onclick="window.clearBasePortfolioSelection()">
+                Clear Selection
+            </button>
+        </div>
+        <div class="flex flex-wrap gap-2 max-h-[100px] overflow-y-auto custom-scrollbar">
+            ${strategiesListHTML}
+        </div>
+        <div class="mt-2 text-[10px] text-gray-500 italic">
+            * Selected strategies will be locked in the search. Uncheck to treat them as optional candidates.
+        </div>
+    `;
+
+    // Add listeners
+    const checkboxes = configContainer.querySelectorAll('.base-strategy-checkbox');
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const idx = parseInt(e.target.value, 10);
+            if (e.target.checked) {
+                state.searchBaseStrategyIndices.add(idx);
+            } else {
+                state.searchBaseStrategyIndices.delete(idx);
+            }
+            // Re-render to update counts? Or just update UI count text.
+            // Re-render is safer for counts.
+            renderBaseStrategiesConfig();
+        });
+    });
+}
+
+// Helper to clear selection from UI
+window.clearBasePortfolioSelection = () => {
+    state.searchBasePortfolioIndex = null;
+    state.searchBaseStrategyIndices.clear();
+
+    // Uncheck radio buttons
+    const radios = document.querySelectorAll('input[name="base-portfolio-select"]');
+    radios.forEach(r => r.checked = false);
+
+    renderBaseStrategiesConfig();
+
+    if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.classList.add('hidden');
+};
+
 export const sortDatabank = (headerEl) => {
     const isRunning = dom.findDatabankPortfoliosBtn.disabled && !state.isSearchPaused && !state.isSearchStopped;
     if (isRunning) return;
@@ -776,8 +962,9 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
         return false;
     }
 
-    const names = portfolio.indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '').substring(0, 5)).join('+');
+    const names = portfolio.indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '')).join('+');
     const strategyIds = portfolio.indices.map(i => state.loadedStrategyFiles[i].strategyId);
+    const strategyNames = portfolio.indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', ''));
 
     // Calculate SQ Metrics for persistence
     let allTrades = [];
@@ -799,6 +986,7 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
         name: `P-DB (${names}) ${portfolio.metricName}`,
         indices: portfolio.indices,
         strategyIds: strategyIds, // <--- SAVE STRATEGY IDs
+        strategyNames: strategyNames, // <--- SAVE STRATEGY NAMES
         id: generatePortfolioId(`P-DB (${names})`, strategyIds),
         weights: null,
         metrics: portfolio.metrics || metrics, // Use passed metrics if available

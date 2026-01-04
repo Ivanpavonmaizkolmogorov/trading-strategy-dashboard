@@ -11,6 +11,7 @@ export const ALL_METRICS = {
     maxDrawdownInDollars: { label: 'Max Drawdown $', class: 'p-2 text-center' },
     monthlyAvgProfit: { label: 'Profit / Mes', class: 'p-2 text-center' },
     profitMaxDD_Ratio: { label: 'Ret/DD', class: 'p-2 text-center' },
+    returnDD: { label: 'Ret/DD', class: 'p-2 text-center' },
     monthlyProfitToDollarDD: { label: 'Profit/Mes / DD$', class: 'p-2 text-center' },
     maxConsecutiveLosingMonths: { label: 'Max Meses Pérdida', class: 'p-2 text-center' },
     winningPercentage: { label: 'Win %', class: 'p-2 text-center' },
@@ -23,7 +24,11 @@ export const ALL_METRICS = {
     // Health Monitoring Metrics
     maxConsecutiveLosses: { label: 'Max Consecutive Losses', class: 'p-2 text-center' },
     maxConsecutiveWins: { label: 'Max Consecutive Wins', class: 'p-2 text-center' },
+    maxConsecutiveWins: { label: 'Max Consecutive Wins', class: 'p-2 text-center' },
     maxMarginRequired: { label: 'Max Margin Req.', class: 'p-2 text-center' },
+    gammaFlowScore: { label: 'Gamma Flow Score', class: 'p-2 text-center' },
+    cagr: { label: 'CAGR %', class: 'p-2 text-center' },
+    cagr_custom_score: { label: 'Optimized Score', class: 'p-2 text-center font-bold text-sky-400' },
 };
 
 export const SELECTION_COLORS = [
@@ -67,7 +72,7 @@ export const CHART_OPTIONS = {
             displayColors: true,
             boxPadding: 4
         },
-        zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
+        zoom: { pan: { enabled: true, mode: 'xy' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' } }
     },
     scales: {
         x: {

@@ -61,6 +61,12 @@ fi
 echo "Lanzando el servidor backend en $URL"
 echo "Los logs del servidor se guardarán en: $LOG_FILE"
 
+# --- ROTACIÓN DE LOGS ---
+if [ -f "$LOG_FILE" ]; then
+    echo "Rotando logs antiguos..."
+    mv "$LOG_FILE" "$LOG_FILE.old"
+fi
+
 # Ejecutar uvicorn en segundo plano y redirigir su salida a un archivo de log
 uvicorn app:app --host 0.0.0.0 --port $PORT > "$LOG_FILE" 2>&1 &
 
