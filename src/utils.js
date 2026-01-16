@@ -75,6 +75,12 @@ export const parseCsv = (file) => {
                     'swap': 'swap', 'commission': 'commission', 'taxes': 'commission', 'comm': 'commission', 'fee': 'commission'
                 };
                 if (map[header]) return map[header];
+
+                // Enhanced heuristic mapping
+                if (header.includes('close') && (header.includes('time') || header.includes('date'))) return 'exit_date';
+                if (header.includes('exit') && (header.includes('time') || header.includes('date'))) return 'exit_date';
+                if (header.includes('open') && (header.includes('time') || header.includes('date'))) return 'entry_date';
+
                 if (header.includes('swap')) return 'swap';
                 if (header.includes('commission') || header.includes('comm') || header.includes('fee') || header.includes('taxes')) return 'commission';
                 if (header.includes('profit') || header.includes('gain') || header.includes('p/l')) return 'pnl';
@@ -93,6 +99,18 @@ export const parseCsv = (file) => {
                         else if (row.hasOwnProperty('close price')) row.price = row['close price'];
                         else if (row.hasOwnProperty('open price')) row.price = row['open price'];
                     }
+
+                    // --- FIX: Include Swap and Commission in PnL ---
+                    // The 'pnl' field from typical CSVs is usually Gross Profit.
+                    // We must add costs to match the Real Trades Modal logic.
+                    if (row.hasOwnProperty('pnl')) {
+                        const swap = parseFloat(row.swap) || 0;
+                        const comm = parseFloat(row.commission) || 0;
+                        // Only add if they are finite numbers (valid)
+                        if (Number.isFinite(swap)) row.pnl += swap;
+                        if (Number.isFinite(comm)) row.pnl += comm;
+                    }
+
                     return row;
                 });
                 resolve(data);
@@ -119,6 +137,7 @@ export const formatMetricForDisplay = (value, metricName) => {
     if (!Number.isFinite(value)) return '∞';
 
     if (metricName === 'gammaFlowScore') return value.toFixed(4);
+    if (metricName === 'correlationWithBase') return value.toFixed(4);
 
     const isPercent = ['maxDrawdown', 'winningPercentage', 'upsideCapture', 'downsideCapture', 'cagr'].includes(metricName) || (metricName && metricName.toLowerCase().includes('%'));
 

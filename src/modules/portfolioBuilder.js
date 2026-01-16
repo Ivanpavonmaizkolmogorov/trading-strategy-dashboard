@@ -5,7 +5,7 @@ import { savePortfolioFromDatabank } from './databank.js'; // Reusing save logic
 import { displaySavedPortfoliosList } from '../ui.js';
 import { ALL_METRICS } from '../config.js';
 
-import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=5';
+import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=10';
 
 /**
  * Analyzes a manually selected set of strategies.

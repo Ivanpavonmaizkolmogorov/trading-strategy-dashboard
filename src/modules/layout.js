@@ -3,6 +3,10 @@ import { state, saveSavedPortfolios } from '../state.js';
 import { renderViewerForActiveTab } from './viewer.js';
 import { renderStrategiesTable, displaySavedPortfoliosList } from '../ui.js';
 import { initStrategiesTable } from './strategiesTable.js';
+import { initQuarantineTab } from './quarantine.js';
+import { renderLiveMonitor } from './liveMonitor.js';
+import { openMagicMapper } from './magicMapper.js';
+import { processTradeHistory, recalculateStrategyBreakdown } from './myfxbookUI.js';
 import { exportTableToCSV } from '../utils.js';
 import { selectedSavedPortfolios, clearSelectedSavedPortfolios } from './savedPortfoliosTable.js';
 import { showToast } from './notifications.js';
@@ -14,6 +18,7 @@ export const initializeLayout = () => {
     initSidebar();
     initBottomPanelTabs();
     initPanelResizer();
+    initQuarantineTab(); // Init Quarantine (Setup listeners)
 };
 
 const initSidebar = () => {
@@ -34,14 +39,248 @@ const initSidebar = () => {
     if (dom.closeConfigBtn) dom.closeConfigBtn.addEventListener('click', closeModal);
     if (dom.configModalBackdrop) dom.configModalBackdrop.addEventListener('click', closeModal);
 
-    // Analysis Button -> Focus Viewer (Optional: Reset view)
+    // Analysis Button -> Return to Main Dashboard
     if (dom.navAnalysis) {
         dom.navAnalysis.addEventListener('click', () => {
-            // Ya estamos en la vista de análisis, quizás hacer scroll top o resetear algo
-            console.log("Focus en Análisis");
+            switchView('dashboard');
+        });
+    }
+
+    // Monitor Button -> Show Live Monitor
+    if (dom.navMonitor) {
+        dom.navMonitor.addEventListener('click', () => {
+            switchView('monitor');
+            initLiveMonitor();
         });
     }
 };
+
+const switchView = (viewName) => {
+    if (viewName === 'dashboard') {
+        // Hide Monitor
+        if (dom.liveMonitorView) dom.liveMonitorView.classList.add('hidden');
+
+        // Show Sidebar Highlight
+        if (dom.navMonitor) dom.navMonitor.classList.remove('active', 'text-white', 'bg-gray-700');
+        if (dom.navMonitor) dom.navMonitor.classList.add('text-gray-400');
+
+        if (dom.navAnalysis) dom.navAnalysis.classList.add('active', 'text-white', 'bg-gray-700');
+        if (dom.navAnalysis) dom.navAnalysis.classList.remove('text-gray-400');
+
+    } else if (viewName === 'monitor') {
+        // Show Monitor
+        if (dom.liveMonitorView) dom.liveMonitorView.classList.remove('hidden');
+
+        // Sidebar Highlight
+        if (dom.navAnalysis) dom.navAnalysis.classList.remove('active', 'text-white', 'bg-gray-700');
+        if (dom.navAnalysis) dom.navAnalysis.classList.add('text-gray-400');
+
+        if (dom.navMonitor) dom.navMonitor.classList.add('active', 'text-white', 'bg-gray-700');
+        if (dom.navMonitor) dom.navMonitor.classList.remove('text-gray-400');
+    }
+};
+
+// --- Live Monitor Logic (Inline) ---
+let isMonitorInitialized = false;
+
+const initLiveMonitor = () => {
+    if (isMonitorInitialized) return;
+
+    console.log("[Layout] Initializing Live Monitor (Toggle View)...");
+
+    if (dom.liveMonitorContent) {
+        // Create Toggle Layout (Stacked, one hidden)
+        dom.liveMonitorContent.innerHTML = `
+            <div class="relative w-full h-full">
+                <!-- Sandbox Iframe (Miner) -->
+                <div id="monitor-iframe-container" class="absolute inset-0 w-full h-full bg-black z-10 transition-all duration-300">
+                    <!-- Iframe injected here -->
+                    <div class="absolute inset-0 flex items-center justify-center text-gray-500 text-xs pointer-events-none">
+                        Loading Sandbox...
+                    </div>
+                </div>
+                
+                <!-- Dashboard (Cards) -->
+                <div id="monitor-dashboard-container" class="absolute inset-0 w-full h-full overflow-y-auto bg-gray-900 custom-scrollbar p-6 hidden z-20">
+                    <!-- Dashboard Cards injected here -->
+                     <div class="flex flex-col items-center justify-center h-full text-gray-500">
+                        <span class="animate-pulse">Waiting for data...</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const iframeContainer = document.getElementById('monitor-iframe-container');
+
+        // Inject Iframe
+        const iframe = document.createElement('iframe');
+        iframe.src = "http://localhost:8002";
+        iframe.style.width = "100%";
+        iframe.style.height = "100%";
+        iframe.style.border = "none";
+        iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
+
+        // Clear placeholder and append iframe
+        iframeContainer.innerHTML = '';
+        iframeContainer.appendChild(iframe);
+
+        // Pre-Render Dashboard
+        renderLiveMonitor('monitor-dashboard-container');
+    }
+
+    // --- TOGGLE LOGIC ---
+    const btnSandbox = document.getElementById('monitor-view-sandbox-btn');
+    const btnDashboard = document.getElementById('monitor-view-dashboard-btn');
+    const containerSandbox = document.getElementById('monitor-iframe-container');
+    const containerDashboard = document.getElementById('monitor-dashboard-container');
+    const btnGlobalMapper = document.getElementById('global-mapper-btn');
+
+    if (btnSandbox && btnDashboard && containerSandbox && containerDashboard) {
+        // Define toggle function
+        const setActive = (mode) => {
+            if (mode === 'sandbox') {
+                containerSandbox.classList.remove('hidden');
+                containerDashboard.classList.add('hidden');
+
+                btnSandbox.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
+                btnSandbox.classList.remove('text-gray-400', 'hover:bg-gray-800');
+
+                btnDashboard.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+                btnDashboard.classList.add('text-gray-400', 'hover:bg-gray-800');
+            } else {
+                containerSandbox.classList.add('hidden');
+                containerDashboard.classList.remove('hidden');
+
+                btnDashboard.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
+                btnDashboard.classList.remove('text-gray-400', 'hover:bg-gray-800');
+
+                btnSandbox.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+                btnSandbox.classList.add('text-gray-400', 'hover:bg-gray-800');
+
+                // Refresh dashboard when switching to it
+                renderLiveMonitor('monitor-dashboard-container');
+            }
+        };
+
+        // Attach listeners
+        btnSandbox.onclick = () => setActive('sandbox');
+        btnDashboard.onclick = () => setActive('dashboard');
+
+        console.log("[Layout] Toggle listeners attached.");
+    }
+
+    // Attach Listener to Global Mapper Button
+    if (btnGlobalMapper) {
+        btnGlobalMapper.addEventListener('click', () => {
+            console.log("[Layout] Opening Global Magic Mapper...");
+            openMagicMapper(null); // Null implies Global Mode
+        });
+    }
+
+    // Wire up Refresh Global button if needed
+    if (dom.monitorRefreshBtn) {
+        dom.monitorRefreshBtn.addEventListener('click', () => {
+            // Reload Iframe
+            const iframe = document.querySelector('#monitor-iframe-container iframe');
+            if (iframe) iframe.src = iframe.src;
+
+            // Refresh Dashboard logic?
+            renderLiveMonitor('monitor-dashboard-container');
+        });
+    }
+
+    // --- DATA BRIDGE ---
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'MYFX_DATA_UPDATE') {
+            console.log("[Layout] 🌉 Bridge received data from Monitor:", event.data.payload);
+
+            const payload = event.data.payload;
+
+            // Process payload to generate standardized stats
+            const result = processTradeHistory(payload.history, payload.openTrades);
+
+            // 1. UPDATE GLOBAL SANDBOX STATE
+            // This ensures Magic Mapper sees this data source immediately
+            state.sandboxData = {
+                accountInfo: payload.accountInfo,
+                processedStats: result.magicStats,
+                tradesById: result.tradesById, // Save detailed trades for inspector
+                sourceName: `Sandbox (${payload.accountInfo?.name || payload.accountInfo?.accountId || 'Active'})`
+            };
+
+            // 2. SEARCH & UPDATE MATCHING PORTFOLIO
+            // 2. SEARCH & UPDATE MATCHING PORTFOLIO (STRATEGY-BASED)
+            let matched = false;
+
+            // Iterate all portfolios to find ones that contain the strategies found in this update
+            state.savedPortfolios.forEach(portfolio => {
+                let strategiesFoundCount = 0;
+
+                // Content Match: Check if portfolio's strategies are present in the result
+                if (state.magicNumberMap) {
+                    const portfolioStrategyIds = new Set(portfolio.strategyIds || []);
+                    const resultKeys = new Set(Object.keys(result.magicStats));
+
+                    for (const [stratId, mappedKeys] of Object.entries(state.magicNumberMap)) {
+                        if (portfolioStrategyIds.has(stratId)) {
+                            // This strategy belongs to this portfolio.
+                            // Check if any of its mapped keys are in the incoming result
+                            if (mappedKeys.some(k => resultKeys.has(k))) {
+                                strategiesFoundCount++;
+                            }
+                        }
+                    }
+                }
+
+                // Also check strict ID match as a fallback/accelerator
+                const accId = payload.accountInfo?.accountId;
+                const isIdMatch = accId && String(portfolio.linkedAccountId) === String(accId);
+
+                if (isIdMatch || strategiesFoundCount > 0) {
+                    console.log(`[Layout] Updating Portfolio: ${portfolio.name} (ID Match: ${isIdMatch}, Strategies Found: ${strategiesFoundCount})`);
+
+                    portfolio.realMetrics = {
+                        ...(portfolio.realMetrics || {}),
+                        magicStats: result.magicStats,
+                        _tradesById: result.tradesById,
+                        maxConsecutiveLosses: result.metrics.maxConsecutiveLosses
+                    };
+
+                    // Auto-link ID if we matched by content but ID was missing/different
+                    if (!isIdMatch && accId) {
+                        console.log(`[Layout] Auto-linking Portfolio ${portfolio.name} to Account ID: ${accId}`);
+                        portfolio.linkedAccountId = accId;
+                    }
+
+                    // Recalculate Breakdown to update strategies status
+                    recalculateStrategyBreakdown(portfolio);
+                    portfolio.lastSyncDate = new Date().toISOString();
+                    matched = true;
+                }
+            });
+
+            if (!matched) {
+                console.warn('[Layout] NO MATCHING PORTFOLIO FOUND (No mapped strategies overlap).');
+            }
+
+            // 3. Notify User
+            if (payload.history && payload.history.length > 0) {
+                const msg = matched
+                    ? `Synced ${result.allTrades.length} trades to PORTFOLIO`
+                    : `Received ${result.allTrades.length} trades (Unlinked)`;
+                // showToast(msg, 'success');
+            }
+
+            // Dispatch event for other modules (e.g. Magic Mapper)
+            window.dispatchEvent(new CustomEvent('sandbox-data-updated'));
+        }
+    });
+
+    isMonitorInitialized = true;
+};
+
+
+
 
 const initBottomPanelTabs = () => {
     if (!dom.panelTabs) return;
@@ -76,7 +315,7 @@ const initBottomPanelTabs = () => {
             strategiesControls.classList.remove('hidden');
             // strategies tab likely doesn't need search button
             if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.classList.add('hidden');
-        }
+        } // Quarantine has its own internal controls, no global toolbar needed
     };
 
     // --- Initialize Export Buttons (One-time setup) ---
@@ -138,6 +377,43 @@ const initBottomPanelTabs = () => {
         console.warn('[Layout] Export Strategies Button NOT found during init!');
     }
 
+    const correlationSelectedBtn = document.getElementById('correlation-selected-portfolios-btn');
+    if (correlationSelectedBtn) {
+        correlationSelectedBtn.addEventListener('click', async () => {
+            const { calculatePortfolioCorrelationMatrix, showPortfolioCorrelationModal } = await import('./portfolioCorrelation.js');
+            const { getSelectedSavedPortfolios } = await import('./savedPortfoliosTable.js'); // Updated import source
+
+            // Get full portfolio objects from indices
+            const selectedIndices = getSelectedSavedPortfolios();
+            const portfolios = selectedIndices.map(idx => state.savedPortfolios[idx]).filter(p => p);
+
+            if (portfolios.length < 2) {
+                showToast('Selecciona al menos 2 portafolios para correlacionar', 'warning');
+                return;
+            }
+
+            const data = calculatePortfolioCorrelationMatrix(portfolios);
+            if (data) {
+                showPortfolioCorrelationModal(data);
+            } else {
+                showToast('No se pudo calcular la correlación (faltan datos de equidad)', 'error');
+            }
+        });
+    }
+
+    const searchSelectedBtn = document.getElementById('search-selected-portfolios-btn');
+    if (searchSelectedBtn) {
+        searchSelectedBtn.addEventListener('click', async () => {
+            const { openSearchConfigModal } = await import('./searchConfig.js');
+            const { getSelectedSavedPortfolios } = await import('./savedPortfoliosTable.js');
+
+            // Get full portfolio objects from indices
+            const selectedIndices = getSelectedSavedPortfolios();
+            // We pass the INDICES of the SAVED PORTFOLIOS to the wizard
+            openSearchConfigModal(selectedIndices);
+        });
+    }
+
     // 0. Sync Initial State
     const activeContent = document.querySelector('.tab-content.active');
     if (activeContent) {
@@ -179,6 +455,7 @@ const initBottomPanelTabs = () => {
                 if (targetId === 'strategies-content') state.activeTab = 'strategies';
                 else if (targetId === 'saved-portfolios-content') state.activeTab = 'saved-portfolios';
                 else if (targetId === 'databank-content') state.activeTab = 'databank';
+                else if (targetId === 'quarantine-content') state.activeTab = 'quarantine'; // NEW
                 console.log(`[Layout] Active Tab changed to: ${state.activeTab}`);
 
                 // Render specific content if needed

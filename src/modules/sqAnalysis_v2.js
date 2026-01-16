@@ -2,6 +2,14 @@ import { state } from '../state.js';
 
 // Variable to track the currently active analysis view
 let activeRenderConfig = null;
+let analysisDateSortAsc = false; // Default: Newest First (Desc)
+
+window.toggleAnalysisSort = () => {
+    analysisDateSortAsc = !analysisDateSortAsc;
+    if (activeRenderConfig) {
+        renderSQAnalysis(activeRenderConfig.index, activeRenderConfig.source);
+    }
+};
 
 document.addEventListener('portfolio-data-updated', () => {
     // Check if the analysis view is active (content div exists and we have a config)
@@ -13,6 +21,8 @@ document.addEventListener('portfolio-data-updated', () => {
 });
 export const calculateSQMetrics = (trades) => {
     if (!trades || !Array.isArray(trades) || trades.length === 0) return null;
+
+    console.log(`[SQ DEBUG] calculateSQMetrics Input Trades: ${trades.length}`);
 
     let totalProfit = 0;
     let grossProfit = 0;
@@ -28,11 +38,19 @@ export const calculateSQMetrics = (trades) => {
     let currentEquity = 0;
     let largestWin = 0;
     let largestLoss = 0;
+    let sharpeRatio = 0;
+    let sortinoRatio = 0;
+
+    // Stagnation State
+    let maxStagnationDays = 0;
+    let peakTime = null; // Time of last peak equity
 
     // Monthly/Weekly Data Cache
     const timeData = {
         month: {},
-        week: {}
+        week: {},
+        day: {},
+        year: {}
     };
 
     // Sort trades by Open Time for Inter-Trade Analysis
@@ -56,15 +74,31 @@ export const calculateSQMetrics = (trades) => {
     });
 
     // --- Equity & Metrics Analysis (Uses Exit Time) ---
+    // Initialize Peak Time for Stagnation
+    if (tradesByExit.length > 0) {
+        peakTime = tradesByExit[0].exitTime ? tradesByExit[0].exitTime.getTime() : null;
+    }
+
     tradesByExit.forEach(t => {
         const pnl = t.pnl;
         totalProfit += pnl;
         currentEquity += pnl;
 
         // DD
-        if (currentEquity > peakEquity) peakEquity = currentEquity;
-        const dd = peakEquity - currentEquity;
-        if (dd > maxDD) maxDD = dd;
+        if (currentEquity > peakEquity) {
+            peakEquity = currentEquity;
+            // console.log(`[SQ Metrics] New Peak Equity: ${peakEquity.toFixed(2)} at ${t.exitTime}`);
+        }
+        const dd = peakEquity - currentEquity; // Positive value representing drop
+        if (dd > maxDD) {
+            console.log(`[SQ Metrics] New Max DD Found: ${dd.toFixed(2)} (Peak: ${peakEquity.toFixed(2)} -> Curr: ${currentEquity.toFixed(2)}) at ${t.exitTime}. Last Trade PnL: ${pnl.toFixed(2)}`);
+            maxDD = dd;
+        }
+
+        // Update Peak Time
+        if (currentEquity >= peakEquity) {
+            peakTime = t.exitTime ? t.exitTime.getTime() : null;
+        }
 
         // Win/Loss
         if (pnl >= 0) {
@@ -88,22 +122,36 @@ export const calculateSQMetrics = (trades) => {
             const y = t.exitTime.getFullYear();
             const m = t.exitTime.getMonth(); // 0-11
 
-            // Week Calculation (ISO 8601 approx)
+            // Week Calculation
             const d = new Date(Date.UTC(y, m, t.exitTime.getDate()));
             const dayNum = d.getUTCDay() || 7;
             d.setUTCDate(d.getUTCDate() + 4 - dayNum);
             const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
             const w = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-            const wy = d.getUTCFullYear(); // Year for the week
+            const wy = d.getUTCFullYear();
+
+            // Stagnation Calculation (Current Trade)
+            let currentStagnation = 0;
+            if (peakTime) {
+                currentStagnation = (t.exitTime.getTime() - peakTime) / (1000 * 60 * 60 * 24);
+                if (currentStagnation > maxStagnationDays) {
+                    console.log(`[SQ Metrics] New Max Stagnation Days in Drawdown: ${currentStagnation.toFixed(1)} days.`);
+                    maxStagnationDays = currentStagnation;
+                }
+            }
 
             // Helper to update bucket
             const updateBucket = (bucket, key) => {
-                if (!bucket[key]) bucket[key] = { pnl: 0, count: 0, wins: 0, losses: 0, grossProfit: 0, grossLoss: 0 };
+                if (!bucket[key]) bucket[key] = { pnl: 0, count: 0, wins: 0, losses: 0, grossProfit: 0, grossLoss: 0, maxDD: 0, maxStagnation: 0 };
                 const s = bucket[key];
                 s.pnl += pnl;
                 s.count++;
                 if (pnl >= 0) { s.wins++; s.grossProfit += pnl; }
                 else { s.losses++; s.grossLoss += pnl; }
+
+                // Track Max Stats for this Period
+                if (dd > s.maxDD) s.maxDD = dd;
+                if (currentStagnation > s.maxStagnation) s.maxStagnation = currentStagnation;
             };
 
             // Month
@@ -113,6 +161,17 @@ export const calculateSQMetrics = (trades) => {
             // Week
             if (!timeData.week[wy]) timeData.week[wy] = {};
             updateBucket(timeData.week[wy], w);
+
+            // Day
+            if (!timeData.day) timeData.day = {};
+            if (!timeData.day[y]) timeData.day[y] = {};
+            const dayKey = `${String(m + 1).padStart(2, '0')}-${String(t.exitTime.getDate()).padStart(2, '0')}`;
+            updateBucket(timeData.day[y], dayKey);
+
+            // Year
+            if (!timeData.year) timeData.year = {};
+            if (!timeData.year[y]) timeData.year[y] = {};
+            updateBucket(timeData.year[y], y);
         }
     });
 
@@ -142,8 +201,9 @@ export const calculateSQMetrics = (trades) => {
     const returnDDRatio = maxDD > 0 ? totalProfit / maxDD : (totalProfit > 0 ? 999 : 0);
 
     // Time Stats
-    const firstDate = trades[0].exitTime;
-    const lastDate = trades[trades.length - 1].exitTime;
+    // FIX: Use sorted tradesByExit to ensure correct Duration range
+    const firstDate = tradesByExit[0].exitTime;
+    const lastDate = tradesByExit[tradesByExit.length - 1].exitTime;
     const days = (lastDate - firstDate) / (1000 * 60 * 60 * 24);
     const years = days / 365.25;
     const avgYearlyProfit = years > 0 ? totalProfit / years : totalProfit;
@@ -223,18 +283,136 @@ export const calculateSQMetrics = (trades) => {
         }
     });
 
+    // --- Advanced Risk Metrics (Sharpe & Sortino) ---
+    // 1. Aggregate Daily PnL
+    // --- ADVANCED BACKEND-PARITY METRICS (UPI, Stagnation, Streaks) ---
+
+    // 1. Construct Daily Equity Curve (for CAGR, UPI, Sharpe Daily)
+    // Trades are already sorted by exitTime in tradesByExit
+    const dailyPnL = {};
+    const tradeEquityCurve = [0]; // Relative to 0 start
+    let currentTradeEq = 0;
+
+    tradesByExit.forEach(t => {
+        currentTradeEq += t.pnl;
+        tradeEquityCurve.push(currentTradeEq);
+
+        if (t.exitTime) {
+            const dayKey = t.exitTime.toISOString().split('T')[0];
+            dailyPnL[dayKey] = (dailyPnL[dayKey] || 0) + t.pnl;
+        }
+    });
+
+    const dailyValues = Object.values(dailyPnL);
+    // Simple Daily Equity Series (assuming missing days = 0 pnl)
+    // For robust Sharpe/UPI we ideally need a full calendar, but simplified approaches work for estimation.
+    // SQX/Backend uses full date range reindexing.
+
+    // Variables sharpeRatio and sortinoRatio declared at top of function
+
+    if (dailyValues.length > 1) {
+        const nDays = dailyValues.length;
+        const meanDaily = dailyValues.reduce((a, b) => a + b, 0) / nDays;
+
+        // StdDev (Total Volatility)
+        const varianceDaily = dailyValues.reduce((sum, val) => sum + Math.pow(val - meanDaily, 2), 0) / (nDays - 1);
+        const stdDevDaily = Math.sqrt(varianceDaily);
+
+        // Downside Deviation (Downside Volatility)
+        const downsideVariance = dailyValues.reduce((sum, val) => {
+            const down = Math.min(0, val - 0); // Target return 0 for Sortino
+            return sum + Math.pow(down, 2);
+        }, 0) / nDays; // Sortino uses N, not N-1 usually, but N is fine for large samples
+        const downsideDev = Math.sqrt(downsideVariance);
+
+        // Annualizaton (assuming 252 trading days)
+        const SQRT_252 = Math.sqrt(252);
+
+        if (stdDevDaily > 0) {
+            sharpeRatio = (meanDaily / stdDevDaily) * SQRT_252;
+        }
+
+        if (downsideDev > 0) {
+            sortinoRatio = (meanDaily / downsideDev) * SQRT_252;
+        }
+    }
+
+    // 2. CAGR Calculation
+    const durationDays = (lastDate - firstDate) / (1000 * 60 * 60 * 24);
+    const durationYears = durationDays / 365.25;
+    let cagr = 0;
+    const initialCapital = 10000; // Assumed fixed base for % calc context
+    const finalEquity = initialCapital + totalProfit;
+
+    if (durationYears > 0 && finalEquity > 0) {
+        if (durationYears < 1.0) {
+            cagr = ((finalEquity / initialCapital) - 1) / durationYears;
+        } else {
+            cagr = Math.pow(finalEquity / initialCapital, 1 / durationYears) - 1;
+        }
+    }
+    const cagrPct = cagr * 100;
+
+    // 3. UPI (Ulcer Performance Index)
+    // Ulcer Index = sqrt(mean(squared drawdowns %))
+    let squaredDDSum = 0;
+    let peakEq = initialCapital;
+    let maxStagnationTrades = 0;
+    let tradesSincePeak = 0;
+    let peakTradeEq = initialCapital; // For stagnation trades
+
+    // Map trade curve to absolute equity (assuming 10k start)
+    const absTradeCurve = tradeEquityCurve.map(v => initialCapital + v);
+
+    absTradeCurve.forEach(eq => {
+        if (eq > peakEq) peakEq = eq;
+        const ddPct = peakEq > 0 ? ((eq / peakEq) - 1) * 100 : 0;
+        squaredDDSum += (ddPct * ddPct);
+
+        // Stagnation Trades
+        if (eq > peakTradeEq) {
+            if (tradesSincePeak > maxStagnationTrades) maxStagnationTrades = tradesSincePeak;
+            tradesSincePeak = 0;
+            peakTradeEq = eq;
+        } else {
+            tradesSincePeak++;
+        }
+    });
+    if (tradesSincePeak > maxStagnationTrades) maxStagnationTrades = tradesSincePeak;
+
+    const ulcerIndex = Math.sqrt(squaredDDSum / absTradeCurve.length);
+    const upi = ulcerIndex > 0 ? cagrPct / ulcerIndex : (cagrPct > 0 ? 999 : 0);
+
+    // 4. Stagnation in Days
+    // (Calculated in Main Loop now)
+    // maxStagnationDays is already populated.
+
+    // 5. Consecutive Wins/Losses (Streaks) & Max Margin
+    // Max Consecutive Losses is needed for table
+    // Already calculated: maxConsecWins, maxConsecLosses
+    // Mapping keys to match table expectation
+
     return {
         totalProfit, grossProfit, grossLoss, totalTrades, wins, losses,
         winRate, profitFactor, maxDD, avgWin, avgLoss,
         maxConsecWins, maxConsecLosses, expectancy, sqn,
         avgYearlyProfit, avgMonthlyProfit, avgDailyProfit,
         largestWin, largestLoss, returnDDRatio, avgTrade,
-        timeData, // { month: { 2023: { 0: stats... } }, week: { ... } }
+        timeData,
         markovStats,
         exitStats,
         interTradeStats: globalInterTradeStats,
-        interTradeStatsByReason, // New detailed stats
-        transitionMatrix
+        interTradeStatsByReason,
+        transitionMatrix,
+        sharpeRatio,
+        sortinoRatio,
+        // NEW METRICS
+        upi: upi,
+        cagr: cagrPct,
+        maxStagnationDays: Math.floor(maxStagnationDays),
+        maxStagnationTrades: maxStagnationTrades,
+        maxConsecutiveLosses: maxConsecLosses, // Alias for table ID
+        returnDD: returnDDRatio // Alias
     };
 };
 
@@ -544,7 +722,7 @@ const calculateMarkovChain = (trades, timeData) => {
     };
 };
 
-export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selectedPeriod = 'month', strategiesList = [], currentStrategyId = 'all', currentDataType = 'backtest', markovPeriod = 'trade', markovDepth = 1, currentFreqSelection = 'All', portfoliosList = [], currentPortfolioIndex = -1) => {
+export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selectedPeriod = 'month', strategiesList = [], currentStrategyId = 'all', currentDataType = 'backtest', markovPeriod = 'trade', markovDepth = 1, currentFreqSelection = 'All', portfoliosList = [], currentPortfolioIndex = -1, secondaryMetrics = null, dateRange = {}) => {
     if (!metrics) return '<div class="text-gray-400 text-center p-10">No hay datos suficientes para el análisis.</div>';
 
     const formatMoney = (val) => val !== undefined && val !== null ? `$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
@@ -556,7 +734,9 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
         { value: 'winRate', label: 'Win Rate %' },
         { value: 'profitFactor', label: 'Profit Factor' },
         { value: 'grossProfit', label: 'Gross Profit' },
-        { value: 'grossLoss', label: 'Gross Loss' }
+        { value: 'grossLoss', label: 'Gross Loss' },
+        { value: 'drawdown', label: 'Dist. Drawdown ($)' }, // Max DD in period
+        { value: 'stagnation', label: 'Dist. Stagnation (Days)' } // Max Stag in period
     ];
 
     const periodOptions = [
@@ -588,24 +768,57 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
         </select>
     `;
 
+    const dateControls = `
+        <div class="flex items-center gap-1 ml-2 border-l border-gray-600 pl-2">
+            <span class="text-gray-400 text-[10px] uppercase">Range:</span>
+            <input type="date" id="sq-start-date" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500 w-28" value="${dateRange.start || ''}">
+            <span class="text-gray-400">-</span>
+            <input type="date" id="sq-end-date" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500 w-28" value="${dateRange.end || ''}">
+        </div>
+    `;
+
+    // Multiplier Legend Inputs
+    const multControls = `
+        <div class="flex items-center gap-2 ml-2 border-l border-gray-600 pl-2 text-xs">
+            <div class="flex items-center gap-1">
+                <input type="number" id="sq-bt-mult" class="w-12 bg-gray-700 text-blue-300 text-xs rounded px-1 py-1 border border-blue-900/50 focus:outline-none text-right" value="${dateRange.btMult || 1}" step="0.01" title="Backtest Multiplier">
+                <span class="text-blue-400 font-bold">BT</span>
+            </div>
+            <span class="text-gray-500">|</span>
+            <div class="flex items-center gap-1">
+                <span class="text-emerald-400 font-bold">Real</span>
+                <input type="number" id="sq-real-mult" class="w-12 bg-gray-700 text-emerald-300 text-xs rounded px-1 py-1 border border-emerald-900/50 focus:outline-none text-right" value="${dateRange.realMult || 1}" step="0.01" title="Real Multiplier">
+            </div>
+        </div>
+    `;
+
     const dataTypeSelectorHTML = `
         <select id="sq-data-type-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500 ml-2">
             <option value="backtest" ${currentDataType === 'backtest' ? 'selected' : ''}>Backtest Data</option>
             <option value="real" ${currentDataType === 'real' ? 'selected' : ''}>Real Data (Live)</option>
+            <option value="comparison" ${currentDataType === 'comparison' ? 'selected' : ''}>Comparison (Split)</option>
         </select>
     `;
 
     const headerControls = `
-        <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-center flex-wrap">
             ${portfolioSelectorHTML}
             ${strategySelectorHTML}
             ${dataTypeSelectorHTML}
-            <select id="sq-period-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500">
+
+            ${dateControls}
+            ${multControls}
+            <select id="sq-period-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500 ml-auto">
                 ${periodOptions.map(o => `<option value="${o.value}" ${o.value === selectedPeriod ? 'selected' : ''}>${o.label}</option>`).join('')}
             </select>
             <select id="sq-metric-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500">
                 ${metricsOptions.map(o => `<option value="${o.value}" ${o.value === selectedMetric ? 'selected' : ''}>${o.label}</option>`).join('')}
             </select>
+            <!-- R-Squared Value Container -->
+            <div id="sq-r2-container" class="ml-2 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs hidden">
+                <span class="text-gray-400">R²:</span>
+                <span id="sq-r2-value" class="font-mono font-bold text-amber-400 ml-1">...</span>
+            </div>
         </div>
     `;
 
@@ -615,84 +828,344 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
         'winRate': { label: 'Win Rate (%)', format: (v) => (v !== undefined && v !== null && v !== '-') ? formatNum(v, 1) + '%' : '-', color: (v) => v > 50 ? 'text-emerald-400' : 'text-yellow-400' },
         'profitFactor': { label: 'Profit Factor', format: (v) => v !== 0 ? formatNum(v, 2) : '-', color: (v) => v > 1.5 ? 'text-emerald-400' : (v > 1 ? 'text-yellow-400' : 'text-red-400') },
         'grossProfit': { label: 'Gross Profit', format: (v) => formatNum(v, 0), color: () => 'text-emerald-400' },
-        'grossLoss': { label: 'Gross Loss', format: (v) => formatNum(v, 0), color: () => 'text-red-400' }
+        'grossLoss': { label: 'Gross Loss', format: (v) => formatNum(v, 0), color: () => 'text-red-400' },
+        'drawdown': { label: 'Period Max Drawdown ($)', format: (v) => v > 0 ? formatNum(-v, 0) : '-', color: () => 'text-red-400' }, // DD is usually positive in calculation (drop), displayed as negative.
+        'stagnation': { label: 'Period Max Stagnation (Days)', format: (v) => v > 0 ? v.toFixed(1) : '-', color: (v) => v > 100 ? 'text-red-400' : 'text-gray-300' }
     };
 
     const currentMetric = metricDefinitions[selectedMetric] || metricDefinitions['pnl'];
     const overflowClass = selectedPeriod === 'week' ? 'overflow-x-auto' : '';
-    const dataBucket = metrics.timeData[selectedPeriod];
+    // Safe access to timeData
+    const safeTimeData = metrics.timeData || { month: {}, week: {} };
+    const dataBucket = safeTimeData[selectedPeriod] || {};
     const years = Object.keys(dataBucket).sort((a, b) => b - a);
     let tableRows = '';
     let headersHTML = '';
 
+    // --- SHARED HELPERS ---
+    const calcTotal = (gp, gl, wc, w, mDD, mStag) => {
+        if (selectedMetric === 'pnl') return gp + gl;
+        if (selectedMetric === 'count') return wc;
+        if (selectedMetric === 'winRate') return wc > 0 ? (w / wc) * 100 : 0;
+        if (selectedMetric === 'profitFactor') return Math.abs(gl) > 0 ? gp / Math.abs(gl) : (gp > 0 ? 999 : 0);
+        if (selectedMetric === 'grossProfit') return gp;
+        if (selectedMetric === 'grossLoss') return gl;
+        if (selectedMetric === 'drawdown') return mDD;
+        if (selectedMetric === 'stagnation') return mStag;
+        return 0;
+    };
+
+    const renderRow = (year, monthsData, secondaryMonthsData, label) => {
+        let yearTotal = 0;
+        let secYearTotal = 0;
+        let yWins = 0, yCount = 0, yGP = 0, yGL = 0, yMaxDD = 0, yMaxStag = 0;
+        let sWins = 0, sCount = 0, sGP = 0, sGL = 0, sMaxDD = 0, sMaxStag = 0;
+
+        // Calculate Yearly Total (Primary)
+        if (monthsData) {
+            Object.values(monthsData).forEach(stats => {
+                yWins += stats.wins; yCount += stats.count; yGP += stats.grossProfit; yGL += stats.grossLoss;
+                if (stats.maxDD > yMaxDD) yMaxDD = stats.maxDD;
+                if (stats.maxStagnation > yMaxStag) yMaxStag = stats.maxStagnation;
+            });
+        }
+        // Calculate Yearly Total (Secondary)
+        if (secondaryMonthsData) {
+            Object.values(secondaryMonthsData).forEach(stats => {
+                sWins += stats.wins; sCount += stats.count; sGP += stats.grossProfit; sGL += stats.grossLoss;
+                if (stats.maxDD > sMaxDD) sMaxDD = stats.maxDD;
+                if (stats.maxStagnation > sMaxStag) sMaxStag = stats.maxStagnation;
+            });
+        }
+
+        const getVal = (stats) => {
+            if (!stats) return 0;
+            if (selectedMetric === 'pnl') return stats.pnl;
+            if (selectedMetric === 'count') return stats.count;
+            if (selectedMetric === 'winRate') return stats.count > 0 ? (stats.wins / stats.count) * 100 : 0;
+            if (selectedMetric === 'profitFactor') return Math.abs(stats.grossLoss) > 0 ? stats.grossProfit / Math.abs(stats.grossLoss) : (stats.grossProfit > 0 ? 999 : 0);
+            if (selectedMetric === 'grossProfit') return stats.grossProfit;
+            if (selectedMetric === 'grossLoss') return stats.grossLoss;
+            if (selectedMetric === 'drawdown') return stats.maxDD || 0;
+            if (selectedMetric === 'stagnation') return stats.maxStagnation || 0;
+            return 0;
+        };
+
+        // calcTotal moved to parent scope
+
+        yearTotal = calcTotal(yGP, yGL, yCount, yWins, yMaxDD, yMaxStag);
+        secYearTotal = calcTotal(sGP, sGL, sCount, sWins, sMaxDD, sMaxStag);
+
+        const formatSplit = (v1, v2, hasV1, hasV2) => {
+            if (!hasV1 && !hasV2) return '-';
+            if (currentDataType !== 'comparison') return `<span class="${currentMetric.color(v1)}">${currentMetric.format(v1)}</span>`;
+
+            // Comparison Mode
+            const s1 = hasV1 ? `<span class="${currentMetric.color(v1)}">${currentMetric.format(v1)}</span>` : '<span class="text-gray-700">-</span>';
+            const s2 = hasV2 ? `<span class="${currentMetric.color(v2)} font-bold">${currentMetric.format(v2)}</span>` : '<span class="text-gray-700">-</span>';
+
+            if (!hasV2) return s1;
+            return `<div class="flex items-center justify-end gap-1 whitespace-nowrap">
+                ${s1}
+                <span class="text-gray-600">|</span>
+                ${s2}
+             </div>`;
+        };
+
+        let cells = `<td class="py-2 px-2 font-bold text-gray-300 border-r border-gray-700 text-xs">${label}</td>`;
+        for (let m = 0; m < 12; m++) {
+            const stats1 = monthsData ? monthsData[m] : null;
+            const stats2 = secondaryMonthsData ? secondaryMonthsData[m] : null;
+
+            const val1 = stats1 ? getVal(stats1) : 0;
+            const val2 = stats2 ? getVal(stats2) : 0;
+
+            cells += `<td class="py-2 px-1 text-right text-xs">
+                ${formatSplit(val1, val2, !!stats1, !!stats2)}
+            </td>`;
+        }
+
+        cells += `<td class="py-2 px-2 text-right font-bold border-l border-gray-700">
+            ${formatSplit(yearTotal, secYearTotal, !!monthsData, !!secondaryMonthsData)}
+        </td>`;
+
+        return `<tr class="hover:bg-gray-700/30 transition-colors">${cells}</tr>`;
+    };
+
     if (selectedPeriod === 'month') {
+        const primaryBucket = safeTimeData.month || {};
+        const secondaryBucket = (secondaryMetrics && secondaryMetrics.timeData && currentDataType === 'comparison') ? secondaryMetrics.timeData.month : {};
+        const allYears = new Set([...Object.keys(primaryBucket), ...Object.keys(secondaryBucket)]);
+        const mk = analysisDateSortAsc ? 1 : -1;
+        const years = Array.from(allYears).sort((a, b) => (Number(a) - Number(b)) * mk);
+        const arrow = analysisDateSortAsc ? '▲' : '▼';
+
         headersHTML = `
-            <th class="py-2 px-2 text-left font-bold text-gray-300 border-r border-gray-700">Year</th>
+            <th class="py-2 px-2 text-left font-bold text-gray-300 border-r border-gray-700 cursor-pointer hover:text-white select-none" onclick="window.toggleAnalysisSort()" title="Toggle Sort Order">Year ${arrow}</th>
             <th class="py-2 px-1 text-right">Jan</th><th class="py-2 px-1 text-right">Feb</th><th class="py-2 px-1 text-right">Mar</th>
             <th class="py-2 px-1 text-right">Apr</th><th class="py-2 px-1 text-right">May</th><th class="py-2 px-1 text-right">Jun</th>
             <th class="py-2 px-1 text-right">Jul</th><th class="py-2 px-1 text-right">Aug</th><th class="py-2 px-1 text-right">Sep</th>
             <th class="py-2 px-1 text-right">Oct</th><th class="py-2 px-1 text-right">Nov</th><th class="py-2 px-1 text-right">Dec</th>
             <th class="py-2 px-2 text-right font-bold text-gray-300 border-l border-gray-700">Total</th>
         `;
+
         years.forEach(year => {
-            const months = dataBucket[year];
-            let yearTotal = 0;
-            const getVal = (stats) => {
-                if (!stats) return 0;
-                if (selectedMetric === 'pnl') return stats.pnl;
-                if (selectedMetric === 'count') return stats.count;
-                if (selectedMetric === 'winRate') return stats.count > 0 ? (stats.wins / stats.count) * 100 : 0;
-                if (selectedMetric === 'profitFactor') return Math.abs(stats.grossLoss) > 0 ? stats.grossProfit / Math.abs(stats.grossLoss) : (stats.grossProfit > 0 ? 999 : 0);
-                if (selectedMetric === 'grossProfit') return stats.grossProfit;
-                if (selectedMetric === 'grossLoss') return stats.grossLoss;
-                return 0;
-            };
-
-            let yWins = 0, yCount = 0, yGP = 0, yGL = 0;
-            Object.values(months).forEach(stats => {
-                yWins += stats.wins; yCount += stats.count; yGP += stats.grossProfit; yGL += stats.grossLoss;
-            });
-
-            if (selectedMetric === 'pnl') yearTotal = yGP + yGL;
-            else if (selectedMetric === 'count') yearTotal = yCount;
-            else if (selectedMetric === 'winRate') yearTotal = yCount > 0 ? (yWins / yCount) * 100 : 0;
-            else if (selectedMetric === 'profitFactor') yearTotal = Math.abs(yGL) > 0 ? yGP / Math.abs(yGL) : (yGP > 0 ? 999 : 0);
-            else if (selectedMetric === 'grossProfit') yearTotal = yGP;
-            else if (selectedMetric === 'grossLoss') yearTotal = yGL;
-
-            let cells = `<td class="py-2 px-2 font-bold text-gray-300 border-r border-gray-700">${year}</td>`;
-            for (let m = 0; m < 12; m++) {
-                const stats = months[m];
-                const val = getVal(stats);
-                const colorClass = currentMetric.color(val);
-                cells += `<td class="py-2 px-1 text-right ${colorClass} text-xs">${stats ? currentMetric.format(val) : '-'}</td>`;
-            }
-            const totalClass = selectedMetric === 'pnl' ? (yearTotal >= 0 ? 'text-emerald-300' : 'text-red-300') : 'text-gray-300';
-            cells += `<td class="py-2 px-2 text-right font-bold ${totalClass} border-l border-gray-700">${currentMetric.format(yearTotal)}</td>`;
-            tableRows += `<tr class="hover:bg-gray-700/30 transition-colors">${cells}</tr>`;
+            // In Split Mode, we pass both to renderRow
+            const prim = primaryBucket[year];
+            const sec = secondaryBucket[year];
+            tableRows += renderRow(year, prim, sec, year);
         });
     } else {
-        headersHTML = `<th class="py-2 px-2 text-left">Week</th><th class="py-2 px-2 text-right">Value</th>`;
+        const arrow = analysisDateSortAsc ? '▲' : '▼';
+        headersHTML = `<th class="py-2 px-2 text-left cursor-pointer hover:text-white select-none" onclick="window.toggleAnalysisSort()" title="Toggle Sort Order">${selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)} ${arrow}</th><th class="py-2 px-2 text-right">Value</th>`;
         let weekRows = '';
+
+        // Safe Access setup for non-monthly periods
+        const primaryBucket = safeTimeData[selectedPeriod] || {};
+        const secondaryBucket = (secondaryMetrics && secondaryMetrics.timeData && currentDataType === 'comparison') ? secondaryMetrics.timeData[selectedPeriod] : {};
+        const allYears = new Set([...Object.keys(primaryBucket), ...Object.keys(secondaryBucket)]);
+        const mk = analysisDateSortAsc ? 1 : -1;
+        const years = Array.from(allYears).sort((a, b) => (Number(a) - Number(b)) * mk);
+
+        // Helper to extract value
+        const getVal = (stats) => {
+            if (!stats) return 0;
+            if (selectedMetric === 'pnl') return stats.pnl;
+            if (selectedMetric === 'count') return stats.count;
+            if (selectedMetric === 'winRate') return stats.count > 0 ? (stats.wins / stats.count) * 100 : 0;
+            if (selectedMetric === 'profitFactor') return Math.abs(stats.grossLoss) > 0 ? stats.grossProfit / Math.abs(stats.grossLoss) : (stats.grossProfit > 0 ? 999 : 0);
+            if (selectedMetric === 'grossProfit') return stats.grossProfit;
+            if (selectedMetric === 'grossLoss') return stats.grossLoss;
+            if (selectedMetric === 'drawdown') return stats.maxDD || 0;
+            if (selectedMetric === 'stagnation') return stats.maxStagnation || 0;
+            return 0;
+        };
+
+        // --- MOVED R-SQUARED CALCULATION TO setupRender ---
+        // We will calculate it there and inject it into the DOM after render.
+        // This avoids issues with innerHTML and script tags.
+
+        // Total Accumulators (For Non-Month periods, we sum PnL but MAX the DD/Stag)
+        const accP = { pnl: 0, count: 0, wins: 0, grossProfit: 0, grossLoss: 0, maxDD: 0, maxStag: 0 };
+        const accS = { pnl: 0, count: 0, wins: 0, grossProfit: 0, grossLoss: 0, maxDD: 0, maxStag: 0 };
+        let hasDataP = false;
+        let hasDataS = false;
+
         years.forEach(year => {
-            const weeks = dataBucket[year];
-            Object.keys(weeks).sort((a, b) => Number(a) - Number(b)).forEach(w => {
-                const stats = weeks[w];
-                let val = 0;
-                if (selectedMetric === 'pnl') val = stats.pnl;
-                else if (selectedMetric === 'count') val = stats.count;
-                else if (selectedMetric === 'winRate') val = stats.count > 0 ? (stats.wins / stats.count) * 100 : 0;
-                else if (selectedMetric === 'profitFactor') val = Math.abs(stats.grossLoss) > 0 ? stats.grossProfit / Math.abs(stats.grossLoss) : (stats.grossProfit > 0 ? 999 : 0);
+            const weeksP = primaryBucket[year] || {};
+            const weeksS = secondaryBucket[year] || {};
+
+            // Union of all sub-keys (weeks/days) for this year
+            const allSubKeys = new Set([...Object.keys(weeksP), ...Object.keys(weeksS)]);
+            const sortedKeys = Array.from(allSubKeys).sort((a, b) => {
+                const mk = analysisDateSortAsc ? 1 : -1;
+                // If keys are 'MM-DD' strings (Day Mode), parse them
+                if (typeof a === 'string' && a.includes('-')) {
+                    const [m1, d1] = a.split('-').map(Number);
+                    const [m2, d2] = b.split('-').map(Number);
+                    if (m1 !== m2) return (m1 - m2) * mk;
+                    return (d1 - d2) * mk;
+                }
+                // Fallback for numeric keys (Week)
+                return (Number(a) - Number(b)) * mk;
+            });
+
+            sortedKeys.forEach(w => {
+                const statsP = weeksP[w];
+                const statsS = weeksS[w];
+
+                const valP = getVal(statsP);
+                const valS = getVal(statsS);
+
+                // Accumulate
+                if (statsP) {
+                    hasDataP = true;
+                    accP.pnl += statsP.pnl;
+                    accP.count += statsP.count;
+                    accP.wins += statsP.wins;
+                    accP.grossProfit += statsP.grossProfit;
+                    accP.grossLoss += statsP.grossLoss;
+                    if (statsP.maxDD > accP.maxDD) accP.maxDD = statsP.maxDD;
+                    if (statsP.maxStagnation > accP.maxStag) accP.maxStag = statsP.maxStagnation;
+                }
+                if (statsS) {
+                    hasDataS = true;
+                    accS.pnl += statsS.pnl;
+                    accS.count += statsS.count;
+                    accS.wins += statsS.wins;
+                    accS.grossProfit += statsS.grossProfit;
+                    accS.grossLoss += statsS.grossLoss;
+                    if (statsS.maxDD > accS.maxDD) accS.maxDD = statsS.maxDD;
+                    if (statsS.maxStagnation > accS.maxStag) accS.maxStag = statsS.maxStagnation;
+                }
+
+                // Reuse existing formatSplit helper from renderRow scope if possible, 
+                // BUT renderRow is a sibling function. referencing it might fail if defined inside renderRow.
+                // formatSplit IS defined inside renderRow (lines 853-867 in previous view), so we cannot access it here.
+                // We must duplicate or move formatSplit definition up.
+                // Checking previous code... 'formatSplit' is inside renderRow. 
+                // I will redefine a simple version here.
+
+                const fmt = (v1, v2, hasV1, hasV2) => {
+                    if (!hasV1 && !hasV2) return '-';
+                    if (currentDataType !== 'comparison') return `<span class="${currentMetric.color(v1)}">${currentMetric.format(v1)}</span>`;
+
+                    const s1 = hasV1 ? `<span class="${currentMetric.color(v1)}">${currentMetric.format(v1)}</span>` : '<span class="text-gray-700">-</span>';
+                    const s2 = hasV2 ? `<span class="${currentMetric.color(v2)} font-bold">${currentMetric.format(v2)}</span>` : '<span class="text-gray-700">-</span>';
+
+                    if (!hasV2) return s1;
+                    return `<div class="flex items-center justify-end gap-1 whitespace-nowrap">${s1}<span class="text-gray-600">|</span>${s2}</div>`;
+                };
+
+                const label = selectedPeriod === 'week' ? `${year} - W${w}` :
+                    selectedPeriod === 'day' ? `${year} - Day ${w}` :
+                        `${year}`;
+
+                // --- Backtest End Detection ---
+                let isPostBacktest = false;
+                if ((currentDataType === 'backtest' || currentDataType === 'comparison') && metrics.trades && metrics.trades.length > 0) {
+                    // Calculate Last Trade Date effectively
+                    // We use the metrics.trades which should be the source for this view
+                    const lastTrade = metrics.trades[metrics.trades.length - 1];
+                    if (lastTrade && (lastTrade.exitTime || lastTrade.closeTime)) {
+                        const lastDate = new Date(lastTrade.exitTime || lastTrade.closeTime);
+
+                        // Determine start date of current row's period
+                        if (selectedPeriod === 'year') {
+                            if (Number(year) > lastDate.getFullYear()) isPostBacktest = true;
+                        }
+                        else if (selectedPeriod === 'week') {
+                            // Approximation: Year + Week * 7 days
+                            if (Number(year) > lastDate.getFullYear()) isPostBacktest = true;
+                            else if (Number(year) === lastDate.getFullYear()) {
+                                // Week calculation (ISO 8601 rough)
+                                const oneJan = new Date(year, 0, 1);
+                                const numberOfDays = Math.floor((lastDate - oneJan) / (24 * 60 * 60 * 1000));
+                                const lastWeek = Math.ceil((numberOfDays + oneJan.getDay() + 1) / 7);
+                                if (Number(w) > lastWeek) isPostBacktest = true;
+                            }
+                        } else if (selectedPeriod === 'day') {
+                            // Day 01-06 format? 
+                            // w is "MM-DD". 
+                            if (Number(year) > lastDate.getFullYear()) isPostBacktest = true;
+                            else if (Number(year) === lastDate.getFullYear()) {
+                                const [m, d] = w.split('-').map(Number);
+                                const rDate = new Date(year, m - 1, d);
+                                if (rDate > lastDate) isPostBacktest = true;
+                            }
+                        }
+                    }
+                }
+
+                // Construct Controls
+                let startControls = '';
+                if (isPostBacktest) {
+                    startControls = `<span class="ml-auto text-[10px] font-bold text-gray-600 bg-gray-800 px-2 py-0.5 rounded border border-gray-700 select-none whitespace-nowrap">END OF DATA</span>`;
+                }
+
+                let loupes = '';
+                // Backtest Loupe
+                if (!isPostBacktest && (currentDataType === 'backtest' || currentDataType === 'comparison')) {
+                    loupes += `<button onclick="window.openStagnationAudit('${year}', '${w}', 'backtest')" class="p-1 hover:bg-blue-500/20 rounded text-blue-400" title="Audit Backtest Trades">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+                        </button>`;
+                }
+
+                // Real Loupe
+                if (currentDataType === 'real' || currentDataType === 'comparison') {
+                    loupes += `<button onclick="window.openStagnationAudit('${year}', '${w}', 'real')" class="p-1 hover:bg-emerald-500/20 rounded text-emerald-400" title="Audit Real Trades">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+                        </button>`;
+                }
+
+                let auditControls = startControls;
+
+                if (loupes) {
+                    const spacing = startControls ? 'ml-2' : 'ml-auto';
+                    auditControls += `<div class="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 ${spacing}">
+                        ${loupes}
+                     </div>`;
+                }
 
                 weekRows += `
-                    <tr class="hover:bg-gray-700/30 border-b border-gray-800">
-                        <td class="py-1 px-4 text-gray-400">${year} - W${w}</td>
-                        <td class="py-1 px-4 text-right ${currentMetric.color(val)}">${currentMetric.format(val)}</td>
+                    <tr class="hover:bg-gray-700/30 border-b border-gray-800 transition-colors group">
+                        <td class="py-1 px-4 text-gray-400 flex items-center gap-2">
+                            ${label}
+                            ${auditControls}
+                        </td>
+                        <td class="py-1 px-4 text-right">
+                             ${fmt(valP, valS, !!statsP, !!statsS)}
+                        </td>
                     </tr>
                 `;
             });
         });
-        tableRows = weekRows;
+
+        // RENDER TOTALS ROW
+        // NOTE: accP and accS are populated in the loop.
+        const totP = calcTotal(accP.grossProfit, accP.grossLoss, accP.count, accP.wins, accP.maxDD, accP.maxStag);
+        const totS = calcTotal(accS.grossProfit, accS.grossLoss, accS.count, accS.wins, accS.maxDD, accS.maxStag);
+
+        // Format Helper
+        const fmtTotal = (v1, v2, hasV1, hasV2) => {
+            if (!hasV1 && !hasV2) return '-';
+            if (currentDataType !== 'comparison') return `<span class="${currentMetric.color(v1)}">${currentMetric.format(v1)}</span>`;
+            const s1 = hasV1 ? `<span class="${currentMetric.color(v1)}">${currentMetric.format(v1)}</span>` : '<span class="text-gray-700">-</span>';
+            const s2 = hasV2 ? `<span class="${currentMetric.color(v2)} font-bold">${currentMetric.format(v2)}</span>` : '<span class="text-gray-700">-</span>';
+            if (!hasV2) return s1;
+            return `<div class="flex items-center justify-end gap-1 whitespace-nowrap">${s1}<span class="text-gray-600">|</span>${s2}</div>`;
+        };
+
+        const totalRow = `
+             <tr class="bg-gray-900/80 border-t-2 border-gray-600 font-bold">
+                 <td class="py-2 px-4 text-gray-200 uppercase tracking-wider">Total</td>
+                 <td class="py-2 px-4 text-right">
+                      ${fmtTotal(totP, totS, hasDataP, hasDataS)}
+                 </td>
+             </tr>
+        `;
+
+        tableRows = weekRows + totalRow;
     }
 
     const tableHeader = `
@@ -789,7 +1262,7 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
                     </table>
                 </div>
             </div>
-            ${renderOverview(metrics, formatMoney, formatNum)}
+            ${renderOverview(metrics, formatMoney, formatNum, secondaryMetrics)}
             ${markovSection}
             ${metrics.transitionMatrix ? renderTransitionMatrixHTML(metrics.transitionMatrix) : ''}
             ${renderFrequencyAnalysisHTML(metrics.interTradeStatsByReason, currentFreqSelection, formatNum)}
@@ -870,48 +1343,77 @@ const renderFrequencyAnalysisHTML = (statsMap, selectedKey, formatNum) => {
     `;
 };
 
-const renderOverview = (metrics, formatMoney, formatNum) => `
+const renderOverview = (metrics, formatMoney, formatNum, secondaryMetrics = null) => {
+    const getValueHTML = (primaryVal, secondaryVal, formatFn, colorFn) => {
+        if (secondaryMetrics && secondaryVal !== undefined) {
+            return `
+                <div class="flex items-center justify-end gap-2 text-sm">
+                    <span class="${colorFn(primaryVal)}">${formatFn(primaryVal)}</span>
+                    <span class="text-gray-500">|</span>
+                    <span class="${colorFn(secondaryVal)} opacity-90 font-bold">${formatFn(secondaryVal)}</span>
+                </div>
+             `;
+        }
+        return `<div class="${colorFn(primaryVal)} text-lg">${formatFn(primaryVal)}</div>`;
+    };
+
+    const colorPnL = (v) => v >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold';
+    const colorPF = (v) => v > 1.5 ? 'text-emerald-400 font-mono' : (v > 1 ? 'text-yellow-400 font-mono' : 'text-red-400 font-mono');
+    const colorPlain = () => 'text-white font-mono';
+    const colorDD = () => 'text-red-400 font-mono';
+
+    const sec = secondaryMetrics || {};
+
+    return `
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div class="space-y-6">
                 <div class="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
                     <h3 class="text-amber-400 font-bold mb-4 text-sm uppercase tracking-wider">Overview</h3>
-                    <div class="grid grid-cols-2 gap-y-3 text-sm">
+                    <div class="grid grid-cols-2 gap-y-4 text-sm items-center">
                         <div class="text-gray-400">Total Profit</div>
-                        <div class="text-right font-bold ${metrics.totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'} text-lg">${formatMoney(metrics.totalProfit)}</div>
+                        <div class="text-right">${getValueHTML(metrics.totalProfit, sec.totalProfit, formatMoney, colorPnL)}</div>
+                        
                         <div class="text-gray-400">Profit Factor</div>
-                        <div class="text-right font-mono text-white">${formatNum(metrics.profitFactor)}</div>
+                        <div class="text-right">${getValueHTML(metrics.profitFactor, sec.profitFactor, formatNum, colorPF)}</div>
+                        
                         <div class="text-gray-400">Win Rate</div>
-                        <div class="text-right font-mono text-white">${formatNum(metrics.winRate)} %</div>
+                        <div class="text-right">${getValueHTML(metrics.winRate, sec.winRate, (v) => formatNum(v) + '%', colorPlain)}</div>
+                        
                         <div class="text-gray-400">Max Drawdown</div>
-                        <div class="text-right font-mono text-red-400">${formatMoney(metrics.maxDD)}</div>
+                        <div class="text-right">${getValueHTML(metrics.maxDD, sec.maxDD, formatMoney, colorDD)}</div>
+                        
                         <div class="text-gray-400">Total Trades</div>
-                        <div class="text-right font-mono text-white">${metrics.totalTrades}</div>
-                        <div class="text-gray-400">Avg Yearly Profit</div>
-                        <div class="text-right font-mono text-emerald-300">${formatMoney(metrics.avgYearlyProfit)}</div>
-                         <div class="text-gray-400">Ret / DD</div>
-                        <div class="text-right font-mono text-white">${formatNum(metrics.returnDDRatio)}</div>
+                        <div class="text-right">${getValueHTML(metrics.totalTrades, sec.totalTrades, (v) => v, colorPlain)}</div>
+                        
+                         <div class="text-gray-400">Avg Yearly Profit</div>
+                        <div class="text-right">${getValueHTML(metrics.avgYearlyProfit, sec.avgYearlyProfit, formatMoney, k => 'text-emerald-300 font-mono')}</div>
                     </div>
                 </div>
             </div>
             <div class="space-y-6">
                 <div class="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
                     <h3 class="text-amber-400 font-bold mb-4 text-sm uppercase tracking-wider">Trade Stats</h3>
-                    <div class="grid grid-cols-2 gap-y-3 text-sm">
+                    <div class="grid grid-cols-2 gap-y-4 text-sm items-center">
                         <div class="text-gray-400">Avg Win</div>
-                        <div class="text-right font-mono text-emerald-300">${formatMoney(metrics.avgWin)}</div>
+                        <div class="text-right">${getValueHTML(metrics.avgWin, sec.avgWin, formatMoney, k => 'text-emerald-300 font-mono')}</div>
+                        
                         <div class="text-gray-400">Avg Loss</div>
-                        <div class="text-right font-mono text-red-300">${formatMoney(metrics.avgLoss)}</div>
+                        <div class="text-right">${getValueHTML(metrics.avgLoss, sec.avgLoss, formatMoney, k => 'text-red-300 font-mono')}</div>
+                        
                         <div class="text-gray-400">Max Consec Wins</div>
-                        <div class="text-right font-mono text-emerald-400">${metrics.maxConsecWins}</div>
+                        <div class="text-right">${getValueHTML(metrics.maxConsecWins, sec.maxConsecWins, v => v, k => 'text-emerald-400 font-mono')}</div>
+                        
                         <div class="text-gray-400">Max Consec Loss</div>
-                        <div class="text-right font-mono text-red-400">${metrics.maxConsecLosses}</div>
+                        <div class="text-right">${getValueHTML(metrics.maxConsecLosses, sec.maxConsecLosses, v => v, k => 'text-red-400 font-mono')}</div>
+                        
                          <div class="text-gray-400">SQN</div>
-                        <div class="text-right font-mono text-white">${formatNum(metrics.sqn)}</div>
+                        <div class="text-right">${getValueHTML(metrics.sqn, sec.sqn, formatNum, colorPlain)}</div>
                     </div>
                 </div>
             </div>
         </div>
     `;
+};
 
 const renderExitAnalysisHTML = (exitStats, formatMoney, formatNum) => {
     if (!exitStats) return '';
@@ -965,7 +1467,7 @@ export const parseTradesFromContent = (content) => {
 
     const idxDate = h.findIndex(c => c.includes('date') || c.includes('time'));
     const idxOpenDate = h.findIndex(c => c.includes('open') && (c.includes('time') || c.includes('date')));
-    const idxExitDate = h.findIndex(c => c.includes('close') || c.includes('exit'));
+    const idxExitDate = h.findIndex(c => (c.includes('close') || c.includes('exit')) && (c.includes('time') || c.includes('date')));
     const idxProfit = h.findIndex(c => c.includes('profit') || c.includes('pnl'));
     const idxComment = h.findIndex(c => c.includes('comment') || c.includes('reason'));
     const idxCloseType = h.findIndex(c => c.includes('close type') || c.includes('exit reason'));
@@ -1042,11 +1544,15 @@ export const parseTradesFromContent = (content) => {
         if (!line) continue;
         const cols = line.split(delimiter);
         // Use parsing helper
-        const rawPnL = cols[idxProfit];
-        const pnl = parseFlexibleFloat(rawPnL);
+        // Use parsing helper
+        const rawProfit = cols[idxProfit];
+        let pnl = parseFlexibleFloat(rawProfit);
+
+        // Add Swap and Commission if available
+        if (idxSwap !== -1 && cols[idxSwap]) pnl += parseFlexibleFloat(cols[idxSwap]);
+        if (idxComm !== -1 && cols[idxComm]) pnl += parseFlexibleFloat(cols[idxComm]);
+
         // Note: isNaN check moved inside helper, returns 0.0 if fail.
-        // But we skip if it truly was empty/invalid in a way that implies bad row?
-        // Let's trust the parser.
         if (isNaN(pnl)) continue;
 
         let openTime = new Date();
@@ -1310,7 +1816,12 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
     setTimeout(() => {
         try {
             const portfolio = source === 'databank' ? state.databankPortfolios[portfolioIndex] : state.savedPortfolios[portfolioIndex];
-            if (!portfolio) throw new Error("Portfolio not found");
+            if (!portfolio) {
+                console.warn(`[SQ Analysis] Portfolio at index ${portfolioIndex} (source: ${source}) not found. State may have changed.`);
+                contentDiv.innerHTML = '<div class="text-gray-500 p-10 text-center">No portfolio selected or portfolio data changed. Please select a portfolio.</div>';
+                if (loadingDiv) loadingDiv.classList.add('hidden');
+                return;
+            }
 
             console.log(`[SQ DEBUG] Rendering Portfolio Index: ${portfolioIndex}, Name: ${portfolio.name}, Source: ${source}`);
 
@@ -1363,6 +1874,10 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
                 let trades = [];
                 if (file && file.content) trades = parseTradesFromContent(file.content);
                 else if (state.rawStrategiesData[idx]) trades = parseTradesFromData(state.rawStrategiesData[idx]);
+
+                // Tag trades with Strategy ID for filtering
+                const strategyId = file.strategyId || file.name;
+                trades.forEach(t => t.strategyId = strategyId);
 
 
 
@@ -1417,9 +1932,9 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
 
                 // DEBUG LOGGING
                 const pnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-                console.log(`[SQ DEBUG] Strategy: ${file.name} (Idx: ${idx})`);
-                console.log(`[SQ DEBUG]  -> Parsed Trades: ${trades.length}`);
-                console.log(`[SQ DEBUG]  -> Net Profit: ${pnl.toFixed(2)}`);
+                // console.log(`[SQ DEBUG] Backtest Parse Strategy: ${file.name} (Idx: ${idx})`);
+                // console.log(`[SQ DEBUG]  -> Parsed BT Trades: ${trades.length}`);
+                // console.log(`[SQ DEBUG]  -> Net Profit: ${pnl.toFixed(2)}`);
 
                 allTrades = allTrades.concat(trades);
             });
@@ -1458,99 +1973,256 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
     let currentMarkovPeriod = 'trade';
     let currentMarkovDepth = 1;
     let currentFreqSelection = 'All';
+    let currentStartDate = null;
+    let currentEndDate = null;
+    let currentBtMult = 1;
+    let currentRealMult = 1;
 
-    const render = () => {
-        let filteredTrades = [];
+    // Helper to format date YYYY-MM-DD
+    const fmtDate = (d) => {
+        if (!d) return '';
+        return d.toISOString().split('T')[0];
+    };
 
-        if (currentDataType === 'backtest') {
-            if (currentStrategyId === 'all') filteredTrades = allPortfolioTrades;
-            else {
-                // Filter by Strategy ID. Since we merged all trades, we need to know which trade belongs to which strategy.
-                // Wait. parseTradesFromContent/Data DOES NOT tag trades with strategy ID!
-                // This is a known limitation.
-                // However, the user wants to filter.
-                // To support this, we would need to tag trades during parsing.
-                // For now, let's assume 'all' is the only valid option OR we are unable to filter properly without refactoring parsing.
-                // But the UI shows a selector.
-                // Let's fix this later if reported. For now, use allPortfolioTrades.
-                filteredTrades = allPortfolioTrades;
+    const getRealTrades = (stratId) => {
+        if (!portfolio || !portfolio.realMetrics || !portfolio.realMetrics._tradesById) return [];
+
+        const tradesById = portfolio.realMetrics._tradesById;
+        const magicMap = state.magicNumberMap || {};
+        let targetMagics = [];
+
+        // ROBUST MAPPING Helper
+        const resolveMagic = (sId) => {
+            // 1. Try Portfolio specific name first (Most Robust for "Linked" accounts)
+            let portfolioSpecificName = null;
+
+            // Try searching by ID in portfolio.strategyIds
+            if (portfolio.strategyIds) {
+                const idx = portfolio.strategyIds.indexOf(sId);
+                if (idx !== -1 && portfolio.strategyNames && portfolio.strategyNames[idx]) {
+                    portfolioSpecificName = portfolio.strategyNames[idx];
+                }
             }
-        } else {
-            // Real Data Integration
-            if (portfolio.realMetrics && portfolio.realMetrics._tradesById) {
-                const tradesById = portfolio.realMetrics._tradesById;
-                const magicMap = state.magicNumberMap || {};
-                let targetMagics = [];
 
-                if (currentStrategyId === 'all') {
-                    // Collect all magic numbers for all strategies in this portfolio
-                    strategiesList.forEach(s => {
-                        const m = magicMap[s.id];
-                        if (m) {
-                            if (Array.isArray(m)) targetMagics.push(...m);
-                            else targetMagics.push(String(m)); // Ensure string for lookup
-                        }
-                    });
-                } else {
-                    const m = magicMap[currentStrategyId];
-                    if (m) {
-                        if (Array.isArray(m)) targetMagics.push(...m);
-                        else targetMagics.push(String(m));
+            // If not found, try searching by File Index (via strategiesList)
+            if (!portfolioSpecificName) {
+                const strategyObj = strategiesList.find(s => s.id === sId);
+                if (strategyObj && portfolio.indices) {
+                    const pIdx = portfolio.indices.indexOf(strategyObj.index);
+                    if (pIdx !== -1 && portfolio.strategyNames && portfolio.strategyNames[pIdx]) {
+                        portfolioSpecificName = portfolio.strategyNames[pIdx];
                     }
                 }
+            }
 
-                // Deduplicate magics
-                targetMagics = [...new Set(targetMagics)];
+            if (portfolioSpecificName) {
+                const m = magicMap[portfolioSpecificName];
+                if (m) return m;
+            }
 
-                // Fetch and flatten trades
-                let rawRealTrades = [];
-                targetMagics.forEach(magic => {
-                    const ids = String(magic).split(',').map(s => s.trim());
-                    ids.forEach(id => {
-                        if (tradesById[id]) {
-                            rawRealTrades.push(...tradesById[id]);
-                        }
-                    });
-                });
+            // 2. Fallback to ID
+            if (magicMap[sId]) return magicMap[sId];
 
-                // Normalize Real Trades to SQ Format
-                filteredTrades = rawRealTrades.map(t => {
-                    // Myfxbook fields: openTime, closeTime, profit, comment, etc.
-                    // SQ expected: openTime (Date), exitTime (Date), pnl, exitReason, duration, comment
-                    const openTime = new Date(t.openTime);
-                    const exitTime = new Date(t.closeTime);
-                    const pnl = parseFloat(t.profit) + parseFloat(t.swap || 0) + parseFloat(t.commission || 0);
+            // 3. Fallback to global Name
+            const s = strategiesList.find(x => x.id === sId);
+            if (s && s.name && magicMap[s.name]) return magicMap[s.name];
 
-                    return {
-                        openTime,
-                        exitTime,
-                        pnl,
-                        comment: t.comment || '',
-                        exitReason: t.comment || '', // Real trades usually have reason in comment (e.g. [tp], [sl])
-                        duration: exitTime - openTime
-                    };
-                });
+            return null;
+        };
 
-                // Sort by exit time
-                filteredTrades.sort((a, b) => a.exitTime - b.exitTime);
-
-                if (currentStrategyId.includes('gbpjpy') || currentStrategyId !== 'all') {
-                    console.table(filteredTrades.map(t => ({
-                        date: t.exitTime ? t.exitTime.toLocaleDateString() : 'N/A',
-                        pnl: t.pnl,
-                        reason: t.exitReason,
-                        comment: t.comment,
-                        CAT: getExitCategory(t, 100 * 0.6) // manual check
-                    })));
+        if (stratId === 'all') {
+            strategiesList.forEach(s => {
+                const m = resolveMagic(s.id);
+                if (m) {
+                    if (Array.isArray(m)) targetMagics.push(...m);
+                    else targetMagics.push(String(m));
                 }
-            } else {
-                console.warn('[SQ Analysis] No real metrics found for this portfolio.');
-                filteredTrades = [];
+            });
+        } else {
+            const m = resolveMagic(stratId);
+            if (m) {
+                if (Array.isArray(m)) targetMagics.push(...m);
+                else targetMagics.push(String(m));
+            }
+        }
+        targetMagics = [...new Set(targetMagics)];
+
+        let rawRealTrades = [];
+        targetMagics.forEach(magic => {
+            const ids = String(magic).split(',').map(s => s.trim());
+            ids.forEach(id => {
+                if (tradesById[id]) rawRealTrades.push(...tradesById[id]);
+            });
+        });
+
+        // Normalize
+        let totalP = 0, totalS = 0, totalC = 0;
+        let normalized = rawRealTrades.map(t => {
+            const openTime = new Date(t.openTime);
+            // Handle Open Trades or Invalid Date Strings
+            let exitTime = new Date(t.closeTime);
+            if (rawRealTrades.indexOf(t) < 3) {
+                console.log(`[SQ DEBUG] Date Check: Raw '${t.closeTime}' -> Parsed: ${exitTime}`);
+            }
+            if (isNaN(exitTime.getTime())) {
+                exitTime = new Date(); // Assume Open Trade -> Use Current Time
+            }
+            if (isNaN(exitTime.getTime())) {
+                exitTime = new Date(); // Assume Open Trade -> Use Current Time
+            }
+            const p = parseFloat(t.profit) || 0;
+            const s = parseFloat(t.swap) || 0;
+            const c = parseFloat(t.commission) || 0;
+
+            totalP += p;
+            totalS += s;
+            totalC += c;
+
+            const pnl = p + s + c;
+            return {
+                openTime, exitTime, pnl,
+                comment: t.comment || '',
+                exitReason: t.comment || '',
+                duration: exitTime - openTime,
+                // Debug: Store components for detailed verification if needed
+                _rawP: p, _rawS: s, _rawC: c
+            };
+        });
+        console.log(`[SQ DEBUG] getRealTrades Summary for ${stratId}:`);
+        console.log(`[SQ DEBUG]   Count: ${normalized.length}`);
+        console.log(`[SQ DEBUG]   Sum Profit: ${totalP.toFixed(2)}`);
+        console.log(`[SQ DEBUG]   Sum Swap: ${totalS.toFixed(2)}`);
+        console.log(`[SQ DEBUG]   Sum Comm: ${totalC.toFixed(2)}`);
+        console.log(`[SQ DEBUG]   Total PnL (P+S+C): ${(totalP + totalS + totalC).toFixed(2)}`);
+
+        normalized.sort((a, b) => a.exitTime - b.exitTime);
+        return normalized;
+    };
+
+    const render = () => {
+        let filteredTrades = []; // Primary Dataset
+        let secondaryMetrics = null; // For Comparison Mode
+
+        // 1. Fetch Datasets
+        let backtestTrades = [];
+        if (currentStrategyId === 'all') backtestTrades = allPortfolioTrades;
+        else backtestTrades = allPortfolioTrades.filter(t => t.strategyId === currentStrategyId);
+
+        let realTrades = [];
+        if (currentDataType === 'real' || currentDataType === 'comparison') {
+            realTrades = getRealTrades(currentStrategyId);
+        }
+
+        // Initialize Defaults on first real/comparison load if unset
+        if (currentDataType === 'comparison' || currentDataType === 'real') {
+            // "Default: From First Real Data to Last Available Data (BT or Real)"
+            const allReal = getRealTrades('all');
+            let maxRealTime = 0;
+            if (allReal.length > 0) {
+                const lastReal = allReal[allReal.length - 1];
+                if (lastReal && lastReal.exitTime) maxRealTime = lastReal.exitTime.getTime();
+            }
+
+            if (!currentStartDate && !currentEndDate) {
+
+                // 1. Start Date: First Real Trade
+                if (allReal.length > 0) {
+                    currentStartDate = fmtDate(allReal[0].openTime);
+                }
+
+                // 2. End Date: Max(Last BT, Last Real)
+                let maxTime = 0;
+
+                // Check Last Backtest Trade
+                if (allPortfolioTrades.length > 0) {
+                    const lastBT = allPortfolioTrades[allPortfolioTrades.length - 1]; // Sorted by exitTime
+                    if (lastBT && lastBT.exitTime) maxTime = Math.max(maxTime, lastBT.exitTime.getTime());
+                }
+
+                // Check Last Real Trade
+                if (allReal.length > 0) {
+                    const lastReal = allReal[allReal.length - 1];
+                    if (lastReal && lastReal.exitTime) maxTime = Math.max(maxTime, lastReal.exitTime.getTime());
+                }
+
+                if (maxTime > 0) {
+                    currentEndDate = fmtDate(new Date(maxTime));
+                }
+            }
+            // Expansion Logic
+            else if (currentEndDate && maxRealTime > 0) {
+                const currEndTs = new Date(currentEndDate).getTime();
+                if (maxRealTime > currEndTs) {
+                    console.log(`[SQ INFO] Auto-expanding End Date to ${fmtDate(new Date(maxRealTime))}`);
+                    currentEndDate = fmtDate(new Date(maxRealTime));
+                }
             }
         }
 
+        // Apply Date Filter
+        const filterByDate = (trades) => {
+            if (!currentStartDate && !currentEndDate) return trades;
+            const start = currentStartDate ? new Date(currentStartDate).getTime() : -Infinity;
+
+            let end = Infinity;
+            if (currentEndDate) {
+                const endDateObj = new Date(currentEndDate);
+                // Ensure we cover the full day (23:59:59.999)
+                endDateObj.setHours(23, 59, 59, 999);
+                end = endDateObj.getTime();
+            }
+
+            return trades.filter(t => {
+                const time = t.exitTime ? t.exitTime.getTime() : 0;
+                return time >= start && time <= end;
+            });
+        };
+
+        const applyMult = (trades, factor) => {
+            if (factor === 1) return trades;
+            return trades.map(t => ({
+                ...t,
+                pnl: (t.pnl || 0) * factor,
+                commission: (t.commission || 0) * factor,
+                swap: (t.swap || 0) * factor,
+                grossProfit: (t.grossProfit || 0) * factor, // specific keys if present
+                grossLoss: (t.grossLoss || 0) * factor
+            }));
+        };
+
+        // 2. Select Active Data
+        let primaryTradesForAudit = [];
+        let secondaryTradesForAudit = [];
+
+        if (currentDataType === 'backtest') {
+            filteredTrades = filterByDate(applyMult(backtestTrades, currentBtMult));
+            primaryTradesForAudit = filteredTrades;
+        } else if (currentDataType === 'real') {
+            const fReal = filterByDate(applyMult(realTrades, currentRealMult));
+            filteredTrades = fReal;
+            primaryTradesForAudit = filteredTrades; // In Real mode, "Primary" is Real
+            if (filteredTrades.length === 0) console.warn('[SQ Analysis] No real metrics found.');
+        } else if (currentDataType === 'comparison') {
+            filteredTrades = filterByDate(applyMult(backtestTrades, currentBtMult)); // Primary (Backtest)
+            const fReal = filterByDate(applyMult(realTrades, currentRealMult));
+            secondaryMetrics = calculateSQMetrics(fReal);
+
+            primaryTradesForAudit = filteredTrades;
+            secondaryTradesForAudit = fReal;
+        }
+
         const currentMetrics = calculateSQMetrics(filteredTrades);
-        window.activeAnalysisData = currentMetrics; // Expose for Modals
+        if (currentMetrics) currentMetrics.trades = filteredTrades;
+        console.log(`[SQ DEBUG] render assignment -> DataType: ${currentDataType}`);
+        console.log(`[SQ DEBUG] primaryTrades (BT): ${primaryTradesForAudit.length}`);
+        console.log(`[SQ DEBUG] secondaryTrades (Real): ${secondaryTradesForAudit.length}`);
+
+        window.activeAnalysisData = {
+            ...currentMetrics,
+            primaryTrades: primaryTradesForAudit,
+            secondaryTrades: secondaryTradesForAudit,
+            dataType: currentDataType
+        }; // Expose for Modals & Audits
         const contentDiv = document.getElementById('sq-analysis-content');
         if (!contentDiv) return;
 
@@ -1590,10 +2262,93 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             currentMarkovDepth,
             currentFreqSelection,
             portfoliosList,
-            portfolioIndex // Current Portfolio Index
+            portfolioIndex, // Current Portfolio Index
+            secondaryMetrics, // Comparison Data
+            { start: currentStartDate, end: currentEndDate, btMult: currentBtMult, realMult: currentRealMult } // Date Range & Mults
         );
 
-        // 4. Inject Metric Distribution Chart Canvas (Histogram of Returns)
+        // 4. Calculate and Update R2 Stats (Manually, since Script Tags in innerHTML don't run)
+        if (currentDataType === 'comparison' && currentMetrics && secondaryMetrics) {
+            const container = document.getElementById('sq-r2-container');
+            const valueSpan = document.getElementById('sq-r2-value');
+
+            if (container && valueSpan) {
+                // We need to replicate the data matching logic briefly to get the stats.
+                // Or better, extract a helper. For now, inline for speed.
+
+                // Get Buckets
+                const pB = (currentMetrics.timeData && currentMetrics.timeData[currentPeriod]) ? currentMetrics.timeData[currentPeriod] : {};
+                const sB = (secondaryMetrics.timeData && secondaryMetrics.timeData[currentPeriod]) ? secondaryMetrics.timeData[currentPeriod] : {};
+
+                let xVals = [];
+                let yVals = [];
+
+                // Helper to extract value (duplicated from generateSQAnalysisHTML, risky but quick fix)
+                const getValForR2 = (stats) => {
+                    if (!stats) return 0;
+                    if (currentMetric === 'pnl') return stats.pnl;
+                    if (currentMetric === 'count') return stats.count;
+                    if (currentMetric === 'winRate') return stats.count > 0 ? (stats.wins / stats.count) * 100 : 0;
+                    if (currentMetric === 'profitFactor') return Math.abs(stats.grossLoss) > 0 ? stats.grossProfit / Math.abs(stats.grossLoss) : (stats.grossProfit > 0 ? 999 : 0);
+                    if (currentMetric === 'grossProfit') return stats.grossProfit;
+                    if (currentMetric === 'grossLoss') return stats.grossLoss;
+                    if (currentMetric === 'drawdown') return stats.maxDD || 0;
+                    if (currentMetric === 'stagnation') return stats.maxStagnation || 0;
+                    return 0;
+                };
+
+                const years = new Set([...Object.keys(pB), ...Object.keys(sB)]);
+                years.forEach(year => {
+                    const weeksP = pB[year] || {};
+                    const weeksS = sB[year] || {};
+
+                    if (currentPeriod === 'month') {
+                        // Month structure is simpler: object with keys 0..11
+                        // wait, timeData.month[year] IS the object with keys 0..11
+                        // so 'weeksP' here is actually { 0: stats, 1: stats ... }
+                        for (let m = 0; m < 12; m++) {
+                            if (weeksP[m] && weeksS[m]) {
+                                xVals.push(getValForR2(weeksP[m]));
+                                yVals.push(getValForR2(weeksS[m]));
+                            }
+                        }
+                    } else {
+                        // Week/Day structure
+                        const subKeys = new Set([...Object.keys(weeksP), ...Object.keys(weeksS)]);
+                        subKeys.forEach(k => {
+                            if (weeksP[k] && weeksS[k]) {
+                                xVals.push(getValForR2(weeksP[k]));
+                                yVals.push(getValForR2(weeksS[k]));
+                            }
+                        });
+                    }
+                });
+
+                if (xVals.length > 2) {
+                    // R2 Calc
+                    const yMean = yVals.reduce((a, b) => a + b, 0) / yVals.length;
+                    const ssTot = yVals.reduce((sum, y) => sum + Math.pow(y - yMean, 2), 0);
+                    const ssRes = yVals.reduce((sum, y, i) => sum + Math.pow(y - xVals[i], 2), 0);
+                    let r2 = ssTot !== 0 ? 1 - (ssRes / ssTot) : 0;
+
+                    // Update UI
+                    container.classList.remove('hidden');
+
+                    // Color Logic
+                    let colorClass = "text-yellow-400";
+                    if (r2 > 0.7) colorClass = "text-emerald-400";
+                    else if (r2 < 0) colorClass = "text-red-500";
+
+                    valueSpan.className = `font-mono font-bold ${colorClass} ml-1`;
+                    valueSpan.innerText = r2.toFixed(3);
+                    container.title = `Points matched: ${xVals.length}`;
+                } else {
+                    container.classList.add('hidden');
+                }
+            }
+        }
+
+        // 5. Inject Metric Distribution Chart Canvas (Histogram of Returns)
         // We inject it into the .p-6 container if possible, or append.
         // generateSQAnalysisHTML structure: root .p-6 > ...
         // We want to insert it after the Table but before Overview?
@@ -1616,6 +2371,55 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             mainContainer.appendChild(chartContainer);
         }
 
+        const dataTypeSelect = document.getElementById('sq-data-type-select');
+        if (dataTypeSelect) {
+            dataTypeSelect.addEventListener('change', (e) => {
+                currentDataType = e.target.value;
+                render();
+            });
+        }
+
+        // Date Inputs
+        const startInput = document.getElementById('sq-start-date');
+        const endInput = document.getElementById('sq-end-date');
+
+        // Sync Input Values with State (Important for Auto-Expansion)
+        if (startInput && currentStartDate && startInput.value !== currentStartDate) {
+            startInput.value = currentStartDate;
+        }
+        if (endInput && currentEndDate && endInput.value !== currentEndDate) {
+            endInput.value = currentEndDate;
+        }
+
+        if (startInput) {
+            startInput.addEventListener('change', (e) => {
+                currentStartDate = e.target.value;
+                render();
+            });
+        }
+        if (endInput) {
+            endInput.addEventListener('change', (e) => {
+                currentEndDate = e.target.value;
+                render();
+            });
+        }
+
+        // Multipliers
+        const btInput = document.getElementById('sq-bt-mult');
+        const realInput = document.getElementById('sq-real-mult');
+        if (btInput) {
+            btInput.addEventListener('change', (e) => {
+                currentBtMult = parseFloat(e.target.value) || 1;
+                render();
+            });
+        }
+        if (realInput) {
+            realInput.addEventListener('change', (e) => {
+                currentRealMult = parseFloat(e.target.value) || 1;
+                render();
+            });
+        }
+
         // Render Charts
         if (currentMetrics && currentMetrics.timeData && currentMetrics.timeData[currentPeriod]) {
             const dataBucket = currentMetrics.timeData[currentPeriod];
@@ -1628,6 +2432,8 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                 if (currentMetric === 'profitFactor') return Math.abs(stats.grossLoss) > 0 ? stats.grossProfit / Math.abs(stats.grossLoss) : (stats.grossProfit > 0 ? 999 : 0);
                 if (currentMetric === 'grossProfit') return stats.grossProfit;
                 if (currentMetric === 'grossLoss') return stats.grossLoss;
+                if (currentMetric === 'drawdown') return stats.maxDD || 0;
+                if (currentMetric === 'stagnation') return stats.maxStagnation || 0;
                 return 0;
             };
 
@@ -1641,8 +2447,7 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
 
         // Frequency Charts
         if (currentMetrics && currentMetrics.interTradeStatsByReason) {
-            // Expose Metrics for Modal
-            window.activeAnalysisData = currentMetrics;
+            // Expose Metrics for Modal (Already exposed globally above with trades)
             renderFrequencyCharts(currentMetrics.interTradeStatsByReason);
 
             // Attach Grid Calculator Listeners
@@ -1856,40 +2661,38 @@ const renderFrequencyCharts = (statsMap) => {
     });
 };
 // --- EXIT DETAILS MODAL ---
-window.showExitDetails = (category) => {
-    // Current Metrics should be accessible. 
-    // We can attach it to the window or look it up from the DOM data...
-    // Or better: The render function sets up the data.
-    // Let's store the current data in a global variable for this module logic?
-    // sqAnalysis_v2.js is a module, strict mode. 
-    // We can use a module-level variable `activeAnalysisData`.
-
-    if (!window.activeAnalysisData || !window.activeAnalysisData.interTradeStatsByReason) return;
-    const data = window.activeAnalysisData.interTradeStatsByReason[category];
-    if (!data || !data.trades) return alert('No trades found for this category.');
-
-    const trades = data.trades;
-
+// --- REUSABLE TRADES MODAL ---
+window.renderTradesModal = (trades, title, colorClass = 'bg-blue-500') => {
     // Generate Table HTML
     let trs = trades.map(t => {
-        const date = t.exitTime ? t.exitTime.toLocaleString() : 'N/A';
+        const ticket = t.ticket || t.id || '-';
+        const open = t.openTime ? t.openTime.toLocaleString() : '-';
+        const exit = t.exitTime ? t.exitTime.toLocaleString() : 'N/A';
+        const type = t.type !== undefined ? (t.type === 0 || t.type === 'Buy' ? 'Buy' : 'Sell') : '-';
+        const size = t.size || t.lots || '-';
         const pnlClass = t.pnl >= 0 ? 'text-green-400' : 'text-red-400';
+        const comment = t.comment || t.exitReason || '-';
+
         return `
             <tr class="border-b border-gray-700 hover:bg-gray-700/50">
-                <td class="px-4 py-2 text-sm text-gray-300">${date}</td>
-                <td class="px-4 py-2 text-sm text-right font-mono ${pnlClass}">${t.pnl.toFixed(2)}</td>
-                <td class="px-4 py-2 text-sm text-gray-400 truncate max-w-xs" title="${t.comment}">${t.comment || '-'}</td>
+                <td class="px-4 py-2 text-sm text-gray-500 font-mono text-xs">${ticket}</td>
+                <td class="px-4 py-2 text-sm text-gray-300 whitespace-nowrap">${open}</td>
+                <td class="px-4 py-2 text-sm text-gray-300 whitespace-nowrap">${exit}</td>
+                <td class="px-4 py-2 text-sm text-white">${type}</td>
+                <td class="px-4 py-2 text-sm text-gray-300">${size}</td>
+                <td class="px-4 py-2 text-sm text-right font-mono ${pnlClass} font-bold">${t.pnl.toFixed(2)}</td>
+                <td class="px-4 py-2 text-sm text-gray-400 truncate max-w-xs" title="${comment}">${comment}</td>
             </tr>
         `;
     }).join('');
 
     const modalHtml = `
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] backdrop-blur-sm" onclick="this.remove()">
-            <div class="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onclick="event.stopPropagation()">
+            <div class="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col" onclick="event.stopPropagation()">
                 <div class="flex items-center justify-between px-6 py-4 border-b border-gray-700 bg-gray-900/50 rounded-t-lg">
                     <h3 class="text-lg font-bold text-gray-100 flex items-center gap-2">
-                        <span class="w-3 h-3 rounded-full bg-blue-500"></span>
-                        ${category} Details <span class="text-xs text-gray-500 font-normal">(${trades.length} trades)</span>
+                        <span class="w-3 h-3 rounded-full ${colorClass}"></span>
+                        ${title} <span class="text-xs text-gray-500 font-normal">(${trades.length} trades)</span>
                     </h3>
                     <button class="text-gray-400 hover:text-white transition-colors p-1" onclick="this.closest('.fixed').remove()">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -1899,7 +2702,11 @@ window.showExitDetails = (category) => {
                     <table class="w-full text-left border-collapse">
                         <thead class="bg-gray-900/50 sticky top-0 z-10">
                             <tr>
+                                <th class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
+                                <th class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Open Time</th>
                                 <th class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Exit Time</th>
+                                <th class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+                                <th class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Size</th>
                                 <th class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">PnL</th>
                                 <th class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Comment</th>
                             </tr>
@@ -1917,6 +2724,102 @@ window.showExitDetails = (category) => {
     `;
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+};
+
+// --- EXIT DETAILS MODAL ---
+window.showExitDetails = (category) => {
+    if (!window.activeAnalysisData || !window.activeAnalysisData.interTradeStatsByReason) return;
+    const data = window.activeAnalysisData.interTradeStatsByReason[category];
+    if (!data || !data.trades) return alert('No trades found for this category.');
+
+    window.renderTradesModal(data.trades, `${category} Details`);
+};
+
+// --- STAGNATION AUDIT TOOL ---
+window.openStagnationAudit = (yearStr, weekStr, type) => {
+    console.group(`[Stagnation Audit] ${type.toUpperCase()} | ${yearStr} - W${weekStr}`);
+    const data = window.activeAnalysisData;
+    const dataType = data.dataType || 'unknown';
+    console.log(`[Audit Debug] Active Analysis Mode: ${dataType} | Request: ${type}`);
+
+    let trades = [];
+
+    // Strict Data Selection
+    if (type === 'backtest') {
+        if (dataType === 'backtest' || dataType === 'comparison') {
+            trades = data.primaryTrades || [];
+        } else {
+            console.warn(`[Audit] Requested Backtest trades but current mode is '${dataType}'.`);
+            alert("⚠️ Backtest data is not loaded in this view.\nSwitch to 'Backtest' or 'Comparison' mode.");
+            console.groupEnd();
+            return;
+        }
+    } else if (type === 'real') {
+        if (dataType === 'real') {
+            trades = data.primaryTrades || [];
+        } else if (dataType === 'comparison') {
+            trades = data.secondaryTrades || [];
+        } else {
+            console.warn(`[Audit] Requested Real trades but current mode is '${dataType}'.`);
+            alert("⚠️ Real data is not loaded in this view.\nSwitch to 'Real' or 'Comparison' mode.");
+            console.groupEnd();
+            return;
+        }
+    }
+
+
+    console.log(`[Audit] Total Candidates: ${trades.length}`);
+
+    const targetYear = parseInt(yearStr);
+    let isDayMode = false;
+    let targetDayMonth = '';
+
+    if (String(weekStr).includes('-')) {
+        isDayMode = true;
+        targetDayMonth = weekStr; // "01-16"
+    }
+
+    const targetWeek = parseInt(weekStr);
+
+    const hits = trades.filter(t => {
+        if (!t.exitTime) return false;
+
+        const d = new Date(Date.UTC(t.exitTime.getFullYear(), t.exitTime.getMonth(), t.exitTime.getDate()));
+
+        if (isDayMode) {
+            const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            const key = `${m}-${day}`;
+            return d.getUTCFullYear() === targetYear && key === targetDayMonth;
+        }
+
+        // Week Logic (Exact match to calculateSQMetrics)
+        const dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        const w = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+        const wy = d.getUTCFullYear();
+
+        return wy === targetYear && w === targetWeek;
+    });
+
+    console.log(`[Audit] Found ${hits.length} trades for ${yearStr}-${isDayMode ? targetDayMonth : 'W' + weekStr}`);
+    if (hits.length > 0) {
+        window.renderTradesModal(
+            hits,
+            `Audit: ${type === 'real' ? 'Real' : 'Backtest'} (${yearStr}-W${weekStr})`,
+            type === 'real' ? 'bg-emerald-500' : 'bg-blue-500'
+        );
+
+
+    } else {
+        console.warn("No trades matched this period.");
+        alert(`No trades found for ${type.toUpperCase()} in ${yearStr}-W${weekStr}.`);
+    }
+
+
+
+    console.groupEnd();
 };
 
 // ... existing code ...

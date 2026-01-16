@@ -2,7 +2,7 @@ import { state } from '../state.js';
 import { dom } from '../dom.js';
 import { renderEquityChart, renderScatterChart, renderLorenzChart, renderChartsForTab, renderPortfolioComparisonCharts, renderRealityCheckTab } from '../ui.js';
 import { STRATEGY_COLORS } from '../config.js';
-import { renderSQAnalysis } from './sqAnalysis_v2.js?v=5';
+import { renderSQAnalysis } from './sqAnalysis_v2.js?v=10';
 
 export const focusMode = {
     active: false,
@@ -294,6 +294,23 @@ export const focusMode = {
                 savedIndex = state.savedPortfolios.findIndex(p => p.id === item.id);
             }
 
+            // REHYDRATION: If strategy item lacks analysis (e.g., Virtual Strategy from Reality Check), try to find it
+            if (item.type === 'strategy' && !item.analysis && window.analysisResults) {
+                // Try to find by originalIndex first
+                if (item.originalIndex !== undefined && item.originalIndex !== -1 && window.analysisResults[item.originalIndex]) {
+                    item.analysis = window.analysisResults[item.originalIndex].analysis;
+                    console.log(`[FocusMode] 💧 Rehydrated analysis from originalIndex: ${item.originalIndex}`);
+                }
+                // Fallback: Find by Name
+                else if (item.name) {
+                    const found = window.analysisResults.find(r => r.name === item.name);
+                    if (found && found.analysis) {
+                        item.analysis = found.analysis;
+                        console.log(`[FocusMode] 💧 Rehydrated analysis from Name Match: ${item.name}`);
+                    }
+                }
+            }
+
             // REALITY CHECK FOR STRATEGIES: Attach Real Metrics if available
             let realMetrics = null;
             if (item.type === 'strategy' && state.magicNumberMap) {
@@ -324,7 +341,8 @@ export const focusMode = {
                 if (!magicRaw) {
                     // Find parent portfolio
                     const parentPortfolio = state.savedPortfolios.find(p =>
-                        p.indices && p.indices.includes(item.originalIndex) &&
+                        ((p.indices && item.originalIndex !== undefined && item.originalIndex !== -1 && p.indices.includes(item.originalIndex)) ||
+                            (p.strategyNames && p.strategyNames.includes(item.name))) &&
                         p.realMetrics && p.realMetrics._tradesById
                     );
 
@@ -534,13 +552,36 @@ export const focusMode = {
                 // But I modified renderSQAnalysis to be the entry point.
 
                 // Let's try to find the portfolio index that contains this strategy in 'state.savedPortfolios'.
-                const parentPortfolioIndex = state.savedPortfolios.findIndex(p =>
-                    p.strategyIds && p.strategyIds.includes(strategyId)
-                );
+                let parentPortfolioIndex = -1;
+
+                // PRIORITY 1: explicit sourcePortfolioIndex (set by strategiesTable for virtual strategies)
+                if (item.sourcePortfolioIndex !== undefined && item.sourcePortfolioIndex !== null) {
+                    parentPortfolioIndex = item.sourcePortfolioIndex;
+                    console.log(`[FocusMode] Using explicit sourcePortfolioIndex: ${parentPortfolioIndex}`);
+                }
+
+                // PRIORITY 2: Search by strategy ID
+                if (parentPortfolioIndex === -1) {
+                    parentPortfolioIndex = state.savedPortfolios.findIndex(p =>
+                        p.strategyIds && p.strategyIds.includes(strategyId)
+                    );
+                }
 
                 if (parentPortfolioIndex !== -1) {
-                    console.log(`[FocusMode] Updating SQ Analysis for strategy: ${strategyId} in portfolio ${parentPortfolioIndex}`);
-                    renderSQAnalysis(parentPortfolioIndex, 'saved', strategyId);
+                    // Refine ID: The 'strategyId' variable here holds the NAME (from strategiesTable).
+                    // We must resolve it to the internal ID if possible, because sqAnalysis filters by ID.
+                    let finalId = strategyId;
+                    const portfolio = state.savedPortfolios[parentPortfolioIndex];
+                    if (portfolio && portfolio.strategyNames && portfolio.strategyIds) {
+                        const nameIdx = portfolio.strategyNames.indexOf(strategyId);
+                        if (nameIdx !== -1 && portfolio.strategyIds[nameIdx]) {
+                            finalId = portfolio.strategyIds[nameIdx];
+                            console.log(`[FocusMode] Resolved Strategy Name '${strategyId}' to ID '${finalId}'`);
+                        }
+                    }
+
+                    console.log(`[FocusMode] Updating SQ Analysis for strategy: ${finalId} (Name: ${strategyId}) in portfolio ${parentPortfolioIndex}`);
+                    renderSQAnalysis(parentPortfolioIndex, 'saved', finalId, window.activeAnalysisData?.dataType || 'backtest');
                 } else {
                     // If not found by ID, maybe by name?
                     // Or maybe it's a databank portfolio?
@@ -549,7 +590,7 @@ export const focusMode = {
             } else if (item.type === 'saved') {
                 // If a Saved Portfolio is focused, update SQ Analysis to show that portfolio
                 console.log(`[FocusMode] Updating SQ Analysis for focused portfolio index: ${item.index}`);
-                renderSQAnalysis(item.index, 'saved', 'all');
+                renderSQAnalysis(item.index, 'saved', 'all', window.activeAnalysisData?.dataType || 'backtest');
             }
         } else {
             // If multiple or zero, maybe reset to 'all'?

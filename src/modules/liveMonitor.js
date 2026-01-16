@@ -12,8 +12,11 @@ export const initLiveMonitor = () => {
     // Any specific init logic
 };
 
-export const renderLiveMonitor = () => {
-    const container = document.getElementById('live-monitor-content');
+let activeContainerId = 'live-monitor-content';
+
+export const renderLiveMonitor = (containerId) => {
+    if (containerId) activeContainerId = containerId;
+    const container = document.getElementById(activeContainerId);
     if (!container) return;
 
     container.innerHTML = ''; // Clear previous content

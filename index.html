@@ -192,11 +192,27 @@
                 <h1 class="text-xl font-bold text-white flex items-center gap-2">
                     <span>🩺</span> Live Monitor
                 </h1>
-                <div class="flex gap-2">
-                    <button id="monitor-link-btn"
-                        class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 transition-colors">
-                        <span>🔗</span> Link Account
+
+                <!-- View Toggle -->
+                <div class="flex bg-gray-900 rounded-lg p-1 border border-gray-700">
+                    <button id="monitor-view-sandbox-btn"
+                        class="px-3 py-1 rounded text-xs font-bold text-white bg-blue-600 shadow-sm transition-all flex items-center gap-2">
+                        <span>⛏️</span> Sandbox
                     </button>
+                    <button id="monitor-view-dashboard-btn"
+                        class="px-3 py-1 rounded text-xs font-bold text-gray-400 hover:text-white hover:bg-gray-800 transition-all flex items-center gap-2">
+                        <span>📊</span> Dashboard
+                    </button>
+                </div>
+
+                <!-- Global Mapper Button -->
+                <button id="global-mapper-btn"
+                    class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 transition-colors ml-2 shadow-lg shadow-purple-900/20">
+                    <span>💊</span> Strategy DNA
+                </button>
+
+                <div class="flex gap-2">
+
                     <button id="monitor-refresh-btn"
                         class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 transition-colors">
                         <span>🔄</span> Refresh All
@@ -273,6 +289,9 @@
                         <button id="tab-sq-stats"
                             class="text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors">SQ
                             Overview</button>
+                        <button id="tab-real-vs-sq"
+                            class="text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors">Comp.
+                            Real vs SQ</button>
                     </div>
                     <div id="chart-actions-group" class="flex items-center text-xs">
                         <!-- Sync All Button (Visible only in Reality Check) -->
@@ -414,6 +433,12 @@
                         data-target="optimization-content">
                         ⚙️ Optimization
                     </button>
+                    <button
+                        class="tab-btn px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
+                        data-target="quarantine-content">
+                        ☣️ Cuarentena <span id="quarantine-tab-count"
+                            class="ml-1 text-xs bg-gray-700 px-1.5 rounded-full hidden">0</span>
+                    </button>
 
                     <div class="flex-1"></div>
 
@@ -439,6 +464,10 @@
                                 class="bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1 px-2 rounded">
                                 🗑️ Limpiar
                             </button>
+                            <button id="purge-databank-btn"
+                                class="bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold py-1 px-2 rounded">
+                                🧹 Purgar
+                            </button>
                             <button id="databank-save-selected-btn"
                                 class="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold py-1 px-2 rounded">
                                 💾 Guardar Sel.
@@ -458,6 +487,14 @@
                             <button id="export-saved-portfolios-btn"
                                 class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1 px-2 rounded flex items-center gap-1">
                                 📤 Exportar CSV
+                            </button>
+                            <button id="correlation-selected-portfolios-btn"
+                                class="hidden bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold py-1 px-2 rounded flex items-center gap-1 transition-colors">
+                                📊 Correlación
+                            </button>
+                            <button id="search-selected-portfolios-btn"
+                                class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-1 px-2 rounded flex items-center gap-1 transition-colors">
+                                🔍 Buscar / Minar
                             </button>
                         </div>
 
@@ -540,6 +577,37 @@
                                     <!-- JS Generated -->
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    <!-- 5. Quarantine Content -->
+                    <div id="quarantine-content"
+                        class="tab-content hidden h-full flex flex-col min-h-0 overflow-hidden bg-gray-900">
+                        <div
+                            class="h-12 bg-gray-800 border-b border-red-900/30 flex items-center justify-between px-4 flex-shrink-0">
+                            <h2 class="text-sm font-bold text-red-400 flex items-center gap-2">
+                                <span>☣️</span> Zona de Cuarentena <span id="quarantine-count-badge"
+                                    class="bg-red-900 text-red-200 text-xs px-2 py-0.5 rounded-full">0</span>
+                            </h2>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-gray-500 mr-2">Las estrategias aquí son IGNORADAS por todo el
+                                    sistema.</span>
+                                <button id="add-to-quarantine-btn"
+                                    class="bg-red-900/50 hover:bg-red-800 text-red-200 text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1 border border-red-700/50 transition-colors">
+                                    <span>➕</span> Añadir / Gestionar
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                            <div id="quarantine-empty-state"
+                                class="hidden flex flex-col items-center justify-center h-full text-gray-600">
+                                <span class="text-4xl mb-4 grayscale opacity-30">🛡️</span>
+                                <p>Zona Segura. No hay estrategias vetadas.</p>
+                            </div>
+                            <div id="quarantine-list"
+                                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                                <!-- Cards generated by JS -->
+                            </div>
                         </div>
                     </div>
 
@@ -1060,7 +1128,7 @@
 
     <!-- Strategy Breakdown Modal -->
 
-    <script type="module" src="src/main.js?v=3.91"></script>
+    <script type="module" src="src/main.js?v=3.93"></script>
 
     <!-- Strategy Breakdown Modal (Portfolio Risk) -->
     <div id="strategy-breakdown-modal"

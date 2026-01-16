@@ -20,6 +20,11 @@ export const state = {
     searchBasePortfolioIndex: null, // Index of the Saved Portfolio used as base
     searchBaseStrategyIndices: new Set(), // Indices of strategies from the base portfolio to lock
 
+    // --- NUEVO: Global Ban Tracking ---
+    bannedStrategiesCount: 0,
+    quarantinedStrategyNames: new Set(), // Set of strategy names permanently excluded
+    linkedStrategiesFilter: 'all', // 'all', 'hide', 'only'
+
     // --- NUEVO: Configuración de Riesgo ---
     stagnationMode: 'days', // 'days', 'trades'
 
@@ -95,6 +100,30 @@ export const saveMagicNumbers = () => {
         console.log('[State] Magic Numbers saved.');
     } catch (e) {
         console.error('[State] Error saving Magic Numbers:', e);
+    }
+};
+
+// Funciones de persistencia para Cuarentena (Global Ban)
+export const loadQuarantineList = () => {
+    try {
+        const stored = localStorage.getItem('quarantinedStrategyNames');
+        if (stored) {
+            const list = JSON.parse(stored);
+            state.quarantinedStrategyNames = new Set(list);
+            console.log(`[State] Loaded ${list.length} quarantined strategies.`);
+        }
+    } catch (e) {
+        console.error('[State] Error loading Quarantine List:', e);
+    }
+};
+
+export const saveQuarantineList = () => {
+    try {
+        const list = Array.from(state.quarantinedStrategyNames);
+        localStorage.setItem('quarantinedStrategyNames', JSON.stringify(list));
+        console.log(`[State] Saved ${list.length} quarantined strategies.`);
+    } catch (e) {
+        console.error('[State] Error saving Quarantine List:', e);
     }
 };
 

@@ -2,12 +2,14 @@ import { state } from '../state.js';
 import { dom } from '../dom.js';
 import { ALL_METRICS, SELECTION_COLORS } from '../config.js?v=7'; // ALL_METRICS y SELECTION_COLORS se siguen usando
 import { hideError, displayError, toggleLoading, formatMetricForDisplay } from '../utils.js'; // Estas utilidades se siguen usando
+import { showToast } from './notifications.js';
 import { initDatabankTable, getDatabankTableConfig, ensureColumnVisible, hideColumn } from './databankTable.js?v=8';
 import { focusMode } from './focusMode.js';
 import { generatePortfolioId } from '../utils.js'; // Import ID generator
 import { loadBrokerConfig } from './brokerConfig.js';
 
-import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=5';
+import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=10';
+import { getFullAnalysisFromBackend } from '../analysis.js';
 
 /**
  * Actualiza el indicador visual de estado del DataBank.
@@ -15,30 +17,74 @@ import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from 
  * @param {string} message - Mensaje a mostrar
  */
 const setDatabankStatus = (status, message = '') => {
+    // 1. Check for Detailed Card Mode first
+    const cardStatusMsg = document.getElementById('databank-card-status-msg');
+
+    // Config definition
+    const statusConfig = {
+        hidden: { icon: '', class: 'hidden' },
+        connecting: { icon: '📡', class: 'animate-pulse', color: 'text-blue-400' },
+        searching: { icon: '🔨', class: 'animate-bounce', color: 'text-yellow-400' },
+        paused: { icon: '⏸️', class: '', color: 'text-orange-400' },
+        stopped: { icon: '⏹️', class: '', color: 'text-red-400' },
+        completed: { icon: '✅', class: '', color: 'text-green-400' },
+        error: { icon: '❌', class: '', color: 'text-red-500' },
+        evolution: { icon: '🧬', class: 'animate-pulse', color: 'text-purple-400', special: true }
+    };
+
+    let config = statusConfig[status] || statusConfig.hidden;
+
+    // Check for Evolution Context in message to override visual style
+    if (status === 'searching' && message.includes('Evolución Genética')) {
+        config = statusConfig.evolution;
+    }
+
+    // PATH A: Detailed Card Mode
+    if (cardStatusMsg) {
+        // Ensure parent container is visible if we are updating the card
+        const statusContainer = document.getElementById('databank-status-bar');
+        if (statusContainer && statusContainer.classList.contains('hidden')) {
+            statusContainer.classList.remove('hidden');
+        }
+
+        if (config.special) {
+            cardStatusMsg.innerHTML = `<span class="font-bold text-purple-300">🧬 Evolución:</span> ${message.replace('Evolución Genética', '').trim()}`;
+        } else {
+            // Use the icon from config but keep text simpler as it's a tight space
+            cardStatusMsg.innerHTML = `${config.icon} ${message}`;
+            // Optional: Update color based on status if needed, but the default yellow is usually fine for search
+            if (config.color) {
+                // Remove old color classes and add new one logic is complex, simpler to just set className
+                // cardStatusMsg.className = `font-bold mb-1 truncate ${config.color}`; 
+            }
+        }
+        return;
+    }
+
+    // PATH B: Legacy Mode (Fallback)
     const statusBar = document.getElementById('databank-status-bar');
     const statusIcon = document.getElementById('databank-status-icon');
     const statusText = document.getElementById('databank-status-text');
 
     if (!statusBar || !statusIcon || !statusText) return;
 
-    const statusConfig = {
-        hidden: { icon: '', class: 'hidden' },
-        connecting: { icon: '📡', class: 'animate-pulse', color: 'text-blue-400' },
-        searching: { icon: '⛏️', class: 'animate-bounce', color: 'text-yellow-400' },
-        paused: { icon: '⏸️', class: '', color: 'text-orange-400' },
-        stopped: { icon: '⏹️', class: '', color: 'text-red-400' },
-        completed: { icon: '✅', class: '', color: 'text-green-400' },
-        error: { icon: '❌', class: '', color: 'text-red-500' }
-    };
-
-    const config = statusConfig[status] || statusConfig.hidden;
-
     if (status === 'hidden') {
         statusBar.classList.add('hidden');
     } else {
         statusBar.classList.remove('hidden');
         statusIcon.innerHTML = `<span class="${config.class} ${config.color} text-xl">${config.icon}</span>`;
-        statusText.textContent = message;
+
+        if (config.special) {
+            statusText.innerHTML = `<span class="font-bold text-purple-300">Evolución Activa:</span> <span class="text-gray-300">${message.replace('Evolución Genética', '').trim()} in progress...</span>`;
+        } else {
+            statusText.innerHTML = `<span class="text-gray-300">${message}</span>`;
+        }
+
+        // Execution Feedback: Show Banned Count if active (Only in simple mode)
+        if (state.bannedStrategiesCount > 0) {
+            statusText.innerHTML += ` <span class="ml-3 text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded border border-red-700/50" title="Estrategias excluidas globalmente">⛔ ${state.bannedStrategiesCount} Excluidas</span>`;
+        }
+
         statusText.className = `text-sm ${config.color}`;
     }
 };
@@ -54,233 +100,611 @@ export const updateDatabankCount = () => {
 /**
  * Inicia la búsqueda de portafolios en el DataBank.
  */
-export const findDatabankPortfolios = async (customConfig = {}) => {
-    if (state.rawStrategiesData.length < 2) {
-        displayError("Necesitas al menos 2 estrategias cargadas para buscar portafolios.");
-        return;
+// --- EVOLUTION MANAGER ---
+const evolutionManager = {
+    active: false,
+    generation: 0,
+    timer: null,
+    config: null,
+    phase: 'idle', // 'seeding', 'breeding', 'mutation'
+    abortController: null,
+
+    start: function (config) {
+        if (this.active) this.stop();
+        this.active = true;
+        this.generation = 1;
+        this.config = config;
+        this.phase = 'seeding';
+
+        console.log("[Evolution] Starting Evolution Loop...");
+        this.runGeneration();
+    },
+
+    stop: function () {
+        console.log("[Evolution] Stopping Loop.");
+        this.active = false;
+        if (this.timer) clearTimeout(this.timer);
+        if (this.abortController) this.abortController.abort();
+        // Force clear layout timer interval
+        if (state.searchTimerInterval) {
+            clearInterval(state.searchTimerInterval);
+            state.searchTimerInterval = null;
+        }
+        state.searchStartTime = null; // Reset start time on explicit stop
+        this.phase = 'idle';
+        setDatabankStatus('stopped', 'Evolución detenida.');
+
+        // Reset UI buttons
+        if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+        if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
+        if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+        if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
+        if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+    },
+
+    runGeneration: async function () {
+        if (!this.active) return;
+
+        // Ensure clean timer state at start of generation
+        if (state.searchTimerInterval) clearInterval(state.searchTimerInterval);
+
+        // 1. Determine Phase based on Databank State
+        const databankCount = state.databankPortfolios.length;
+        const topN = this.config.evolutionTopN || 10;
+
+        let generationDuration = 30000; // Default 30s
+        let nextPhase = 'breeding';
+        let statusMsg = '';
+        let phaseIcon = '';
+
+        // Internal Loop Logic
+        if (databankCount < 2) {
+            // PHASE: SEEDING (Not enough data)
+            this.phase = 'seeding';
+            generationDuration = 20000;
+            statusMsg = `Fase 1: Sembrado(Gen ${this.generation})`;
+            phaseIcon = '🌱';
+            nextPhase = 'seeding';
+        } else {
+            // Deciding between Breeding (Exploit) and Mutation (Explore)
+            if (this.phase === 'seeding') {
+                this.phase = 'breeding';
+            } else if (this.phase === 'breeding') {
+                this.phase = 'mutation';
+            } else {
+                this.phase = 'breeding';
+            }
+        }
+
+        console.log(`[Evolution]-- - GENERATION ${this.generation} START-- - `);
+        console.log(`[Evolution] Phase: ${this.phase.toUpperCase()} | Databank Size: ${databankCount} `);
+
+        // 2. Configure Payload for this Phase
+        const genPayload = { ...this.config };
+
+        // Reset specific fields
+        genPayload.fixedIndices = [];
+        // Support for Hybrid Satellite: Keep referenceIndices if present in config, otherwise clear
+        if (!genPayload.referenceIndices) genPayload.referenceIndices = [];
+
+        if (this.phase === 'seeding') {
+            // Random Search
+            genPayload.objective = 'search';
+            genPayload.searchMethod = 'monte_carlo';
+            statusMsg = `Sembrado: Buscando candidatos iniciales...`;
+            console.log(`[Evolution] Action: Random Seeding to populate Databank.`);
+        } else if (this.phase === 'breeding') {
+            // BREEDING: Strict. Use Top N strategies ONLY.
+            genPayload.objective = 'lab';
+            phaseIcon = '🧬';
+            statusMsg = `Breeding: Cruzando Top ${Math.min(topN, databankCount)} (Gen ${this.generation})`;
+
+            // Extract DNA
+            const topPortfolios = state.databankPortfolios.slice(0, topN);
+            const dnaSet = new Set();
+            topPortfolios.forEach(p => p.indices.forEach(i => dnaSet.add(i)));
+
+            // FILTER: Global Ban Enforcement
+            // Only allow seeds that are present in the global 'allowedIndices' (whitelist)
+            let dna = Array.from(dnaSet);
+            if (this.config.allowedIndices && this.config.allowedIndices.length > 0) {
+                const allowedSet = new Set(this.config.allowedIndices);
+                dna = dna.filter(idx => allowedSet.has(idx));
+            }
+
+            // FILTER: DYNAMIC QUARANTINE (Live Check)
+            // Even if allowed initially, check if strategy is NOW in quarantine
+            if (state.quarantinedStrategyNames.size > 0) {
+                const initialDnaSize = dna.length;
+                dna = dna.filter(idx => {
+                    const name = state.loadedStrategyFiles[idx] ? state.loadedStrategyFiles[idx].name : '';
+                    return !state.quarantinedStrategyNames.has(name);
+                });
+                if (dna.length < initialDnaSize) {
+                    console.log(`[Evolution] Quarantine Enforcement: Removed ${initialDnaSize - dna.length} banned seeds.`);
+                }
+            }
+
+            genPayload.fixedIndices = dna; // Use as Base
+            genPayload.allowedIndices = dna; // RESTRICT pool to ONLY these strategies
+
+            console.log(`[Evolution] Action: Breeding Top ${topPortfolios.length} Portfolios.`);
+            console.log(`[Evolution] DNA Source(Portfolios): `, topPortfolios.map(p => p.name || 'Unnamed'));
+            console.log(`[Evolution] Extracted Seeds(Strategies): `, dna);
+        } else if (this.phase === 'mutation') {
+            // MUTATION: Hybrid.
+            genPayload.objective = 'lab';
+            phaseIcon = '🦠';
+            statusMsg = `Mutación: Introduciendo variabilidad(Gen ${this.generation})`;
+
+            // Extract DNA for Base
+            const topPortfolios = state.databankPortfolios.slice(0, topN);
+            const dnaSet = new Set();
+            topPortfolios.forEach(p => p.indices.forEach(i => dnaSet.add(i)));
+
+            // FILTER: Global Ban Enforcement
+            let dna = Array.from(dnaSet);
+            if (this.config.allowedIndices && this.config.allowedIndices.length > 0) {
+                const allowedSet = new Set(this.config.allowedIndices);
+                dna = dna.filter(idx => allowedSet.has(idx));
+            }
+
+            // FILTER: DYNAMIC QUARANTINE (Live Check)
+            if (state.quarantinedStrategyNames.size > 0) {
+                dna = dna.filter(idx => {
+                    const name = state.loadedStrategyFiles[idx] ? state.loadedStrategyFiles[idx].name : '';
+                    return !state.quarantinedStrategyNames.has(name);
+                });
+            }
+
+            genPayload.fixedIndices = dna; // Base Seeds
+            // allowedIndices is ALREADY all strategies (from original payload or default)
+            console.log(`[Evolution] Action: Mutation.Using DNA from Top ${topPortfolios.length} as Base.`);
+            console.log(`[Evolution] Hybrid Mode: Mixing ${dna.length} Base Strategies with GLOBAL Pool.`);
+        }
+
+        // 3. Update Status UI
+        let displayMsg = `${phaseIcon} ${statusMsg}`;
+        if (this.config.satelliteCorrelationThreshold) {
+            displayMsg += ` | 🛰️ Sat Corr < ${this.config.satelliteCorrelationThreshold}`;
+        }
+        setDatabankStatus('evolution', displayMsg);
+
+        // 4. Execute Backend Search (NON-BLOCKING)
+        this.abortController = new AbortController();
+
+        // We do NOT await here, so the timer can run in parallel
+        executeBackendSearch(genPayload, this.abortController.signal, (type, data) => {
+            if (type === 'error' && this.active) {
+                console.warn("Generation error (stream):", data);
+            }
+        }).catch(e => {
+            if (e.name !== 'AbortError') {
+                console.error("Evolution Loop Async Error:", e);
+            }
+        });
+
+        // 5. Schedule Next Generation
+        if (this.active) {
+            console.log(`[Evolution] Generation ${this.generation} running for ${generationDuration}ms...`);
+            this.timer = setTimeout(() => {
+                console.log(`[Evolution] Generation ${this.generation} DONE.Switching...`);
+                // Time's up! Kill current search
+                if (this.abortController) this.abortController.abort();
+
+                // Proceed to next gen
+                this.generation++;
+                this.runGeneration();
+            }, generationDuration);
+        }
     }
+};
 
-    hideError();
-
-    // Resetear el estado de la UI y los botones
-    // En el nuevo layout, databankContent siempre está visible, no necesitamos mostrarlo
-    if (dom.pauseSearchBtn) {
-        dom.pauseSearchBtn.disabled = false;
-        dom.pauseSearchBtn.textContent = 'Pausar';
-    }
-    if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = false;
-
-    // NO usamos toggleLoading porque bloquea toda la UI
-    // En su lugar, solo deshabilitamos el botón de búsqueda
-    if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = true;
-    if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = true;
-    if (dom.databankSizeInput) dom.databankSizeInput.disabled = true;
-
-    state.databankPortfolios = [];
-    updateDatabankDisplay(); // Limpia la tabla
-
-    // Mostrar estado visual: Conectando
-    setDatabankStatus('connecting', 'Conectando con el backend de Python...');
-    console.log('📡 Conectando con el backend de Python...');
-
-    // 1. Empaquetar los datos para la petición inicial
+/**
+ * Executes a single backend search session.
+ */
+const executeBackendSearch = async (config, signal, onCallback) => {
+    console.log("[DataBank] executeBackendSearch called with config:", config);
+    // 1. Prepare Request Body
     const requestBody = {
-        strategy_names: state.loadedStrategyFiles.map(f => f.name), // <-- Añadimos los nombres
+        strategy_names: state.loadedStrategyFiles.map(f => f.name),
         strategies_data: state.rawStrategiesData,
         broker_config: loadBrokerConfig(),
         params: {
-            metric_to_optimize_key: customConfig.metric || dom.optimizationMetricSelect.value,
-            optimization_goal: customConfig.goal || dom.optimizationGoalSelect.value,
-            correlation_threshold: customConfig.correlationThreshold !== undefined
-                ? customConfig.correlationThreshold
+            metric_to_optimize_key: config.metric || 'sharpeRatio',
+            optimization_goal: config.goal || 'maximize',
+            correlation_threshold: config.correlationThreshold !== undefined
+                ? config.correlationThreshold
                 : (dom.correlationFilterInput ? parseFloat(dom.correlationFilterInput.value) : 0.90),
-            max_size: customConfig.maxSize || (dom.databankSizeInput ? parseInt(dom.databankSizeInput.value, 10) : 20),
-            base_indices: (state.searchBasePortfolioIndex !== null && state.searchBaseStrategyIndices.size > 0)
-                ? Array.from(state.searchBaseStrategyIndices)
-                : (customConfig.fixedIndices || Array.from(state.selectedPortfolioIndices)),
-            metric_name: customConfig.metricName || dom.optimizationMetricSelect.options[dom.optimizationMetricSelect.selectedIndex].text,
+            satellite_correlation_threshold: config.satelliteCorrelationThreshold !== undefined
+                ? config.satelliteCorrelationThreshold
+                : 0.90,
+            max_size: config.maxSize || (dom.databankSizeInput ? parseInt(dom.databankSizeInput.value, 10) : 20),
+
+            base_indices: config.fixedIndices || [],
+            allowed_indices: config.allowedIndices || [],
+            reference_portfolios: config.referencePortfolios || [],
+            reference_indices: config.referenceIndices || [],
+
+            objective: config.objective || 'search',
+            metric_name: config.metricName || config.metric || 'Sharpe Ratio',
             search_threshold: dom.searchThresholdInput ? parseInt(dom.searchThresholdInput.value, 10) : 500000,
-            use_all_dates: customConfig.useAllDates !== undefined ? customConfig.useAllDates : true,
-            search_method: customConfig.searchMethod || 'auto',
+            use_all_dates: config.useAllDates !== undefined ? config.useAllDates : true,
+            search_method: config.searchMethod || 'auto',
 
-            // Normalization
-            normalization_metric: customConfig.normalizationEnabled ? customConfig.normalizationMetric : null,
-            normalization_target: customConfig.normalizationEnabled ? customConfig.normalizationTarget : null,
-
-            // Custom Optimization
-            cagr_scaling_metric: customConfig.cagrScalingEnabled ? customConfig.cagrScalingMetric : null,
-            cagr_scaling_operator: customConfig.cagrScalingEnabled ? customConfig.cagrScalingOperator : 'multiply'
+            normalization_metric: config.normalizationEnabled ? config.normalizationMetric : null,
+            normalization_target: config.normalizationEnabled ? config.normalizationTarget : null,
+            cagr_scaling_metric: config.cagrScalingEnabled ? config.cagrScalingMetric : null,
+            cagr_scaling_operator: config.cagrScalingEnabled ? config.cagrScalingOperator : 'multiply',
+            re_shuffle_interval: config.reShuffleInterval || 30
         }
     };
 
-    // --- Dynamic Column Visibility Logic ---
-    console.log('[DEBUG DATABANK] Checking column visibility for optimization metrics...');
-    if (customConfig.cagrScalingEnabled) {
-        // Show CAGR, the scaled metric, AND the resulting custom score
-        ensureColumnVisible('cagr');
-        ensureColumnVisible('cagr_custom_score');
-        if (customConfig.cagrScalingMetric) {
-            ensureColumnVisible(customConfig.cagrScalingMetric);
+    // --- POOL FILTERING LOGIC ---
+    // 0. Identify Quarantined Indices (Always Exclude)
+    const quarantinedIndices = new Set();
+    if (state.quarantinedStrategyNames && state.quarantinedStrategyNames.size > 0) {
+        state.loadedStrategyFiles.forEach((file, idx) => {
+            const fName = file.name.trim();
+            if (state.quarantinedStrategyNames.has(fName)) {
+                quarantinedIndices.add(idx);
+            }
+        });
+        // Console log removed for cleaner output
+    }
+
+    // Calculate allowed_indices based on "Strategy Source" checkboxes if passed in config
+    // If config.sourceUnused or config.sourceLinked are defined (passed from Wizard)
+    if (config.sourceUnused !== undefined || config.sourceLinked !== undefined) {
+        const useUnused = config.sourceUnused !== false; // Default true if undefined
+        const useLinked = config.sourceLinked !== false; // Default true if undefined
+
+        if (!useUnused || !useLinked || quarantinedIndices.size > 0) {
+            console.log(`[Search] Applying Pool Filter: Unused=${useUnused}, Linked=${useLinked}, Quarantined=${quarantinedIndices.size}`);
+
+            // 1. Identify Linked Indices
+            const linkedIndices = new Set();
+            if (state.savedPortfolios) {
+                state.savedPortfolios.forEach(p => {
+                    if (p.indices) p.indices.forEach(i => linkedIndices.add(i));
+                });
+            }
+
+            // 2. Filter All Loaded Indices
+            const allIndices = state.loadedStrategyFiles.map((_, i) => i);
+            const filteredIndices = allIndices.filter(idx => {
+                // Global Ban Check
+                if (quarantinedIndices.has(idx)) return false;
+
+                const isLinked = linkedIndices.has(idx);
+                if (isLinked) return useLinked;
+                return useUnused;
+            });
+
+            // 3. Intersect with existing allowed_indices if any
+            if (requestBody.params.allowed_indices && requestBody.params.allowed_indices.length > 0) {
+                const existingSet = new Set(requestBody.params.allowed_indices);
+                requestBody.params.allowed_indices = filteredIndices.filter(i => existingSet.has(i));
+            } else {
+                requestBody.params.allowed_indices = filteredIndices;
+            }
+
+            console.log(`[Search] Pool filtered from ${allIndices.length} to ${requestBody.params.allowed_indices.length} strategies.`);
         }
     } else {
-        // Show standard optimization metric
-        const mainMetricKey = requestBody.params.metric_to_optimize_key;
-        if (mainMetricKey) {
-            ensureColumnVisible(mainMetricKey);
+        // Default Case (No Source Filter) - BUT MUST RESPECT QUARANTINE
+        if (!requestBody.params.allowed_indices || requestBody.params.allowed_indices.length === 0) {
+            if (quarantinedIndices.size > 0) {
+                requestBody.params.allowed_indices = state.loadedStrategyFiles.map((_, i) => i).filter(i => !quarantinedIndices.has(i));
+                console.log(`[Search] Default Pool applied with Quarantine: ${requestBody.params.allowed_indices.length} allowed.`);
+            } else {
+                requestBody.params.allowed_indices = state.loadedStrategyFiles.map((_, i) => i);
+            }
+        } else {
+            // Explicit allowed_indices exist, but we must ensure they don't contain quarantined ones
+            // (Sanity Check)
+            if (quarantinedIndices.size > 0) {
+                const originalLen = requestBody.params.allowed_indices.length;
+                requestBody.params.allowed_indices = requestBody.params.allowed_indices.filter(i => !quarantinedIndices.has(i));
+                if (requestBody.params.allowed_indices.length < originalLen) {
+                    console.log(`[Search] Pruned ${originalLen - requestBody.params.allowed_indices.length} quarantined strategies from explicit list.`);
+                }
+            }
         }
-        // User requested Optimized Score to be visible and at the start
-        ensureColumnVisible('cagr_custom_score');
     }
-    // ---------------------------------------
+    // ----------------------------
 
-    console.log('[DEBUG DATABANK] Starting search with maxSize:', requestBody.params.max_size, 'Base Indices:', requestBody.params.base_indices);
+    // --- ALWAYS RENDER DETAILED STATUS CARD ---
+    // --- ALWAYS RENDER DETAILED STATUS CARD ---
+    const useUnused = config.sourceUnused !== false;
+    const useLinked = config.sourceLinked !== false;
+    // Handle edge case where allowed_indices is empty but search is running (implies all)
 
-    // Save configuration to state for global access (e.g. UI checks for normalization)
+
+    // Calculate Detailed Counts for Display
+    let totalStratCount = requestBody.params.allowed_indices ? requestBody.params.allowed_indices.length : state.loadedStrategyFiles.length;
+    if (totalStratCount === 0 && state.loadedStrategyFiles.length > 0) totalStratCount = state.loadedStrategyFiles.length;
+
+    let newCount = 0;
+    let usedCount = 0;
+
+    // Quick calculation of breakdown
+    const tempLinkedIndices = new Set();
+    if (state.savedPortfolios) {
+        state.savedPortfolios.forEach(p => {
+            if (p.indices) p.indices.forEach(i => tempLinkedIndices.add(i));
+        });
+    }
+
+    if (requestBody.params.allowed_indices && requestBody.params.allowed_indices.length > 0) {
+        requestBody.params.allowed_indices.forEach(idx => {
+            if (tempLinkedIndices.has(idx)) usedCount++;
+            else newCount++;
+        });
+    } else {
+        state.loadedStrategyFiles.forEach((_, idx) => {
+            if (tempLinkedIndices.has(idx)) usedCount++;
+            else newCount++;
+        });
+    }
+
+    const poolSummary = `Nuevas: ${newCount} | Usadas: ${usedCount} (Total: ${totalStratCount})`;
+
+    const objKey = config.objective || 'search';
+    const objLabelMap = {
+        'boost': 'Mejorando Portafolio',
+        'satellite': 'Buscando Satélite',
+        'lab': 'Exploración de Laboratorio',
+        'hybrid': 'Satélite Híbrido',
+        'hybrid_satellite': 'Satélite Evolutivo',
+        'evolution': 'Evolución Genética'
+    };
+
+    // FIX: Show "Mode (Activity)" logic as requested
+    console.log('[Databank] Generating Label. Active:', evolutionManager.active, 'Obj:', objKey);
+    let objLabel = objLabelMap[objKey] || 'Búsqueda Estándar';
+
+    if (evolutionManager.active && evolutionManager.config) {
+        const originalObj = evolutionManager.config.objective;
+        let baseModeLabel = '';
+
+        if (originalObj === 'hybrid_satellite') baseModeLabel = 'Satélite Evolutivo';
+        else if (originalObj === 'evolution') baseModeLabel = 'Evolución Genética';
+
+        if (baseModeLabel) {
+            // If current internal objective is different (e.g. 'lab' driving the evolution), append it as context
+            if (objKey !== originalObj) {
+                // Map internal key to short readable string
+                const internalMap = { 'lab': 'Lab', 'search': 'Sembrado', 'boost': 'Boost' };
+                const internalLabel = internalMap[objKey] || objKey;
+                objLabel = `${baseModeLabel} <span class="text-xs text-gray-400">| ${internalLabel}</span>`;
+            } else {
+                objLabel = baseModeLabel;
+            }
+        }
+    }
+
+    const metricLabel = config.metric || 'Sharpe';
+    const goalArrow = config.goal === 'minimize' ? '⬇️' : '⬆️';
+    const constraints = `Corr < ${config.correlationThreshold || 0.9} | Size: ${config.maxSize || '?'}`;
+    const algo = config.searchMethod === 'auto' ? 'Auto' : (config.searchMethod || 'Auto');
+
+    const statusContainer = document.getElementById('databank-status-bar');
+    if (statusContainer) {
+        // Calculate initial timer string to prevent 00:00 flicker on re-render
+        let initialTimeStr = "00:00";
+        if (state.searchStartTime) {
+            const elapsed = Math.floor((Date.now() - state.searchStartTime) / 1000);
+            const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const secs = (elapsed % 60).toString().padStart(2, '0');
+            initialTimeStr = `${mins}:${secs}`;
+        }
+
+        statusContainer.classList.remove('hidden');
+        statusContainer.innerHTML = `
+        <div class="flex flex-col gap-1 text-[10px] font-mono leading-tight bg-gray-900/90 p-2 rounded border border-gray-700 shadow-xl backdrop-blur-sm animate-fade-in min-w-[240px]">
+            <div class="font-bold text-blue-400 border-b border-gray-700 pb-1 mb-1 flex justify-between items-center">
+                <span>${objLabel}</span>
+                <div class="flex items-center gap-2">
+                    <span id="databank-timer" class="font-mono text-xs text-blue-300">${initialTimeStr}</span>
+                    <span class="text-white animate-pulse">Running...</span>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 gap-0.5 text-gray-400">
+                    <!-- Dynamic Status Line -->
+                <div class="text-yellow-400 font-bold mb-1 truncate" id="databank-card-status-msg">🚀 Inicializando...</div>
+                
+                <div class="flex justify-between"><span>🎯 Meta:</span> <span class="text-gray-200">${metricLabel} ${goalArrow}</span></div>
+                <div class="flex justify-between"><span>📚 Pool:</span> <span class="text-emerald-400 font-bold">${poolSummary}</span></div>
+                <div class="flex justify-between"><span>⛓️ Const:</span> <span class="text-gray-300">${constraints}</span></div>
+                <div class="flex justify-between"><span>🤖 Algo:</span> <span>${algo}</span></div>
+                ${config.normalizationEnabled ? `<div class="flex justify-between text-indigo-400"><span>⚖️ Norm:</span> <span>${config.normalizationTarget}</span></div>` : ''}
+            </div>
+        </div>
+    `;
+    }
+
+    // --- TIMER LOGIC ---
+    // Make timer cumulative: Only set start time if it doesn't exist (i.e. first run of session)
+    if (!state.searchStartTime) {
+        state.searchStartTime = Date.now();
+    }
+
+    // Always clear old interval and restart it (safe)
+    if (state.searchTimerInterval) clearInterval(state.searchTimerInterval);
+    state.searchTimerInterval = setInterval(() => {
+        const timerEl = document.getElementById('databank-timer');
+        if (timerEl) {
+            const elapsed = Math.floor((Date.now() - state.searchStartTime) / 1000);
+            const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const secs = (elapsed % 60).toString().padStart(2, '0');
+            timerEl.textContent = `${mins}:${secs}`;
+        }
+    }, 1000);
+
+    // Save configuration state
     state.currentOptimizationData = {
         ...requestBody.params,
-        normalizationEnabled: customConfig.normalizationEnabled // Ensure boolean is strictly saved
+        normalizationEnabled: config.normalizationEnabled
     };
 
     try {
         const response = await fetch('/databank/find-portfolios-stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: signal
         });
 
-        if (!response.ok) {
-            throw new Error("El backend no pudo iniciar el proceso de streaming.");
-        }
-
-        console.log("Conexión de streaming establecida. Escuchando resultados...");
-        setDatabankStatus('searching', 'Escuchando resultados del backend...');
-
-        let searchMode = ''; // Variable para almacenar el modo de búsqueda
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status} `);
+        if (!response.body) throw new Error("No response body received");
 
         const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = ''; // Buffer para acumular datos del stream
+        const decoder = new TextDecoder("utf-8");
+        let buffer = '';
 
-        // Usamos un bucle 'while' en lugar de recursión para evitar el desbordamiento de la pila (stack overflow)
-        async function processStream() {
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    setDatabankStatus('completed', 'Búsqueda completada');
-                    // Re-habilitar botones
-                    if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
-                    if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
-                    if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-                    if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
-                    if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
-                    break; // Salir del bucle
-                }
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                console.log("[DataBank] Stream reader done (Backend closed connection).");
+                break;
+            }
 
-                // Añadir el nuevo trozo de datos al buffer
-                buffer += decoder.decode(value, { stream: true });
+            buffer += decoder.decode(value, { stream: true });
+            let boundary = buffer.indexOf('\n\n');
 
-                // Buscar mensajes completos en el buffer (delimitados por '\n\n')
-                let boundary = buffer.indexOf('\n\n');
-                while (boundary !== -1) {
-                    const message = buffer.substring(0, boundary);
-                    buffer = buffer.substring(boundary + 2); // Eliminar el mensaje procesado del buffer
+            while (boundary !== -1) {
+                const message = buffer.substring(0, boundary);
+                buffer = buffer.substring(boundary + 2);
 
-                    if (message.startsWith('data:')) {
-                        const jsonData = message.substring(5).trim(); // Eliminar 'data: '
-                        if (!jsonData) continue;
-
-                        try {
-                            const data = JSON.parse(jsonData);
-
-                            if (data.status === 'info' || data.status === 'progress') {
-                                if (!searchMode) {
-                                    if (data.message.toLowerCase().includes('monte carlo')) searchMode = '[Monte Carlo]';
-                                    else if (data.message.toLowerCase().includes('exhaustiva')) searchMode = '[Exhaustiva]';
-                                }
+                if (message.startsWith('data:')) {
+                    const jsonData = message.substring(5).trim();
+                    if (!jsonData) continue;
+                    try {
+                        const data = JSON.parse(jsonData);
+                        // --- HANDLING ---
+                        if (data.status === 'info' || data.status === 'progress' || data.status === 'scanning') {
+                            if (!evolutionManager.active || config.objective !== 'search') {
                                 setDatabankStatus('searching', data.message);
-
-                                // Mostrar advertencias importantes como errores persistentes
-                                if (data.message.startsWith('⚠️')) {
-                                    // Ignorar advertencias de correlación para no spamear la UI (el usuario ya lo ve en el status)
-                                    if (!data.message.toLowerCase().includes('correlación')) {
-                                        displayError(data.message, 10000); // Mostrar por 10 segundos
-                                    } else {
-                                        console.warn("[Backend Warning]", data.message);
-                                    }
-                                }
-                            } else if (data.status === 'paused') {
-                                dom.pauseSearchBtn.textContent = 'Reanudar';
-                                // Mantener Stop habilitado durante la pausa
-                                setDatabankStatus('paused', data.message);
-                            } else if (data.status === 'resumed') {
-                                dom.pauseSearchBtn.textContent = 'Pausar';
-                                setDatabankStatus('searching', data.message);
-                            } else if (data.status === 'stopped') {
-                                dom.stopSearchBtn.disabled = true;
-                                dom.pauseSearchBtn.disabled = true;
-                                dom.pauseSearchBtn.textContent = 'Pausar';
-                                setDatabankStatus('stopped', data.message);
-                            } else if (data.status === 'error') {
-                                displayError(data.message);
-                                setDatabankStatus('error', 'Error en la búsqueda');
-                                // Re-habilitar botones
-                                if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
-                                if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
-                                if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-                                if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
-                                if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
-                                reader.cancel(); // Detener la lectura del stream
-                            } else if (data.status === 'completed') {
-                                setDatabankStatus('completed', 'Búsqueda completada');
-                                // Re-habilitar botones
-                                if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
-                                if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
-                                if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
-                                if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
-                                if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
-                                reader.cancel();
-                            } else {
-                                const newPortfolio = data;
-                                console.log("[DEBUG DATABANK] Received portfolio candidate:", newPortfolio);
-                                if (newPortfolio.metrics && newPortfolio.metrics.cagr_custom_score !== undefined) {
-                                    console.log(`[DataBank] Portfolio cagr_custom_score: ${newPortfolio.metrics.cagr_custom_score}`);
-                                } else {
-                                    console.log(`[DataBank] Portfolio metrics:`, newPortfolio.metrics);
-                                }
-                                if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i + 1}`).join(', ');
-                                console.log("[DEBUG DATABANK] Attempting to add to databank...");
-                                addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput?.value || 20, 10));
-                                // Throttle: Solo actualizar la UI cada 500ms para mantenerla responsive
-                                if (!window.databankUpdateScheduled) {
-                                    window.databankUpdateScheduled = true;
-                                    setTimeout(() => {
-                                        updateDatabankDisplay();
-                                        window.databankUpdateScheduled = false;
-                                    }, 500);
-                                }
                             }
-                        } catch (e) {
-                            console.error("Error al parsear JSON del stream:", e, "Datos recibidos:", jsonData);
+                        } else if (data.status === 'paused') {
+                            setDatabankStatus('paused', data.message);
+                        } else if (data.status === 'stopped') {
+                            // Handled by abort mostly
+                        } else if (data.status === 'error') {
+                            if (onCallback) onCallback('error', data.message);
+                            else displayError(data.message);
+                        } else if (data.status !== 'completed' && data.status !== 'resumed') {
+                            // Valid Portfolio
+                            const newPortfolio = data;
+                            if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat.${i + 1} `).join(', ');
+                            addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput?.value || 20, 10));
+
+                            if (!window.databankUpdateScheduled) {
+                                window.databankUpdateScheduled = true;
+                                setTimeout(() => { updateDatabankDisplay(); window.databankUpdateScheduled = false; }, 500);
+                            }
                         }
+                    } catch (e) {
+                        console.error("JSON Parse Error:", e);
                     }
-                    boundary = buffer.indexOf('\n\n'); // Buscar el siguiente mensaje
                 }
+                boundary = buffer.indexOf('\n\n');
             }
         }
-        await processStream(); // Inicia la lectura del stream y espera a que termine (o falle)
-
     } catch (error) {
-        console.error("Error iniciando la búsqueda en DataBank:", error);
-        displayError(error.message || "Ocurrió un error al conectar con el backend.");
-        setDatabankStatus('error', 'Error de conexión con el backend');
-        // Re-habilitar botones
+        if (error.name !== 'AbortError') {
+            console.error("Stream Error:", error);
+            displayError("Error durante la búsqueda: " + error.message);
+            if (onCallback) onCallback('error', error);
+        }
+    } finally {
+        // Only stop timer if NOT in evolution mode. 
+        // In evolution, the "generation" persists even if search finishes early.
+        if (!evolutionManager.active) {
+            if (state.searchTimerInterval) clearInterval(state.searchTimerInterval);
+        } else {
+            console.log("[DataBank] Search finished, but keeping timer alive for Evolution wait phase.");
+        }
+    }
+
+    if (onCallback) onCallback('done');
+};
+
+export const stopDatabankSearch = () => {
+    // Reset global time
+    state.searchStartTime = null;
+
+    if (evolutionManager.active) {
+        evolutionManager.stop();
+    } else {
+        // Stop normal search
+        if (evolutionManager.abortController) {
+            evolutionManager.abortController.abort();
+            evolutionManager.abortController = null;
+        }
+        if (state.searchTimerInterval) clearInterval(state.searchTimerInterval); // Timer cleanup
+        setDatabankStatus('stopped', 'Búsqueda detenida por el usuario.');
+
+        // Restore UI
         if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
         if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
         if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
         if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
         if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
+
+        // Call Backend Stop
+        fetch('/databank/stop', { method: 'POST' }).catch(err => console.error("Error stopping backend:", err));
     }
 };
+
+/**
+ * Inicia la búsqueda de portafolios en el DataBank.
+ */
+export const findDatabankPortfolios = async (customConfig = {}) => {
+    if (state.rawStrategiesData.length < 2) {
+        displayError("Necesitas al menos 2 estrategias cargadas para buscar portafolios.");
+        return;
+    }
+    hideError();
+
+    // Reset UI State
+    if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = false;
+    if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = false;
+    if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = true;
+    if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = true;
+    if (dom.databankSizeInput) dom.databankSizeInput.disabled = true;
+
+    // Persistence Safety
+    if (!state.databankPortfolios) state.databankPortfolios = [];
+
+    // Check Evolution Mode
+    if (customConfig.objective === 'evolution') {
+        evolutionManager.start(customConfig);
+        return;
+    }
+
+    // Normal Search
+    updateDatabankDisplay();
+    setDatabankStatus('connecting', 'Conectando con el backend...');
+
+    // Create a generic abort controller for the simple search 
+    evolutionManager.abortController = new AbortController();
+
+    await executeBackendSearch(customConfig, evolutionManager.abortController.signal, (type) => {
+        if (type === 'done' || type === 'error') {
+            setDatabankStatus('completed', 'Búsqueda finalizada');
+            // Restore UI
+            if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
+            if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
+            if (dom.databankSizeInput) dom.databankSizeInput.disabled = false;
+            if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = true;
+            if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
+        }
+    });
+};
+
+
 
 /**
  * Añade un portafolio al DataBank si es mejor que los existentes.
@@ -317,9 +741,9 @@ const addToDatabankIfBetter = (portfolioData, maxSize) => {
 
     if (state.databankPortfolios.length > maxSize) {
         state.databankPortfolios = state.databankPortfolios.slice(0, maxSize);
-        console.log(`[DEBUG DATABANK] Sliced to maxSize (${maxSize}). New count: ${state.databankPortfolios.length}`);
+        console.log(`[DEBUG DATABANK] Sliced to maxSize(${maxSize}).New count: ${state.databankPortfolios.length} `);
     } else {
-        console.log(`[DEBUG DATABANK] Portfolio added/updated. Current count: ${state.databankPortfolios.length} (Max: ${maxSize})`);
+        console.log(`[DEBUG DATABANK] Portfolio added / updated.Current count: ${state.databankPortfolios.length} (Max: ${maxSize})`);
     }
 };
 
@@ -474,13 +898,13 @@ export const updateDatabankDisplay = () => {
             if (key === 'name') {
                 let constructedName = p.name;
                 if (!constructedName && p.indices) {
-                    constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i + 1}`).join(', ');
+                    constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i + 1} `).join(', ');
                 }
                 // Compact View: Single line with ellipsis, full list in tooltip
                 const count = p.indices ? p.indices.length : 0;
-                const shortText = `${count} Estrategias: ${constructedName}`;
+                const shortText = `${count} Estrategias: ${constructedName} `;
                 html += `<td class="px-4 py-3 text-gray-300 max-w-xs truncate" title="${constructedName}">
-                            <div class="truncate text-sm">${shortText}</div>
+    <div class="truncate text-sm">${shortText}</div>
                          </td>`;
             } else {
                 // Get value from metrics or analysis.metrics
@@ -489,7 +913,7 @@ export const updateDatabankDisplay = () => {
                     value = p.metricValue;
                 } else if (key === 'strategyCount') {
                     value = p.indices ? p.indices.length : 0;
-                    // console.log(`[DEBUG] Row ${index} - strategyCount:`, value, 'Indices:', p.indices);
+                    // console.log(`[DEBUG] Row ${ index } - strategyCount: `, value, 'Indices:', p.indices);
                 } else if (key === 'returnDD') {
                     // Mapping for Ret/DD
                     const metrics = p.metrics || p.analysis?.metrics || p.analysis || {};
@@ -502,7 +926,8 @@ export const updateDatabankDisplay = () => {
                 }
 
                 if (index === 0) {
-                    // console.log(`[DEBUG FRONTEND] Col '${key}': Value extracted:`, value);
+                    // console.log(`[DEBUG FRONTEND] Col '${key}': Value extracted: `, value);
+                    if (key === 'correlationWithBase') console.log(`[DEBUG FRONTEND] correlationWithBase value: `, value, 'Metrics:', p.metrics);
                 }
 
                 html += `<td class="px-4 py-3 text-gray-300 text-right whitespace-nowrap">${formatMetricForDisplay(value, key)}</td>`;
@@ -704,18 +1129,18 @@ export function renderBaseStrategiesConfig() {
         const isChecked = state.searchBaseStrategyIndices.has(idx);
 
         strategiesListHTML += `
-            <label class="flex items-center space-x-2 text-xs bg-slate-900/50 p-1.5 rounded cursor-pointer hover:bg-slate-700 transition-colors">
-                <input type="checkbox" 
-                       class="form-checkbox h-3 w-3 text-sky-500 rounded border-gray-600 bg-gray-800 focus:ring-sky-600 base-strategy-checkbox" 
-                       value="${idx}"
-                       ${isChecked ? 'checked' : ''}>
-                <span class="truncate max-w-[150px] text-gray-300" title="${file.name}">${file.name.replace('.csv', '')}</span>
-            </label>
-        `;
+    < label class="flex items-center space-x-2 text-xs bg-slate-900/50 p-1.5 rounded cursor-pointer hover:bg-slate-700 transition-colors" >
+        <input type="checkbox"
+            class="form-checkbox h-3 w-3 text-sky-500 rounded border-gray-600 bg-gray-800 focus:ring-sky-600 base-strategy-checkbox"
+            value="${idx}"
+            ${isChecked ? 'checked' : ''}>
+            <span class="truncate max-w-[150px] text-gray-300" title="${file.name}">${file.name.replace('.csv', '')}</span>
+        </label>
+`;
     });
 
     configContainer.innerHTML = `
-        <div class="flex items-center justify-between mb-2 border-b border-slate-700/50 pb-1">
+    < div class="flex items-center justify-between mb-2 border-b border-slate-700/50 pb-1" >
             <h4 class="text-xs font-semibold text-sky-400 flex items-center gap-2">
                 <span>🛡️ Base Team: ${portfolio.name}</span>
                 <span class="text-[10px] text-gray-500 font-normal">(${state.searchBaseStrategyIndices.size} locked)</span>
@@ -723,14 +1148,14 @@ export function renderBaseStrategiesConfig() {
             <button class="text-[10px] text-gray-400 hover:text-white hover:bg-red-900/30 px-2 rounded" onclick="window.clearBasePortfolioSelection()">
                 Clear Selection
             </button>
-        </div>
+        </div >
         <div class="flex flex-wrap gap-2 max-h-[100px] overflow-y-auto custom-scrollbar">
             ${strategiesListHTML}
         </div>
         <div class="mt-2 text-[10px] text-gray-500 italic">
             * Selected strategies will be locked in the search. Uncheck to treat them as optional candidates.
         </div>
-    `;
+`;
 
     // Add listeners
     const checkboxes = configContainer.querySelectorAll('.base-strategy-checkbox');
@@ -827,20 +1252,20 @@ export const sortDatabank = (headerEl) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody) // `requestBody` would need to be defined in the actual function
         });
-
+ 
         if (!response.ok) {
             throw new Error("El backend no pudo iniciar el proceso de streaming.");
         }
-
+ 
         console.log("Conexión de streaming establecida. Escuchando resultados...");
         setDatabankStatus('searching', 'Escuchando resultados del backend...');
-
+ 
         let searchMode = ''; // Variable para almacenar el modo de búsqueda
-
+ 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = ''; // Buffer para acumular datos del stream
-
+ 
         // Usamos un bucle 'while' en lugar de recursión para evitar el desbordamiento de la pila (stack overflow)
         async function processStream() {
             while (true) {
@@ -855,23 +1280,23 @@ export const sortDatabank = (headerEl) => {
                     if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = true;
                     break; // Salir del bucle
                 }
-
+ 
                 // Añadir el nuevo trozo de datos al buffer
                 buffer += decoder.decode(value, { stream: true });
-
+ 
                 // Buscar mensajes completos en el buffer (delimitados por '\n\n')
                 let boundary = buffer.indexOf('\n\n');
                 while (boundary !== -1) {
                     const message = buffer.substring(0, boundary);
                     buffer = buffer.substring(boundary + 2); // Eliminar el mensaje procesado del buffer
-
+ 
                     if (message.startsWith('data:')) {
                         const jsonData = message.substring(5).trim(); // Eliminar 'data: '
                         if (!jsonData) continue;
-
+ 
                         try {
                             const data = JSON.parse(jsonData);
-
+ 
                             if (data.status === 'info' || data.status === 'progress') {
                                 if (!searchMode) {
                                     if (data.message.toLowerCase().includes('monte carlo')) searchMode = '[Monte Carlo]';
@@ -911,7 +1336,7 @@ export const sortDatabank = (headerEl) => {
                                 reader.cancel();
                             } else {
                                 const newPortfolio = data;
-                                if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat. ${i + 1}`).join(', ');
+                                if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat.${ i + 1 } `).join(', ');
                                 addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput?.value || 20, 10)); // `addToDatabankIfBetter` would need to be defined
                                 // Throttle: Solo actualizar la UI cada 500ms para mantenerla responsive
                                 if (!window.databankUpdateScheduled) {
@@ -983,15 +1408,15 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
     const sqMetrics = calculateSQMetrics(allTrades);
 
     state.savedPortfolios.push({
-        name: `P-DB (${names}) ${portfolio.metricName}`,
+        name: `P - DB(${names}) ${portfolio.metricName} `,
         indices: portfolio.indices,
         strategyIds: strategyIds, // <--- SAVE STRATEGY IDs
         strategyNames: strategyNames, // <--- SAVE STRATEGY NAMES
-        id: generatePortfolioId(`P-DB (${names})`, strategyIds),
+        id: generatePortfolioId(`P - DB(${names})`, strategyIds),
         weights: null,
         metrics: portfolio.metrics || metrics, // Use passed metrics if available
         sqMetrics: sqMetrics, // <--- SAVE SQ METRICS
-        comments: `Guardado desde DataBank. Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
+        comments: `Guardado desde DataBank.Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
     });
     // Adjuntamos las métricas pre-calculadas para evitar re-análisis innecesario
     return true;
@@ -1008,6 +1433,220 @@ export const clearDatabank = () => {
     updateDatabankDisplay();
     // databankSection ya no existe en el nuevo layout
     if (dom.databankSection) dom.databankSection.classList.add('hidden');
+};
+
+// --- PURGE FEATURE ---
+export const openPurgeModal = () => {
+    // 1. Identify strategies in Databank
+    const usageMap = new Map(); // index -> count
+    state.databankPortfolios.forEach(p => {
+        p.indices.forEach(idx => {
+            usageMap.set(idx, (usageMap.get(idx) || 0) + 1);
+        });
+    });
+
+    if (usageMap.size === 0) {
+        showToast('El Databank está vacío. Nada que purgar.', 'info');
+        return;
+    }
+
+    // 2. Create Modal Content
+    // We reuse the generic modal logic or inject a new one. 
+    // For simplicity, we create a temporary modal overlay.
+    const modalId = 'purge-modal';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    const strategyItems = Array.from(usageMap.entries()).map(([idx, count]) => {
+        const file = state.loadedStrategyFiles[idx];
+        const name = file ? file.name : `Unknown Strategy ${idx}`;
+        return `
+            <label class="flex items-center space-x-3 p-2 hover:bg-gray-700/50 rounded cursor-pointer border border-transparent hover:border-gray-600 transition-all">
+        <input type="checkbox" class="purge-checkbox form-checkbox h-4 w-4 text-red-500 rounded border-gray-600 bg-gray-800 focus:ring-red-500" value="${idx}">
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-gray-200 truncate" title="${name}">${name}</div>
+                <div class="text-xs text-gray-500">Presente en ${count} portafolios</div>
+            </div>
+        </label>
+`;
+    }).join('');
+
+    const modalHTML = `
+        <div id="${modalId}" class="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div class="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 w-[500px] max-w-full flex flex-col max-h-[85vh]">
+            <div class="p-6 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 rounded-t-xl">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>🧹</span> Purgar Estrategias
+                </h3>
+                <button id="close-purge-btn" class="text-gray-400 hover:text-white transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <div class="p-4 bg-yellow-900/20 border-b border-yellow-700/30">
+                <p class="text-xs text-yellow-200">
+                    ⚠️ Las estrategias seleccionadas se eliminarán de TODOS los portafolios del Databank.
+                    Los portafolios afectados se recalcularán automáticamente.
+                    Si un portafolio se queda vacío, será eliminado.
+                </p>
+            </div>
+
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-2">
+                ${strategyItems}
+            </div>
+
+            <div class="p-4 border-t border-gray-700 bg-gray-800/50 rounded-b-xl flex justify-end gap-3">
+                <button id="cancel-purge-btn" class="px-4 py-2 text-gray-400 hover:text-white font-medium transition-colors">Cancelar</button>
+                <button id="confirm-purge-btn" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-red-900/30 transform hover:scale-105 transition-all flex items-center gap-2">
+                    <span>🗑️</span> Confirmar Purga
+                </button>
+            </div>
+        </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    // 3. Attach Events
+    const closeModal = () => document.getElementById(modalId)?.remove();
+    document.getElementById('close-purge-btn').onclick = closeModal;
+    document.getElementById('cancel-purge-btn').onclick = closeModal;
+
+    document.getElementById('confirm-purge-btn').onclick = () => {
+        const checkboxes = document.querySelectorAll('.purge-checkbox:checked');
+        const indicesToRemove = Array.from(checkboxes).map(cb => parseInt(cb.value, 10));
+
+        if (indicesToRemove.length === 0) {
+            showToast('Selecciona al menos una estrategia para purgar.', 'warning');
+            return;
+        }
+
+        if (confirm(`¿Eliminar ${indicesToRemove.length} estrategias y recalcular el Databank?`)) {
+            closeModal();
+            purgeStrategiesFromDatabank(indicesToRemove);
+        }
+    };
+};
+
+const purgeStrategiesFromDatabank = async (indicesToRemove) => {
+    const removeSet = new Set(indicesToRemove);
+    let removedCount = 0;
+    let modifiedPortfoliosCount = 0;
+
+    toggleLoading(true, 'Purgando y Recalculando...');
+
+    // 1. First Pass: Identify Portfolios to Keep and Modify
+    const tempDatabank = [];
+    const portfoliosToAnalyze = [];
+
+    // Track original indices to map back results
+
+    for (const [index, p] of state.databankPortfolios.entries()) {
+        const originalCount = p.indices.length;
+        const newIndices = p.indices.filter(i => !removeSet.has(i));
+
+        if (newIndices.length === 0) {
+            // Portfolio Empty -> Drop
+            removedCount++;
+            continue;
+        }
+
+        if (newIndices.length !== originalCount) {
+            // Modified -> Needs Recalculation
+            modifiedPortfoliosCount++;
+
+            // Create a "pending" portfolio object
+            const pendingPortfolio = {
+                ...p,
+                indices: newIndices,
+                name: p.name.includes('(Purged)') ? p.name : p.name + ' (Purged)',
+                metrics: {}, // Reset metrics as they are invalid
+                isPending: true
+            };
+
+            tempDatabank.push(pendingPortfolio);
+
+            // Add to backend analysis queue
+            // Note: Databank portfolios are equal-weight
+            portfoliosToAnalyze.push({
+                indices: newIndices,
+                weights: null,
+                is_databank_portfolio: true,
+                temp_databank_index: tempDatabank.length - 1 // Index in the NEW temp array
+            });
+
+        } else {
+            // Unchanged -> Keep as is
+            tempDatabank.push(p);
+        }
+    }
+
+    // 2. If nothing modified, just update and exit
+    if (portfoliosToAnalyze.length === 0) {
+        state.databankPortfolios = tempDatabank;
+        updateDatabankCount();
+        updateDatabankDisplay();
+        toggleLoading(false);
+        showToast(`✅ Purga Completa. Eliminados: ${removedCount}.`, 'success');
+        return;
+    }
+
+    // 3. Call Backend for Recalculation (Async)
+    // We keep the loading screen active
+    toggleLoading(true, 'Recalculando Métricas', `Analizando ${portfoliosToAnalyze.length} portafolios modificados...`);
+
+    try {
+        // Use existing function from analysis.js
+        // We pass false for risk normalization to get raw metrics first (standard Databank behavior)
+        const backendResults = await getFullAnalysisFromBackend(state.rawStrategiesData, portfoliosToAnalyze, false, 0);
+
+        // 4. Update Temp Databank with Results
+        // The backend returns results in the ORDER of the list we sent (after the strategies)
+        // But getFullAnalysisFromBackend returns [Strategy1, Strategy2, ... Portfolio1, Portfolio2 ...]
+        // So we need to slice it.
+
+        const numStrategies = state.loadedStrategyFiles.length;
+        const portfolioResults = backendResults.slice(numStrategies);
+
+        portfolioResults.forEach((result, i) => {
+            // FIX: Map by index as backend might not echo custom fields
+            const requestItem = portfoliosToAnalyze[i];
+
+            if (requestItem && requestItem.temp_databank_index !== undefined) {
+                const targetPortfolio = tempDatabank[requestItem.temp_databank_index];
+
+                if (targetPortfolio && result && result.metrics) {
+                    targetPortfolio.metrics = result.metrics;
+                    targetPortfolio.isPending = false;
+
+                    // Update Sorting Metric Value if possible
+                    if (targetPortfolio.metricName && result.metrics[targetPortfolio.metricName]) {
+                        targetPortfolio.metricValue = result.metrics[targetPortfolio.metricName];
+                    } else if (result.metrics.profitMaxDD_Ratio) {
+                        // Fallback defaults
+                        targetPortfolio.metricValue = result.metrics.profitMaxDD_Ratio;
+                    }
+                }
+            }
+        });
+
+        // 5. Finalize State
+        state.databankPortfolios = tempDatabank;
+        updateDatabankCount();
+        updateDatabankDisplay();
+
+        showToast(`✅ Purga y Recálculo Completos. Modificados: ${modifiedPortfoliosCount}, Eliminados: ${removedCount}.`, 'success');
+
+    } catch (error) {
+        console.error("Error recalculating purged portfolios:", error);
+        displayError("Hubo un error al recalcular las métricas tras la purga. Revisa la consola.");
+
+        // Fallback: Save what we have, even if metrics are empty/broken, to prevent data loss
+        state.databankPortfolios = tempDatabank;
+        updateDatabankDisplay();
+    } finally {
+        toggleLoading(false);
+    }
 };
 
 // Eliminamos las importaciones de analysis.js que ya no se usan aquí

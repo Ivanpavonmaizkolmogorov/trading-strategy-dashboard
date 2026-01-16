@@ -2,7 +2,7 @@ import { dom } from './dom.js';
 import { state, saveSavedPortfolios } from './state.js';
 import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable } from './analysis.js';
 import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal, switchViewMode, renderStrategiesTable } from './ui.js';
-import { findDatabankPortfolios, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay } from './modules/databank.js';
+import { findDatabankPortfolios, stopDatabankSearch, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay, openPurgeModal } from './modules/databank.js';
 import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
 import { openViewManager, closeViewManager, applyView, saveView, deleteView } from './modules/viewManager.js';
 import { exportAnalysis, importAnalysis } from './modules/importExport.js';
@@ -76,6 +76,7 @@ export function initializeEventListeners() {
     const mainHeader = document.getElementById('main-header');
     const mainContent = document.querySelector('main');
 
+    /* CONFLICTING LISTENER REMOVED - Handled in layout.js with Sandbox Iframe
     if (navMonitor && liveMonitorView) {
         navMonitor.addEventListener('click', () => {
             // Switch View
@@ -91,6 +92,7 @@ export function initializeEventListeners() {
             renderLiveMonitor();
         });
     }
+    */
 
     // Restore Main View
     const restoreMainView = (activeBtnId) => {
@@ -106,7 +108,7 @@ export function initializeEventListeners() {
     document.getElementById('nav-config')?.addEventListener('click', () => restoreMainView('nav-config'));
 
     // Monitor Actions
-    document.getElementById('monitor-link-btn')?.addEventListener('click', openMyfxbookModal);
+
     document.getElementById('monitor-refresh-btn')?.addEventListener('click', renderLiveMonitor);
     document.getElementById('reality-check-sync-btn')?.addEventListener('click', refreshAllAccounts);
 
@@ -536,22 +538,21 @@ export function initializeEventListeners() {
     }
 
     if (dom.stopSearchBtn) {
-        dom.stopSearchBtn.addEventListener('click', async () => {
-            try {
-                const response = await fetch('/databank/stop', { method: 'POST' });
-                if (!response.ok) throw new Error('Error al enviar señal de detención al backend.');
-                // La UI se actualiza en base a los mensajes del stream, no aquí.
-                // Deshabilitamos inmediatamente para evitar clics múltiples.
-                dom.stopSearchBtn.disabled = true;
-                dom.pauseSearchBtn.disabled = true;
-            } catch (error) {
-                console.error("Error al detener búsqueda:", error);
-            }
+        dom.stopSearchBtn.addEventListener('click', () => {
+            stopDatabankSearch();
+            // Manually disable to prevent double clicks, though function handles UI too
+            dom.stopSearchBtn.disabled = true;
+            dom.pauseSearchBtn.disabled = true;
         });
     }
 
     if (dom.clearDatabankBtn) {
         dom.clearDatabankBtn.addEventListener('click', clearDatabank);
+    }
+
+    const purgeBtn = document.getElementById('purge-databank-btn');
+    if (purgeBtn) {
+        purgeBtn.addEventListener('click', openPurgeModal);
     }
 
     dom.databankTableHeader.addEventListener('click', (e) => {
@@ -732,6 +733,10 @@ export function initializeEventListeners() {
     }
     if (tabSQ) {
         tabSQ.addEventListener('click', () => switchViewMode('sq-stats'));
+    }
+    const tabRealVsSq = document.getElementById('tab-real-vs-sq');
+    if (tabRealVsSq) {
+        tabRealVsSq.addEventListener('click', () => switchViewMode('real-vs-sq'));
     }
     // --- DEBUG: Global Click Listener ---
     window.addEventListener('click', (e) => {

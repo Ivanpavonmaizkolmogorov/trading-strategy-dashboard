@@ -617,22 +617,69 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
     max_consecutive_losing_months = max(max_consecutive_losing_months, consecutive_losing_months)
 
     # --- CÁLCULO DE STAGNATION (ESTANCAMIENTO) ---
-    # Ahora se calcula desde la curva diaria, que es la definición estándar de "Stagnation in Days".
-    max_stagnation_days = 0
+    # UNIFICACIÓN CON FRONTEND: Calcular "Stagnation in Days" basado en timestamps exactos de trades, no en curva diaria.
+    max_stagnation_days = 0.0
+    max_stagnation_trades = 0
+    
+    current_peak_equity = initial_capital # Capital inicial (10000)
+    last_peak_time = None # Timestamp del último pico
+    
+    # Para Stagnation Trades
+    current_peak_equity_trades = initial_capital
+    trades_since_peak = 0
+    
+    # Init last_peak_time con el inicio de la simulación o primer trade
+    if not trades_df_sorted.empty:
+        first_entry = trades_df_sorted['entry_date'].iloc[0]
+        if pd.notna(first_entry):
+            last_peak_time = first_entry
+    
+    # Initialize variables for stagnation tracking
     max_stagnation_start = None
     max_stagnation_end = None
     
-    if not equity_curve.empty:
-        last_peak_date = equity_curve.index[0]
-        for current_date, current_equity in equity_curve['equity'].items():
-            if current_equity >= equity_curve['equity'].loc[last_peak_date]:
-                last_peak_date = current_date
+    running_equity = initial_capital
+    
+    for idx, trade in trades_df_sorted.iterrows():
+        # --- Stagnation Trades ---
+        running_equity += trade['pnl'] # Acumular PnL (incluye swap/comm si vienen del CSV parseado)
+        
+        if running_equity > current_peak_equity_trades:
+            if trades_since_peak > max_stagnation_trades:
+                max_stagnation_trades = trades_since_peak
+            trades_since_peak = 0
+            current_peak_equity_trades = running_equity
+        else:
+            trades_since_peak += 1
             
-            stagnation_days = (current_date - last_peak_date).days
-            if stagnation_days > max_stagnation_days:
-                max_stagnation_days = stagnation_days
-                max_stagnation_start = last_peak_date
-                max_stagnation_end = current_date
+        # --- Stagnation Days ---
+        # Lógica idéntica al Frontend (sqAnalysis_v2.js)
+        # Se usa 'running_equity' que ya incluye el trade actual
+        if running_equity > current_peak_equity:
+            current_peak_equity = running_equity
+            
+            # Gap since last peak
+            if pd.notna(trade['exit_date']) and last_peak_time is not None:
+                diff_days = (trade['exit_date'] - last_peak_time).total_seconds() / (60 * 60 * 24)
+                if diff_days > max_stagnation_days:
+                    max_stagnation_days = diff_days
+                    max_stagnation_start = last_peak_time
+                    max_stagnation_end = trade['exit_date']
+                last_peak_time = trade['exit_date']
+            elif last_peak_time is None and pd.notna(trade['exit_date']):
+                 last_peak_time = trade['exit_date']
+
+        elif pd.notna(trade['exit_date']) and last_peak_time is not None:
+            # Still in drawdown, check duration from last peak to now
+            diff_days = (trade['exit_date'] - last_peak_time).total_seconds() / (60 * 60 * 24)
+            if diff_days > max_stagnation_days:
+                max_stagnation_days = diff_days
+                max_stagnation_start = last_peak_time
+                max_stagnation_end = trade['exit_date']
+    
+    # Final check for stagnation trades at end of history
+    if trades_since_peak > max_stagnation_trades:
+         max_stagnation_trades = trades_since_peak
 
     # --- CÁLCULO DE SQN (SYSTEM QUALITY NUMBER) ---
     # CORRECCIÓN: Usar % de retorno por trade en lugar de PnL en dólares para evitar distorsión por interés compuesto

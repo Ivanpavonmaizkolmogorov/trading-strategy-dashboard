@@ -27,6 +27,29 @@ def sanitize_floats(obj):
         return tuple(sanitize_floats(v) for v in obj)
     return obj
 
+def calculate_portfolio_correlation(indices_a, indices_b, correlation_matrix):
+    """Calculates correlation between two portfolios assuming equal weights."""
+    try:
+        if not indices_a or not indices_b: return 0.0
+        # Ensure list of ints
+        idx_a = [int(i) for i in indices_a]
+        idx_b = [int(i) for i in indices_b]
+        
+        # Variances
+        var_a = np.sum(correlation_matrix.iloc[idx_a, idx_a].values)
+        var_b = np.sum(correlation_matrix.iloc[idx_b, idx_b].values)
+        
+        # Covariance
+        cov_ab = np.sum(correlation_matrix.iloc[idx_a, idx_b].values)
+        
+        denom = np.sqrt(var_a) * np.sqrt(var_b)
+        if denom == 0: return 0.0
+        return float(cov_ab / denom)
+    except Exception as e:
+        print(f"Error calc correlation: {e}")
+        return 0.0
+
+
 
 # --- Modelos de Datos (Pydantic) ---
 class Trade(BaseModel):
@@ -52,6 +75,12 @@ class DatabankParams(BaseModel):
     correlation_threshold: float
     max_size: int
     base_indices: List[int]
+    reference_indices: Optional[List[int]] = []
+    reference_portfolios: Optional[List[List[int]]] = [] # New: Multi-Satellite support
+    satellite_correlation_threshold: Optional[float] = 0.90
+    allowed_indices: Optional[List[int]] = []
+    objective: Optional[str] = 'search' # 'search', 'satellite', 'lab'
+
     metric_name: str
     search_threshold: int
     search_method: Optional[str] = 'auto'
@@ -59,6 +88,7 @@ class DatabankParams(BaseModel):
     normalization_target: Optional[float] = None
     cagr_scaling_metric: Optional[str] = None
     cagr_scaling_operator: Optional[str] = 'multiply'
+    re_shuffle_interval: Optional[int] = 5000
 
 class DatabankRequest(BaseModel):
     strategy_names: List[str] # <-- Añadimos los nombres de las estrategias
@@ -447,36 +477,54 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                 strategies_data = filtered_strategies_data
 
             individual_analyses = []
+            print(f"[DEBUG] Starting individual analysis of {len(strategies_data)} strategies...", flush=True)
             for i, strat_trades in enumerate(strategies_data):
-                if not strat_trades: continue
+                if i % 5 == 0: print(f"[DEBUG] Analyzing Strat {i}/{len(strategies_data)}", flush=True)
+                # Default to empty series if anything fails, preserving index alignment
+                daily_returns = pd.Series(dtype=float)
+
+                if strat_trades:
+                    trades_df = pd.DataFrame(strat_trades)
+                    analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+                    if analysis_result:
+                        _, daily_returns = analysis_result
                 
-                trades_df = pd.DataFrame(strat_trades)
-                analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy(), broker_config=request.broker_config)
-                if analysis_result:
-                    _, daily_returns = analysis_result
-                    individual_analyses.append(daily_returns)
+                individual_analyses.append(daily_returns)
             
-            if not individual_analyses:
-                print("⚠️ No se pudieron analizar estrategias individuales. Deteniendo.")
-                yield f"data: {json.dumps({'status': 'error', 'message': 'No individual strategies could be analyzed.'})}\n\n"
-                return
+            # Check if we have at least one valid analysis to proceed with meaningful correlation
+            # (Though even with all empties, code should ideally not crash, just return 0s)
+            valid_analyses = [s for s in individual_analyses if not s.empty]
+            if not valid_analyses:
+                print("⚠️ No se pudieron analizar estrategias individuales (o todas vacías).")
+                # We do not return here, we let it proceed, but correlation will be trivial.
+                # yield f"data: {json.dumps({'status': 'warning', 'message': 'Individual analysis failed for all.'})}\n\n"
             
             yield f"data: {json.dumps({'status': 'info', 'message': 'Calculando matriz de correlación...'})}\n\n"
-
+            
+            print(f"[DEBUG] Concatenating {len(individual_analyses)} series and computing correlation...", flush=True)
             correlation_matrix = pd.concat(individual_analyses, axis=1).corr()
+            print(f"[DEBUG] Correlation Matrix Computed. Shape: {correlation_matrix.shape}", flush=True)
 
             num_strategies = len(strategies_data)
             indices = list(range(num_strategies))
-            max_combo_size = min(num_strategies, 12)
-            min_combo_size = 2
+            
+            # FIX: Respect user provided max_size
+            if params.max_size and params.max_size > 0:
+                max_combo_size = min(num_strategies, params.max_size)
+            else:
+                max_combo_size = min(num_strategies, 12)
+                
+            min_combo_size = params.min_size if params.min_size and params.min_size > 0 else 2
 
             # --- LÓGICA HÍBRIDA: Exhaustiva vs. Monte Carlo ---
             # Si hay base_indices, reducimos el espacio de búsqueda
             base_indices = set(params.base_indices) if params.base_indices else set()
             
             # --- VALIDACIÓN CRÍTICA: Correlación de Estrategias Base ---
-            # Si las estrategias base YA superan el umbral, toda búsqueda es fútil.
-            if base_indices:
+            # Si las estrategias base YA superan el umbral, toda búsqueda es fútil (SOLO si estamos obligados a usarlas todas).
+            # En Modo Lab (Flexible Base) Y HÍBRIDO, esto no es un error crítico, pues solo usaremos subconjuntos.
+            if base_indices and params.objective != 'lab' and params.objective != 'hybrid':
+                print(f"[DEBUG] Checking Base Correlation (Strict Mode - Not Lab/Hybrid)...", flush=True)
                 base_list = list(base_indices)
                 for i1_idx, i1 in enumerate(base_list):
                     for i2 in base_list[i1_idx+1:]:
@@ -492,7 +540,12 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                             yield f"data: {json.dumps({'status': 'stopped', 'message': 'Búsqueda abortada por conflicto en parámetros.'})}\n\n"
                             return
 
-            available_indices = [i for i in indices if i not in base_indices]
+            if params.allowed_indices and len(params.allowed_indices) > 0:
+                 # Lab Mode / Subset Search: Restrict available pool to allowed_indices
+                 allowed_set = set(params.allowed_indices)
+                 available_indices = [i for i in indices if i not in base_indices and i in allowed_set]
+            else:
+                 available_indices = [i for i in indices if i not in base_indices]
             
             # Ajustar tamaños de combinación
             # El tamaño total del portafolio será len(base_indices) + k_random
@@ -523,6 +576,11 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
             elif search_method == 'monte_carlo':
                 use_monte_carlo = True
                 print(f"DEBUG: Search Method FORCED to Monte Carlo.")
+            elif params.objective == 'lab' or params.objective == 'hybrid':
+                # FIX: Lab and Hybrid mode logic (flexible base subsets) requires Monte Carlo generation
+                # Hybrid needs it to prune the base portfolio if it's too large/correlated.
+                use_monte_carlo = True
+                print(f"DEBUG: Search Method FORCED to Monte Carlo (Lab/Hybrid Mode Requirement).")
             else:
                 # Auto (Default)
                 use_monte_carlo = total_exhaustive_combinations > params.search_threshold
@@ -533,18 +591,98 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
 
             databank_portfolios = []
 
+            # --- DIAGNOSTICS COUNTERS ---
+            stats_checked = 0
+            stats_rejected_corr = 0
+            stats_rejected_sat_corr = 0
+            stats_rejected_size = 0
+            stats_errors = 0
+
+            # --- PRE-CALCULATE BASE SCORE (Hoisted for both Monte Carlo & Exhaustive) ---
+            print(f"DEBUG: Params Objective: '{params.objective}' | Base Indices: {params.base_indices} | Metric Key: {params.metric_to_optimize_key}", flush=True)
+            
+            # Helper to calculate metrics for a given combo (reusing scope variables)
+            def calculate_portfolio_metrics_helper(combo_indices):
+                try:
+                    print(f"[DEBUG Helper] Combo: {len(combo_indices)} strategies", flush=True) 
+                    p_trades = []
+                    for s_idx in combo_indices:
+                        if s_idx < len(strategies_data):
+                            p_trades.extend(strategies_data[s_idx])
+                    
+                    if not p_trades:
+                        return {}
+
+                    p_df = pd.DataFrame(p_trades)
+                    print(f"[DEBUG Helper] DF Rows: {len(p_df)}. Processing...", flush=True)
+                    
+                    # Note: benchmark_data_df and request.broker_config are captured from closure
+                    an_res = process_strategy_data(p_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+                    print(f"[DEBUG Helper] Done.", flush=True)
+                    return an_res[0] if an_res else {}
+                except Exception as ex:
+                    print(f"Error in helper: {ex}")
+                    return {}
+
+            if params.objective == 'lab' or params.objective == 'boost':
+                 try:
+                     # FIX: Use local helper with captured scope
+                     
+                     # CASE A: Multi-Lab (Reference Portfolios Present) -> Target is MINIMUM of selected
+                     if params.objective == 'lab' and params.reference_portfolios:
+                         ref_scores = []
+                         for ref_idx_list in params.reference_portfolios:
+                             if not ref_idx_list: continue
+                             m = calculate_portfolio_metrics_helper(ref_idx_list)
+                             val = m.get(params.metric_to_optimize_key, 0.0)
+                             ref_scores.append(val)
+                         
+                         if ref_scores:
+                             base_score = min(ref_scores)
+                             print(f"DEBUG: Multi-Lab Mode. Reference Scores: {ref_scores} -> Target (Min): {base_score:.4f}", flush=True)
+                         elif params.base_indices:
+                             # Fallback if ref portfolios are empty for some reason
+                             m = calculate_portfolio_metrics_helper(params.base_indices)
+                             base_score = m.get(params.metric_to_optimize_key, 0.0)
+                             print(f"DEBUG: Multi-Lab Fallback. Target: {base_score:.4f}", flush=True)
+                     
+                     # CASE B: Single Lab / Boost -> Target is Metric of Base Indices
+                     elif params.base_indices:
+                         base_metrics = calculate_portfolio_metrics_helper(params.base_indices)
+                         base_score = base_metrics.get(params.metric_to_optimize_key, 0.0) if params.metric_to_optimize_key in base_metrics else 0.0
+                         print(f"DEBUG: Base Portfolio Score ({params.metric_to_optimize_key}): {base_score}", flush=True)
+                         
+                 except Exception as e:
+                     print(f"Error calc base metrics: {e}", flush=True)
+                     base_score = -999999.0
+
             if use_monte_carlo:
                 msg = f'Búsqueda Monte Carlo iniciada ({"Forzada" if search_method == "monte_carlo" else f"Auto > {params.search_threshold}"})'
+                if params.objective == 'lab' and 'base_score' in locals():
+                     msg += f" | 🧪 LAB: Superar Base {params.metric_to_optimize_key} > {base_score:.4f}"
+                     
                 yield f"data: {json.dumps({'status': 'info', 'message': msg})}\n\n"
             else:
                 total_iterations = total_exhaustive_combinations
                 msg = f'Búsqueda Exhaustiva iniciada ({"Forzada" if search_method == "brute_force" else "Auto"}) - {total_iterations} combinaciones'
+                if params.objective == 'lab' and 'base_score' in locals():
+                     msg += f" | 🧪 LAB: Superar Base {params.metric_to_optimize_key} > {base_score:.4f}"
                 yield f"data: {json.dumps({'status': 'info', 'message': msg})}\n\n"
 
+            # Initialize Lab Mode tracker variable
+            current_base_subset = []
+            shuffle_interval = params.re_shuffle_interval if params.re_shuffle_interval and params.re_shuffle_interval > 0 else 5000
+
+            print(f"[DEBUG] Entering Main Search Loop...", flush=True)
             while True: # Bucle infinito que se controla con Pausar/Detener
                 iteration_counter += 1
+                if iteration_counter % 1 == 0:
+                     print(f"[DEBUG] Loop Alive: {iteration_counter}", flush=True)
 
                 # --- LÓGICA DE CONTROL ---
+                if iteration_counter % 100 == 0:
+                    print(f"[DEBUG] Loop Iteration {iteration_counter}", flush=True)
+
                 if _is_search_stopped:
                     yield f"data: {json.dumps({'status': 'stopped', 'message': 'Búsqueda detenida por el usuario.'})}\n\n"
                     return
@@ -552,25 +690,160 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                     yield f"data: {json.dumps({'status': 'paused', 'message': 'Búsqueda pausada...'})}\n\n"
                     await asyncio.sleep(1) # Esperar 1 segundo y volver a comprobar
 
+                # DEBUG: Heartbeat to confirm loop is alive
+                # if iteration_counter % 100 == 0:
+                #     print(f"[DEBUG] Loop Alive: {iteration_counter}", flush=True)
+
                 # Enviar progreso
-                if iteration_counter > 0 and iteration_counter % 20 == 0:
+                # FIX: Send update on first iteration so user sees "Fixed Strategies" / Context immediately
+                if iteration_counter > 0 and (iteration_counter % 20 == 0 or iteration_counter == 1):
+                    # Build detailed stats message
+                    stats_msg = f" | Total: {stats_checked} | Correlación: -{stats_rejected_corr} | SatCorr: -{stats_rejected_sat_corr}"
+                    
                     progress_message = f"Progreso: {iteration_counter}"
                     if not use_monte_carlo:
                         progress_message += f"/{total_iterations} ({((iteration_counter/total_iterations)*100):.1f}%)"
+                    
+                    # Append diagnostics
+                    progress_message += stats_msg
+                    
+                    if params.objective == 'lab':
+                         # If current_base_subset is empty (first iteration), show all base indices as default
+                         subset_to_show = current_base_subset if current_base_subset else list(base_indices)
+                         
+                         fixed_names = []
+                         for idx in subset_to_show:
+                             name = request.strategy_names[idx] if hasattr(request, 'strategy_names') and idx < len(request.strategy_names) else f"#{idx+1}"
+                             fixed_names.append(name)
+                         
+                         progress_message += f" | 🧪 Fijas: [{', '.join(fixed_names)}]"
+                         if 'base_score' in locals():
+                             progress_message += f" | 🎯 Superar {params.metric_to_optimize_key} > {base_score:.4f}"
+
                     yield f"data: {json.dumps({'status': 'progress', 'message': progress_message})}\n\n"
                     await asyncio.sleep(0.01)
+
+                # --- LIVE SCANNING FEEDBACK ---
+                if iteration_counter % 7 == 0: # Update frequently for "fast" feel
+                     # We can't show the exact current combo because it's generated below, but we can show the previous one or generate a sample
+                     # Better: Show the one we are ABOUT to check? Or just the last one checked.
+                     pass 
 
                 # Generar una combinación
                 combo_indices = []
                 if use_monte_carlo:
-                    # Elegir tamaño aleatorio para la parte variable
-                    # Si effective_max_k es 0, k será 0
-                    if effective_max_k > 0:
-                        k = random.randint(effective_min_k, effective_max_k)
-                        if k > len(available_indices): continue
-                        combo_indices = random.sample(available_indices, k)
+                    if (params.objective == 'lab' or params.objective == 'hybrid') and base_indices:
+                        # --- FLEXIBLE BASE LOGIC (Smart Pruning) ---
+                        # Only reshuffle the base subset every 'shuffle_interval' iterations
+                        if iteration_counter == 1 or iteration_counter % shuffle_interval == 0 or not current_base_subset:
+                             # 1. Randomly select a SUBSET of the base indices
+                             base_list = list(base_indices)
+                             # FIX: Ensure we don't pick more base strategies than the global max_size allows
+                             limit_k = len(base_list)
+                             if max_combo_size and max_combo_size > 0:
+                                 limit_k = min(limit_k, max_combo_size)
+                             
+                             k_base = random.randint(1, limit_k) 
+                             raw_subset = random.sample(base_list, k_base)
+                             
+                             # 2. SMART PRUNING: Ensure the base subset itself is valid
+                             # If the base strategies are already correlated > threshold, the loop will reject everything.
+                             # We must remove conflicting strategies upfront.
+                             valid_subset = list(raw_subset)
+                             
+                             try:
+                                 # Simple iterative pruning
+                                 # We need to re-check correlations every removal or do it in one pass.
+                                 # N^2 check is fine for small k_base (usually < 20)
+                                 has_conflict = True
+                                 loop_safety = 0
+                                 while has_conflict and len(valid_subset) > 1 and loop_safety < 100:
+                                     has_conflict = False
+                                     loop_safety += 1
+                                     
+                                     # Find first conflict
+                                     conflict_pair = None
+                                     for i in range(len(valid_subset)):
+                                         for j in range(i + 1, len(valid_subset)):
+                                             s1, s2 = valid_subset[i], valid_subset[j]
+                                                 
+                                             # Safety check for indices
+                                             if s1 >= len(correlation_matrix) or s2 >= len(correlation_matrix):
+                                                 continue
+
+                                             # Lookup correlation (handle NaNs just in case)
+                                             c_val = correlation_matrix.iloc[s1, s2]
+                                             if pd.isna(c_val): c_val = 0.0
+                                             
+                                             if c_val > params.correlation_threshold:
+                                                 conflict_pair = (i, j) # Indices in valid_subset
+                                                 break
+                                         if conflict_pair: break
+                                     
+                                     if conflict_pair:
+                                         has_conflict = True
+                                         # Remove random one of the pair to avoid bias? Or just the second.
+                                         # User suggested random. Let's do random.
+                                         idx_to_remove = conflict_pair[1] if random.random() > 0.5 else conflict_pair[0]
+                                         removed_strat = valid_subset.pop(idx_to_remove)
+                                 
+                                 if loop_safety >= 100:
+                                     print(f"[WARNING] Pruning loop safety limit reached.", flush=True)
+
+                             except Exception as e:
+                                 print(f"[ERROR] Smart Pruning Failed: {e}", flush=True)
+                                 # Fallback: Just pick one random strategy if pruning crashes
+                                 if raw_subset:
+                                     valid_subset = [random.choice(raw_subset)]
+
+                             current_base_subset = valid_subset
+                        
+                        # 3. Fill the rest with candidates from available_indices
+                        target_size = random.randint(min_combo_size, max_combo_size)
+                        needed = max(0, target_size - len(current_base_subset))
+                        
+                        # Prevent duplicates: Filter out strategies already in the base subset
+                        # This is CRITICAL for Hybrid mode where self-correlation (1.0) leads to rejection.
+                        mining_pool = [x for x in available_indices if x not in current_base_subset]
+
+                        if len(mining_pool) >= needed:
+                             combo_candidates = random.sample(mining_pool, needed)
+                             combo_indices = tuple(combo_candidates)
+                             combo = tuple(sorted(current_base_subset + list(combo_indices)))
+                        else:
+                             # Not enough unique strategies to fill target size
+                             # Just use what we have (Base + All Remaining Unique)
+                             combo_indices = tuple(mining_pool)
+                             combo = tuple(sorted(current_base_subset + list(combo_indices)))
                     else:
-                        combo_indices = []
+                        # Standard Monte Carlo
+                        # Randomly select k extra strategies
+                        # Si effective_max_k es 0, k será 0
+                        if effective_max_k > 0:
+                            # FIX for Boost/Small Pools: Adjust max_k to what is actually available
+                            # Prevent duplicates globally for Boost/Satellite too
+                            mining_pool = [x for x in available_indices if x not in base_indices]
+                            
+                            pool_size = len(mining_pool)
+                            actual_max_k = min(effective_max_k, pool_size)
+                            
+                            if actual_max_k >= effective_min_k:
+                                k = random.randint(effective_min_k, actual_max_k)
+                                combo_indices = random.sample(mining_pool, k)
+                            else:
+                                continue
+                        else:
+                            combo_indices = []
+
+                        
+                        # Standard Construction
+                        combo = tuple(sorted(list(base_indices) + list(combo_indices)))
+
+                        # FIX: In Boost mode (Improve/Repair), we want VARIATIONS (Base + k). 
+                        # If k=0, we just return the base, which we already have. 
+                        # We skip it to keep searching for additions.
+                        if params.objective == 'boost' and combo == tuple(sorted(base_indices)):
+                             continue
                 else:
                     # Para la búsqueda exhaustiva, necesitamos un generador
                     if 'combinations_generator' not in locals():
@@ -582,33 +855,41 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                         break # Salir del bucle while
                 
                 try:
-                    # Combinar fijos + variables
-                    combo = tuple(sorted(list(base_indices) + combo_indices))
+                    # Constructed in logic above
+                    
+                    # --- LIVE SCANNING FEEDBACK removed to avoid overwriting progress ---
+                    # The useful info is now in the progress message
+                    pass
                     
                     # Si el combo resultante es menor que el mínimo global requerido (por si acaso)
                     if len(combo) < min_combo_size:
+                        stats_rejected_size += 1
                         continue
 
                     is_valid = True
-                    for i1_idx, i1 in enumerate(combo):
-                        for i2 in combo[i1_idx+1:]:
-                            corr_val = correlation_matrix.iloc[i1, i2]
-                            if corr_val > params.correlation_threshold:
-                                is_valid = False
-                                
-                                # Si es el portafolio completo (todas las estrategias), avisar al usuario explícitamente
-                                if len(combo) == num_strategies:
-                                    name1 = request.strategy_names[i1] if hasattr(request, 'strategy_names') and i1 < len(request.strategy_names) else f"#{i1+1}"
-                                    name2 = request.strategy_names[i2] if hasattr(request, 'strategy_names') and i2 < len(request.strategy_names) else f"#{i2+1}"
-                                    warning_msg = f"⚠️ Portafolio completo descartado: Alta correlación ({corr_val:.2f}) entre '{name1}' y '{name2}'."
-                                    yield f"data: {json.dumps({'status': 'info', 'message': warning_msg})}\n\n"
+                    # FIX: Skip internal correlation check for Laboratory mode (as per user request)
+                    # User wants to filter ONLY by KPI improvement in Lab mode.
+                    if params.objective != 'lab':
+                        for i1_idx, i1 in enumerate(combo):
+                            for i2 in combo[i1_idx+1:]:
+                                corr_val = correlation_matrix.iloc[i1, i2]
+                                if corr_val > params.correlation_threshold:
+                                    is_valid = False
+                                    stats_rejected_corr += 1
+                                    
+                                    # Si es el portafolio completo (todas las estrategias), avisar al usuario explícitamente
+                                    if len(combo) == num_strategies:
+                                        name1 = request.strategy_names[i1] if hasattr(request, 'strategy_names') and i1 < len(request.strategy_names) else f"#{i1+1}"
+                                        name2 = request.strategy_names[i2] if hasattr(request, 'strategy_names') and i2 < len(request.strategy_names) else f"#{i2+1}"
+                                        warning_msg = f"⚠️ Portafolio completo descartado: Alta correlación ({corr_val:.2f}) entre '{name1}' y '{name2}'."
+                                        yield f"data: {json.dumps({'status': 'info', 'message': warning_msg})}\n\n"
 
-                                # Log rejection for larger portfolios to debug user issue
-                                # if len(combo) >= 5:
-                                #     print(f"DEBUG: Rejected combo {combo} due to correlation {corr_val:.2f} > {params.correlation_threshold} between {i1} and {i2}", flush=True)
+                                    # Log rejection for larger portfolios to debug user issue
+                                    # if len(combo) >= 5:
+                                    #     print(f"DEBUG: Rejected combo {combo} due to correlation {corr_val:.2f} > {params.correlation_threshold} between {i1} and {i2}", flush=True)
+                                    break
+                            if not is_valid:
                                 break
-                        if not is_valid:
-                            break
                     
                     if not is_valid:
                         continue
@@ -662,6 +943,56 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                         print(f"[DEBUG] Metric: {params.metric_to_optimize_key} | Val: {metrics.get(params.metric_to_optimize_key)} | NormTarget: {params.normalization_target} | Scale: {scaling_factor if 'scaling_factor' in locals() else 'N/A'}")
 
                         if metrics and params.metric_to_optimize_key in metrics:
+                            # --- Calc Correlation vs Reference (Single or Multi) ---
+                            max_corr = -1.0
+                            
+                            # 1. Multi-Satellite Check (Only for Satellite/Search objective, NOT Lab)
+                            if params.reference_portfolios and params.objective != 'lab':
+                                correlations = []
+                                for ref_indices in params.reference_portfolios:
+                                    # Skip empty refs
+                                    if not ref_indices: continue
+                                    
+                                    c = calculate_portfolio_correlation(combo, ref_indices, correlation_matrix)
+                                    correlations.append(c)
+                                
+                                # Use the MAX correlation for filtering (must be uncorrelated to ALL, so max < limit)
+                                max_corr = max(correlations) if correlations else 0.0
+                                metrics['correlationWithBase'] = max_corr # Store max for display
+                                metrics['multiRefCorrelations'] = correlations # Store details for tooltip
+                                # print(f"[DEBUG] Multi-Satellite Correlations: {correlations} | Max: {max_corr}", flush=True)
+
+                            # 2. Single Satellite Check (Fallback)
+                            elif params.reference_indices:
+                                try:
+                                    corr_val = calculate_portfolio_correlation(combo, params.reference_indices, correlation_matrix)
+                                    metrics['correlationWithBase'] = corr_val
+                                    max_corr = corr_val
+                                except Exception as e:
+                                    pass
+
+                            # --- SATELLITE FILTER ---
+                            if params.objective != 'boost' and params.objective != 'lab' and \
+                               params.satellite_correlation_threshold is not None and \
+                               max_corr > -1.0 and \
+                               max_corr > params.satellite_correlation_threshold:
+                                stats_rejected_sat_corr += 1
+                                continue
+
+                            # --- LAB FILTER: BEAT THE BASE ---
+                            # Logic: If 'base_score' exists, new combo must strict improve it.
+                            # In Multi-Lab, base_score is the MIN of the selected portfolios.
+                            if (params.objective == 'lab' or params.objective == 'boost' or params.objective == 'hybrid') and 'base_score' in locals():
+                                 current_score = metrics.get(params.metric_to_optimize_key, 0.0)
+                                 
+                                 # Logic for Maximizing metrics
+                                 if current_score <= base_score:
+                                      # Reject if not improving (Strictly Greater structure for 'Mining')
+                                      # print(f"DEBUG: Rejected {current_score} <= {base_score}", flush=True)
+                                      continue
+                                 # else:
+                                 #      print(f"DEBUG: ACCEPTED {current_score} > {base_score}", flush=True)
+
                             metric_val = metrics[params.metric_to_optimize_key]
 
                             # --- CUSTOM OPTIMIZATION (CAGR x/÷ KPI) ---

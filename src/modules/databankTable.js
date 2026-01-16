@@ -28,8 +28,10 @@ const AVAILABLE_COLUMNS = [
     { id: 'monthlyAvgProfit', label: 'Monthly Avg', minWidth: 100 },
     { id: 'strategyCount', label: 'Strategies #', minWidth: 80 },
     { id: 'maxMarginRequired', label: 'Max Margin', minWidth: 100 },
-    { id: 'gammaFlowScore', label: 'Gamma Flow Score', minWidth: 100 }
+    { id: 'gammaFlowScore', label: 'Gamma Flow Score', minWidth: 100 },
+    { id: 'correlationWithBase', label: 'Corr. vs Base', minWidth: 100 }
 ];
+
 
 // Default configuration
 const DEFAULT_CONFIG = {

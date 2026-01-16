@@ -113,7 +113,7 @@ export const runAnalysis = async () => {
  * @param {boolean} isRiskNormalized - Si se debe normalizar por riesgo.
  * @param {number} targetMaxDD - Valor objetivo para la normalización.
  */
-const getFullAnalysisFromBackend = async (strategies, portfolios, isRiskNormalized, targetMaxDD) => {
+export const getFullAnalysisFromBackend = async (strategies, portfolios, isRiskNormalized, targetMaxDD) => {
 
     const brokerConfig = loadBrokerConfig();
 

@@ -35,11 +35,15 @@ export const dom = {
 
     // Sidebar Navigation
     navAnalysis: document.getElementById('nav-analysis'),
+    navMonitor: document.getElementById('nav-monitor'), // New
     navConfig: document.getElementById('nav-config'),
     navHelp: document.getElementById('nav-help'),
 
     // Layout Panels
     viewerContainer: document.getElementById('viewer-container'),
+    liveMonitorView: document.getElementById('live-monitor-view'), // New
+    liveMonitorContent: document.getElementById('live-monitor-content'), // New
+    monitorRefreshBtn: document.getElementById('monitor-refresh-btn'), // New
     sourcePanel: document.getElementById('source-panel'),
     panelResizer: document.getElementById('panel-resizer'),
 
@@ -50,7 +54,7 @@ export const dom = {
     findDatabankPortfoliosBtn: document.getElementById('findDatabankPortfoliosBtn'),
     databankContent: document.getElementById('databank-content'), // Replaces databankSection
     databankSizeInput: document.getElementById('databank-size'), // Hidden/Removed in new UI? Check index.html
-    databankStatus: document.getElementById('databank-status'), // Hidden
+    databankStatus: document.getElementById('databank-status-bar'), // Used for Detailed Card injection
     pauseSearchBtn: document.getElementById('pause-search-btn'), // Hidden
     stopSearchBtn: document.getElementById('stop-search-btn'), // Hidden
     clearDatabankBtn: document.getElementById('clear-databank-btn'), // Hidden

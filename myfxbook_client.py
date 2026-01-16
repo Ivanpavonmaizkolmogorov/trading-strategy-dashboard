@@ -224,6 +224,19 @@ class MyfxbookClient:
                  first_trade = history[0]
                  print(f"[Myfxbook] 🔍 First Trade Keys: {list(first_trade.keys())}")
                  print(f"[Myfxbook] 🔍 First Trade Data (Sample): {str(first_trade)}")
+                 
+                 # DEBUG: Check for missing closeTime
+                 missing_close_time_count = 0
+                 for t in history:
+                     if 'closeTime' not in t or not t['closeTime']:
+                         missing_close_time_count += 1
+                         if missing_close_time_count <= 5: # Log first 5 only
+                             print(f"[Myfxbook] ⚠️ Found trade with MISSING closeTime: {t}")
+                 
+                 if missing_close_time_count > 0:
+                     print(f"[Myfxbook] ⚠️ TOTAL trades with missing closeTime: {missing_close_time_count} / {len(history)}")
+                 else:
+                     print(f"[Myfxbook] ✅ All {len(history)} trades have valid closeTime.")
             
             return history
             

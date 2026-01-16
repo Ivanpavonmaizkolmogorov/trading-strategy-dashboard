@@ -5,6 +5,7 @@ import { CustomizableTable } from './tableEngine.js';
 import { openSearchConfigModal } from './searchConfig.js';
 import { analyzeCustomPortfolio } from './portfolioBuilder.js?v=2';
 import { showToast } from './notifications.js';
+import { calculateSQMetrics } from './sqAnalysis_v2.js?v=10';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -68,6 +69,98 @@ export const renderStrategiesTable = () => {
     const tableBody = document.getElementById('strategies-table-body');
     if (!tableBody || !tableHead) return;
 
+    // 0. Pre-computation: Identify Linked Strategies
+    // Map: originalIndex -> Array of Portfolio Names
+    const linkedStrategiesMap = new Map();
+    // Map: Strategy Name -> Array of Portfolio Names (For strategies with virtual indices)
+    const linkedStrategyNamesMap = new Map();
+    // Map: Normalized Name -> Array (Fuzzy)
+    const linkedStrategyNormalizedNamesMap = new Map();
+
+    // Helper for normalization
+    // Helper for normalization
+    const normalizeName = (name) => {
+        if (!name) return '';
+        return name.toLowerCase()
+            .replace('.csv', '')
+            .replace(/\(\d+\)/g, '')   // Remove (1), (2)
+            // .replace(/ - improved \d+(\.\d+)?/gi, '') // KEEP optimization suffix for strict matching
+            .replace(/[\s\._\-]/g, ''); // Remove spaces, dots, underscores, dashes
+    };
+
+    // Helper for fuzzy matching (Duplicated from focusMode.js for independence)
+    const findBestMatch = (strategyName, availableKeys) => {
+        if (!availableKeys || availableKeys.length === 0) return null;
+        const cleanTarget = normalizeName(strategyName);
+
+        let bestMatch = null;
+        let highestScore = 0;
+
+        availableKeys.forEach(key => {
+            const cleanKey = normalizeName(key);
+            let score = 0;
+            if (cleanKey === cleanTarget) score = 100;
+            else if (cleanKey.includes(cleanTarget) || cleanTarget.includes(cleanKey)) score = 50;
+
+            if (score > highestScore) {
+                highestScore = score;
+                bestMatch = key;
+            }
+        });
+        return bestMatch;
+    };
+
+    if (state.savedPortfolios) {
+        state.savedPortfolios.forEach(p => {
+            // Debug Linked Logic
+            // console.log(`[StrategiesTable] Processing Portfolio for Links: ${p.name}`);
+
+            // Hybrid Linking Logic:
+            // If we have explicit Strategy Names, rely on them implicitly as they are stable.
+            // Only fall back to Indices if Names are missing (legacy portfolios).
+            const hasNames = p.strategyNames && Array.isArray(p.strategyNames) && p.strategyNames.length > 0;
+
+            if (p.indices && !hasNames) {
+                p.indices.forEach((idx, internalIdx) => {
+                    // VALIDATION: If we have strategy names, check if this index makes sense
+                    // This is heuristic: if p.strategyNames exists, we should ideally rely on it or cross-check
+                    // But indices are supposedly the specific global index source.
+                    // Risk: global indices shift if files are added/removed/filtered.
+
+                    if (!linkedStrategiesMap.has(idx)) {
+                        linkedStrategiesMap.set(idx, []);
+                    }
+                    linkedStrategiesMap.get(idx).push(p.name);
+                });
+            } else if (p.indices && hasNames) {
+                // console.log(`[StrategiesTable] Skipping indices for ${p.name} in favor of names.`);
+            }
+            // Also map by name
+            if (p.strategyNames && Array.isArray(p.strategyNames)) {
+                p.strategyNames.forEach(name => {
+                    if (!linkedStrategyNamesMap.has(name)) {
+                        linkedStrategyNamesMap.set(name, []);
+                    }
+                    // Avoid duplicates
+                    const list = linkedStrategyNamesMap.get(name);
+                    if (!list.includes(p.name)) list.push(p.name);
+                    if (!list.includes(p.name)) list.push(p.name);
+
+                    // Populate Normalized Map
+                    const norm = normalizeName(name);
+                    if (!linkedStrategyNormalizedNamesMap.has(norm)) {
+                        linkedStrategyNormalizedNamesMap.set(norm, []);
+                    }
+                    const nList = linkedStrategyNormalizedNamesMap.get(norm);
+                    if (!nList.includes(p.name)) nList.push(p.name);
+                });
+            }
+        });
+    }
+
+    console.log(`[StrategiesTable] Linked Strategies Map created. Size: ${linkedStrategiesMap.size}`);
+    console.log(`[StrategiesTable] Linked Strategy Names Map created. Size: ${linkedStrategyNamesMap.size}`);
+
     const config = strategiesTable.getConfig();
 
     // 1. Render Headers
@@ -75,9 +168,66 @@ export const renderStrategiesTable = () => {
 
     // Checkbox Header
     const thCheckbox = document.createElement('th');
-    thCheckbox.className = 'px-4 py-3 w-10 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10';
-    thCheckbox.innerHTML = '<input type="checkbox" id="select-all-strategies" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-700 cursor-pointer" title="Select/Deselect All">';
+    thCheckbox.className = 'px-4 py-3 w-28 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-900 z-10 flex items-center gap-2';
+
+    let btnText = 'All';
+    let btnClass = 'bg-gray-800 border-gray-600 text-gray-400 hover:text-white';
+    let btnTitle = 'Show All Strategies';
+
+    // Load filter from storage if not set yet (init)
+    if (!state.linkedStrategiesFilterInitialized) {
+        state.linkedStrategiesFilter = localStorage.getItem('linkedStrategiesFilter') || 'all';
+
+        // UX IMPROVEMENT: If we have NO saved portfolios, forcing 'only' (Linked) makes no sense as it hides everything.
+        // Force reset to 'all' in this case to ensure users see their imported files.
+        if (!state.savedPortfolios || state.savedPortfolios.length === 0) {
+            state.linkedStrategiesFilter = 'all';
+            // Optional: update storage too so it persists for this session context
+            localStorage.setItem('linkedStrategiesFilter', 'all');
+        }
+
+        state.linkedStrategiesFilterInitialized = true;
+    }
+
+    if (state.linkedStrategiesFilter === 'hide') {
+        btnText = 'Unused';
+        btnClass = 'bg-red-900/40 border-red-500 text-red-300 hover:bg-red-900/60';
+        btnTitle = 'Showing Only UNUSED (Hiding Linked)';
+    } else if (state.linkedStrategiesFilter === 'only') {
+        btnText = 'Linked';
+        btnClass = 'bg-teal-900/40 border-teal-500 text-teal-300 hover:bg-teal-900/60';
+        btnTitle = 'Showing Only LINKED Strategies';
+    }
+
+    thCheckbox.innerHTML = `
+        <input type="checkbox" id="select-all-strategies" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-700 cursor-pointer" title="Select/Deselect All">
+        <button id="toggle-linked-strategies" class="flex items-center justify-center px-2 py-0.5 h-6 text-[10px] font-bold uppercase rounded border transition-colors ${btnClass}" title="${btnTitle}">
+            ${btnText}
+        </button>
+    `;
     tableHead.appendChild(thCheckbox);
+
+    // Bind toggle event
+    setTimeout(() => {
+        const toggleBtn = document.getElementById('toggle-linked-strategies');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Cycle: all -> only (Used) -> hide (Unused) -> all
+                let nextState = 'all';
+                if (state.linkedStrategiesFilter === 'all') nextState = 'only';
+                else if (state.linkedStrategiesFilter === 'only') nextState = 'hide';
+                else nextState = 'all';
+
+                console.log(`[StrategiesTable] 🔘 Button Clicked. Current: ${state.linkedStrategiesFilter} -> Next: ${nextState}`);
+
+                state.linkedStrategiesFilter = nextState;
+                localStorage.setItem('linkedStrategiesFilter', nextState);
+
+                renderStrategiesTable();
+            });
+        }
+    }, 0);
 
     config.visibleColumns.forEach(colId => {
         const colDef = AVAILABLE_COLUMNS.find(c => c.id === colId);
@@ -139,12 +289,293 @@ export const renderStrategiesTable = () => {
         return;
     }
 
-    let strategies = window.analysisResults.filter(r =>
-        !r.is_saved_portfolio && !r.is_databank_portfolio && !r.isSavedPortfolio && !r.isPortfolio
-    );
+    let strategies = [];
 
-    // FILTER: Reality Check Mode
-    if (state.activeViewMode === 'reality-check') {
+    // MODIFICATION: Source strategies from Saved Portfolios in Reality Check mode
+    // This supports showing the ACTUAL strategies (Xausdjpy...) instead of global defaults (BTC...)
+    let sourcedFromPortfolios = false;
+    if (state.activeViewMode === 'reality-check' && state.savedPortfolios && state.savedPortfolios.length > 0) {
+        console.log(`[StrategiesTable] ⚡ DEBUG: Attempting to source from ${state.savedPortfolios.length} saved portfolios.`);
+
+        const seenNames = new Set();
+
+        state.savedPortfolios.forEach((p, pIdx) => {
+            // Processing helper
+            // Processing helper
+            const processStrategy = (name) => {
+                if (seenNames.has(name)) return;
+                seenNames.add(name);
+
+                // Try to find the FULL strategy object from state.strategies (Backtest Data Source)
+                let stratObj = null;
+                if (state.strategies && state.strategies.length > 0) {
+                    // Try exact match first
+                    stratObj = state.strategies.find(s => s.name === name);
+                    if (!stratObj) {
+                        // Try normalized match
+                        const normName = normalizeName(name);
+                        stratObj = state.strategies.find(s => normalizeName(s.name) === normName);
+                    }
+                }
+
+                // If not found, create a shell object
+                if (!stratObj) {
+                    stratObj = { name: name, metrics: {}, originalIndex: -1 };
+                } else {
+                    // Clone it to safely attach realMetrics
+                    stratObj = { ...stratObj };
+                }
+
+                // Attach Source Portfolio Index for Modal Context
+                stratObj.sourcePortfolioIndex = pIdx;
+
+                // Calculate Real Metrics if available
+                // Calculate Real Metrics if available
+                if (p.realMetrics && p.realMetrics._tradesById) {
+                    let trades = [];
+                    let matchSource = '';
+
+                    // Robust Normalizer (locally scoped for this logic)
+                    const getCleanName = (n) => {
+                        return n.replace(/\.csv$/i, '')
+                            .replace(/\(\d+\)/g, '') // Remove (1), (2)
+                            .replace(/ - Improved \d+(\.\d+)?/gi, '') // Remove optimization suffix
+                            .trim();
+                    };
+
+                    const cleanName = getCleanName(name);
+
+                    // --- ROBUST ID LOOKUP (Ported from ui.js) ---
+                    // 1. Resolve Strategy ID from loaded files matching the name
+                    let strategyId = name;
+                    const normalizeForId = s => s.replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    const normalizedName = normalizeForId(name);
+
+                    if (state.loadedStrategyFiles) {
+                        const file = state.loadedStrategyFiles.find(f => normalizeForId(f.name) === normalizedName);
+                        if (file && file.strategyId) {
+                            strategyId = file.strategyId;
+                            console.log(`[StrategiesTable] 🆔 Resolved Strategy ID for '${name}': ${strategyId}`);
+                        } else {
+                            // console.log(`[StrategiesTable] ❌ File not found for '${name}' (Norm: ${normalizedName})`);
+                        }
+                    } else {
+                        console.warn('[StrategiesTable] ⚠️ state.loadedStrategyFiles is missing!');
+                    }
+
+                    // 1. Try Explicit Magic Number Mapping (Priority)
+                    // Robust Lookup Keys
+                    const mapById = state.magicNumberMap ? state.magicNumberMap[strategyId] : null;     // Key: STRAT_ID
+                    const mapByName = state.magicNumberMap ? state.magicNumberMap[name] : null;         // Key: Original Name
+                    const mapByClean = state.magicNumberMap ? state.magicNumberMap[cleanName] : null;   // Key: Clean Name
+                    const mapByNorm = state.magicNumberMap ? state.magicNumberMap[normalizedName] : null; // Key: Normalized Name
+
+                    // Merge all potential lookups (Priority: ID > Name > Clean)
+                    let mapEntry = mapById || mapByName || mapByClean || mapByNorm;
+
+                    if (!mapEntry) {
+                        console.warn(`[StrategiesTable] ⚠️ No Mapping found for '${name}' (ID: ${strategyId})`);
+                    } else {
+                        console.log(`[StrategiesTable] ✅ Mapping found for '${name}':`, mapEntry);
+                    }
+
+                    if (mapEntry) {
+                        const mappedKeys = Array.isArray(mapEntry) ? mapEntry : [mapEntry];
+
+                        // DEBUG: Inspect what is inside realMetrics to see why we fail
+                        const availableKeys = p.realMetrics && p.realMetrics._tradesById ? Object.keys(p.realMetrics._tradesById) : [];
+                        // Only log ONCE per portfolio/loop to avoid spam
+                        if (availableKeys.length > 0 && Math.random() < 0.05) {
+                            console.log(`[StrategiesTable] 🔍 Available Keys in Portfolio '${p.name}':`, availableKeys.slice(0, 5), `... (${availableKeys.length} total)`);
+                        }
+
+                        mappedKeys.forEach(k => {
+                            // Ensure key is string
+                            const keyStr = String(k).trim();
+
+                            if (p.realMetrics._tradesById[keyStr]) {
+                                trades = trades.concat(p.realMetrics._tradesById[keyStr]);
+                                console.log(`[StrategiesTable] 💰 Found ${p.realMetrics._tradesById[keyStr].length} trades for key '${keyStr}'`);
+                            } else {
+                                // Detailed mismatch log for the first few errors
+                                // console.warn(`[StrategiesTable] ⚠️ Key '${keyStr}' NOT found. Best match?`, availableKeys.find(ak => ak.includes(keyStr.substring(0, 10)) || keyStr.includes(ak.substring(0, 10))));
+                            }
+                        });
+
+                        if (trades.length === 0) {
+                            console.warn(`[StrategiesTable] ❌ Mapped Strategy '${name}' had KEYS ${JSON.stringify(mappedKeys)} but found NO TRADES in Portfolio '${p.name}'.`);
+                            // Force dump of keys if we fail completely on a known mapped strategy
+                            if (availableKeys.length < 20) console.log('   -> ALL Available Keys:', availableKeys);
+                        } else {
+                            matchSource = 'Map';
+                        }
+                    }
+
+                    // 2. Fallback to Fuzzy Match
+                    if (trades.length === 0) {
+                        const availableKeys = Object.keys(p.realMetrics._tradesById);
+                        // Enhance findBestMatch usage with clean name? 
+                        // Our local findBestMatch uses 'normalizeName' which is weak. 
+                        // Let's rely on the fuzzy matcher but maybe pass the Clean Name?
+                        // Actually, let's keep it as is but rely on improved normalization?
+                        // No, let's just run findBestMatch with the original name, but update findBestMatch below to be better.
+                        const matchKey = findBestMatch(name, availableKeys);
+                        if (matchKey && p.realMetrics._tradesById[matchKey]) {
+                            trades = p.realMetrics._tradesById[matchKey];
+                            matchSource = 'Fuzzy';
+                        }
+                    }
+
+                    if (trades.length > 0) {
+                        // 3. Normalize Trades for Engine (calculateSQMetrics expects specific format)
+                        const parseDate = (d) => {
+                            if (!d) return null;
+                            // Fix dot notation if present: 01.09.2026 -> 01/09/2026 so Date() understands it
+                            const clean = typeof d === 'string' ? d.replace(/\./g, '/') : d;
+                            const dateObj = new Date(clean);
+                            return isNaN(dateObj.getTime()) ? null : dateObj;
+                        };
+
+                        const normalizedTrades = trades.map(t => {
+                            const parsedClose = parseDate(t.closeTime || t.closeDate); // Support both keys
+                            const parsedOpen = parseDate(t.openTime || t.openDate);
+                            const pnl = parseFloat(t.profit) + parseFloat(t.commission || 0) + parseFloat(t.swap || 0);
+
+                            // Fix for Open Trades (which have no closeTime):
+                            // We set 'exitTime' (for Engine Calcs) to openTime so they are processed.
+                            // We keep 'closeTime' (for UI) as null so it correctly shows as Open ("-").
+                            const effectiveExit = parsedClose || parsedOpen;
+
+                            return {
+                                ...t,
+                                pnl: pnl,
+                                closeTime: parsedClose, // Keep null if missing (UI will show "-")
+                                openTime: parsedOpen,
+                                exitTime: effectiveExit, // Engine requires a timestamp to sequence trades
+                                duration: (parsedClose && parsedOpen) ? (parsedClose - parsedOpen) : 0,
+                                isOpen: !parsedClose // Internal flag
+                            };
+                        }).filter(t => {
+                            // Filter valid trades (Must have at least an Open Time and valid PnL)
+                            const isValid = t.exitTime && !isNaN(t.pnl);
+                            if (!isValid && Math.random() < 0.01) {
+                                console.warn('[StrategiesTable] 🗑️ Trade Dropped:', {
+                                    reason: !t.exitTime ? 'Missing Dates' : 'Invalid PnL',
+                                    rawClose: t.closeTime || t.closeDate,
+                                    parsedExit: t.exitTime,
+                                    pnl: t.pnl
+                                });
+                            }
+                            return isValid;
+                        });
+
+                        // 4. Calculate Full Suite of Metrics using the Engine
+                        const engineMetrics = calculateSQMetrics(normalizedTrades);
+
+                        // 5. Store in realMetrics
+                        if (engineMetrics) {
+                            stratObj.realMetrics = {
+                                ...engineMetrics, // Spread all engine metrics (sharpeRatio, sqn, etc.)
+                                // Explicit overrides/mappings if names differ
+                                totalProfit: engineMetrics.totalProfit,
+                                totalTrades: engineMetrics.totalTrades,
+                                maxDrawdownInDollars: engineMetrics.maxDD,
+                                winningPercentage: engineMetrics.winRate,
+                                profitFactor: engineMetrics.profitFactor,
+                                returnDD: engineMetrics.returnDDRatio,
+                                avgTrade: engineMetrics.avgTrade
+                            };
+                        } else {
+                            // Fallback: If engine failed (e.g. only Open Trades), still show the strategy!
+                            // We can at least show the Trade Count from the raw found trades.
+                            console.warn(`[StrategiesTable] ⚠️ Engine Metrics Verification Failed for '${name}'. Using Fallback (Open Trades Only?).`);
+
+                            // Calculate simple sums from raw trades if possible
+                            const rawCount = trades.length;
+                            const rawProfit = trades.reduce((sum, t) => sum + (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0), 0);
+
+                            stratObj.realMetrics = {
+                                totalTrades: rawCount,
+                                totalProfit: rawProfit, // Show current floating PnL if only open trades
+                                maxDrawdownInDollars: 0,
+                                winningPercentage: 0,
+                                profitFactor: 0,
+                                returnDD: 0,
+                                avgTrade: rawCount > 0 ? (rawProfit / rawCount) : 0,
+                                isFloatingOnly: true // Flag to potentially UI hint
+                            };
+                        }
+                    } else {
+                        // Debug why it failed
+                        // console.warn(`[StrategiesTable] ⚠️ No Real Metrics found for '${name}' (Clean: '${cleanName}') in portfolio '${p.name}'. MapEntry: ${JSON.stringify(mapEntry)}`);
+                    }
+                }
+                strategies.push(stratObj);
+            };
+
+            // 1. Try strategies array (full objects) - usually not populated in this context, but check
+            if (p.strategies && Array.isArray(p.strategies) && p.strategies.length > 0) {
+                // Strategies objects might exist but names are key
+                p.strategies.forEach((s) => {
+                    const name = (typeof s === 'object') ? (s.name || s.id) : s;
+                    if (name) processStrategy(name);
+                });
+            }
+            // 2. Fallback: Try strategyNames array
+            else if (p.strategyNames && Array.isArray(p.strategyNames) && p.strategyNames.length > 0) {
+                p.strategyNames.forEach(name => processStrategy(name));
+            }
+        });
+
+        if (strategies.length > 0) {
+            sourcedFromPortfolios = true;
+            console.log(`[StrategiesTable] Reality Check: Sourced ${strategies.length} unique strategies from Saved Portfolios.`);
+        } else {
+            console.warn(`[StrategiesTable] ⚠️ Failed to source any strategies from saved portfolios despite having them in state.`);
+        }
+    }
+
+    if (!sourcedFromPortfolios && window.analysisResults) {
+        window.analysisResults.forEach((r, i) => {
+            if (!r.is_saved_portfolio && !r.is_databank_portfolio && !r.isSavedPortfolio && !r.isPortfolio) {
+                r.originalIndex = i; // Ensure index is available for filtering
+                strategies.push(r);
+            }
+        });
+    }
+
+    // FILTER: Linked Strategies (3-state)
+    console.log(`[StrategiesTable] 🛡️ Applying Filter: ${state.linkedStrategiesFilter.toUpperCase()}`);
+    console.log(`[StrategiesTable]    - Total Before: ${strategies.length}`);
+    console.log(`[StrategiesTable]    - Linked Map Size: ${linkedStrategiesMap.size}`);
+    console.log(`[StrategiesTable]    - Linked Names Size: ${linkedStrategyNamesMap.size}`);
+
+    if (state.linkedStrategiesFilter === 'hide') {
+        strategies = strategies.filter(s => {
+            const norm = normalizeName(s.name);
+            return !linkedStrategiesMap.has(s.originalIndex) &&
+                !linkedStrategyNamesMap.has(s.name) &&
+                !linkedStrategyNormalizedNamesMap.has(norm);
+        });
+    } else if (state.linkedStrategiesFilter === 'only') {
+        strategies = strategies.filter(s => {
+            const norm = normalizeName(s.name);
+            const isLiked = linkedStrategiesMap.has(s.originalIndex) ||
+                linkedStrategyNamesMap.has(s.name) ||
+                linkedStrategyNormalizedNamesMap.has(norm);
+
+            // Debug failure slightly
+            // if (!isLiked && strategies.length < 100) console.log(`[Filter] Failed: ${s.name} -> Norm: ${norm}`);
+            return isLiked;
+        });
+    } else {
+        console.log(`[StrategiesTable]    - Showing ALL.`);
+    }
+    console.log(`[StrategiesTable]    - Total After: ${strategies.length}`);
+
+    // FILTER: Reality Check Mode (Only if NOT sourced from portfolios directly)
+    // If we sourced from portfolios, we already have the correct set.
+    if (state.activeViewMode === 'reality-check' && !sourcedFromPortfolios) {
         const totalStrategies = strategies.length;
 
         // 1. Identify all strategies belonging to Linked Portfolios
@@ -172,6 +603,24 @@ export const renderStrategiesTable = () => {
         console.log(`[StrategiesTable] 🔍 Reality Check Filter: Showing ${strategies.length} / ${totalStrategies} strategies (Linked to Myfxbook or in Linked Portfolio)`);
     }
 
+
+    // FILTER: Reality Check Mode - Zero Trades Cleanup
+    // User Request: "habria k filtrar akellas k trades sea 0 (en este modo)"
+    if (state.activeViewMode === 'reality-check') {
+        const preFilterCount = strategies.length;
+        strategies = strategies.filter(s => {
+            const trades = getMetricValue(s, 'totalTrades');
+            // DEBUG FILTER
+            if (!trades || trades <= 0) {
+                console.log(`[StrategiesTable] 🧹 Filter Dropping '${s.name}': trades=${trades}, realMetrics?`, s.realMetrics);
+            }
+            return trades && trades > 0;
+        });
+        if (preFilterCount !== strategies.length) {
+            console.log(`[StrategiesTable] 🧹 Zero Trade Filter: Removed ${preFilterCount - strategies.length} empty strategies.`);
+        }
+    }
+
     // Update count badge
     const countBadge = document.getElementById('strategies-count');
     if (countBadge) {
@@ -180,8 +629,44 @@ export const renderStrategiesTable = () => {
     }
 
     if (strategies.length === 0) {
+        // FAILSAFE: If filtered to 0 because of 'linked only' but we have no portfolios, AUTO RESET immediately.
+        if (state.linkedStrategiesFilter === 'only' && (!state.savedPortfolios || state.savedPortfolios.length === 0)) {
+            console.warn('[StrategiesTable] ⚠️ Auto-Resetting Filter from ONLY to ALL because no portfolios exist.');
+            state.linkedStrategiesFilter = 'all';
+            localStorage.setItem('linkedStrategiesFilter', 'all');
+            // Prevent infinite loop if something else is wrong? 
+            // We trust renderStrategiesTable will find strategies next time if they exist.
+            // Using setTimeout to break stack
+            setTimeout(() => renderStrategiesTable(), 0);
+            return;
+        }
+
         const colSpan = config.visibleColumns.length + 1;
-        tableBody.innerHTML = `<tr><td colspan="${colSpan}" class="p-4 text-center text-gray-500">No se encontraron estrategias individuales.</td></tr>`;
+        let msg = "No se encontraron estrategias individuales.";
+        if (state.linkedStrategiesFilter === 'only') {
+            msg = `No encontre estrategias vinculadas para este modo. <br>
+                   <button id="reset-filter-btn" class="mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold transition-colors">
+                       Ver Todas (Reset Filtro)
+                   </button>`;
+        } else if (state.linkedStrategiesFilter === 'hide') {
+            msg = "No se encontraron estrategias no vinculadas. (Filtro 'Unused' activo)";
+        }
+        tableBody.innerHTML = `<tr><td colspan="${colSpan}" class="p-8 text-center text-gray-400">${msg}</td></tr>`;
+
+        // Bind Reset Button if it exists
+        setTimeout(() => {
+            const resetBtn = document.getElementById('reset-filter-btn');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    console.log('[StrategiesTable] Resetting filter to ALL via user action.');
+                    state.linkedStrategiesFilter = 'all';
+                    localStorage.setItem('linkedStrategiesFilter', 'all');
+                    renderStrategiesTable();
+                });
+            }
+        }, 0);
+
         return;
     }
 
@@ -198,7 +683,7 @@ export const renderStrategiesTable = () => {
     }
 
     strategies.forEach((strategy, index) => {
-        const originalIndex = window.analysisResults.indexOf(strategy);
+        const originalIndex = (strategy.originalIndex !== undefined) ? strategy.originalIndex : window.analysisResults.indexOf(strategy);
         const metrics = strategy.analysis?.metrics || strategy.analysis || strategy.metrics || {};
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0';
@@ -206,13 +691,14 @@ export const renderStrategiesTable = () => {
 
         // Checkbox Cell
         const tdCheckbox = document.createElement('td');
-        tdCheckbox.className = 'px-4 py-3 w-10';
+        tdCheckbox.className = 'px-4 py-3 w-28';
         tdCheckbox.innerHTML = `
             <input type="checkbox" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-700 focus:ring-offset-gray-800"
-                ${selectedStrategies.has(originalIndex) ? 'checked' : ''}>
+                ${(originalIndex !== -1 && selectedStrategies.has(originalIndex)) ? 'checked' : ''}>
         `;
         tdCheckbox.querySelector('input').addEventListener('change', (e) => {
             e.stopPropagation();
+            if (originalIndex === -1) return; // Cannot select virtual strategies yet
             if (e.target.checked) {
                 selectedStrategies.add(originalIndex);
             } else {
@@ -242,7 +728,66 @@ export const renderStrategiesTable = () => {
                 td.className += ' font-medium text-white';
                 td.title = value; // Tooltip for full name
 
-                td.textContent = value;
+                // Render Name with Potential Link Tag
+                let html = `<span>${value}</span>`;
+
+                // 2. Optimized Link Check using both Maps and Normalization
+                let linkedPortfolios = linkedStrategiesMap.get(originalIndex) || linkedStrategyNamesMap.get(strategy.name);
+
+                // Fallback: Normalized Name Lookup
+                if (!linkedPortfolios) {
+                    const normName = normalizeName(strategy.name);
+                    linkedPortfolios = linkedStrategyNormalizedNamesMap.get(normName);
+                    // DEBUG NORMALIZATION
+                    // if (index < 3) console.log(`[StrategiesTable] Norm Lookup: '${strategy.name}' -> '${normName}' found? ${!!linkedPortfolios}`);
+                }
+
+                // DEBUG BADGE:
+                if (index < 5) {
+                    console.log(`[StrategiesTable] Badge Check for '${strategy.name}': Found? ${!!linkedPortfolios} (via Index ${originalIndex}? ${linkedStrategiesMap.has(originalIndex)}, via Name? ${linkedStrategyNamesMap.has(strategy.name)})`);
+                    if (!linkedPortfolios) {
+                        console.log('   -> Name Map Keys Sample:', Array.from(linkedStrategyNamesMap.keys()).slice(0, 5));
+                    }
+                }
+
+                if (linkedPortfolios && linkedPortfolios.length > 0) {
+                    const validLinks = linkedPortfolios.filter(p => p); // Remove null/undefined
+                    if (validLinks.length > 0) {
+                        const tooltip = `Linked to: ${validLinks.join(', ')}`;
+                        // Improved Visibility: removed opacity /50, added whitespace-nowrap
+                        html += `
+                            <div class="inline-flex items-center ml-2 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider bg-teal-900 text-teal-200 border border-teal-600 cursor-help whitespace-nowrap" title="${tooltip}">
+                                🔗 ${validLinks.length > 1 ? validLinks.length + ' Portfolios' : validLinks[0]}
+                            </div>
+                        `;
+                    }
+                }
+
+                // FEATURE: View Trades Button (Reality Check OR Backtest Mode)
+                if (state.activeViewMode === 'reality-check' || state.activeViewMode === 'backtest') {
+                    // Logic: If we have an index (0+), use it. If not (-1), use the Strategy Name string.
+                    // IMPORTANT: We escape the name to prevent JS string break if it contains single quotes.
+                    // Simple hygiene: replace ' with \'
+                    const safeName = strategy.name.replace(/'/g, "\\'");
+                    const targetRef = (originalIndex !== -1 && originalIndex !== undefined) ? originalIndex : `'${safeName}'`;
+
+                    const pIdxParam = strategy.sourcePortfolioIndex !== undefined ? strategy.sourcePortfolioIndex : 'null';
+
+                    // Determine type based on mode
+                    const type = state.activeViewMode === 'backtest' ? 'backtest' : 'strategy';
+                    const title = state.activeViewMode === 'backtest' ? 'View Backtest Trades' : 'View Real Trades';
+
+                    // Always show if in reality check (as we filtered out 0-trade strategies)
+                    // We know it has trades because we filtered list earlier.
+                    html += `
+                        <button onclick="event.stopPropagation(); window.openRealTradesModal(${targetRef}, '${type}', ${pIdxParam})" 
+                            class="ml-2 text-gray-400 hover:text-white transition-colors" title="${title}">
+                            🔍
+                        </button>
+                    `;
+                }
+
+                td.innerHTML = html;
             } else {
                 td.className += ' text-right';
                 td.textContent = formatMetricForDisplay(value, colId);
@@ -335,6 +880,13 @@ const getMetricValue = (strategy, metricKey) => {
     if (val === undefined && source !== strategy) {
         val = strategy[metricKey];
         if (metricKey === 'returnDD') val = strategy['profitMaxDD_Ratio'];
+    }
+
+    // 4. REALITY CHECK OVERRIDE
+    if (state.activeViewMode === 'reality-check' && strategy.realMetrics) {
+        if (strategy.realMetrics[metricKey] !== undefined) {
+            return strategy.realMetrics[metricKey];
+        }
     }
 
     return val ?? (metricKey === 'name' ? strategy.fileName : 0);

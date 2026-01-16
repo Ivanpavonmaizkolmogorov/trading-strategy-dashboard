@@ -5,89 +5,255 @@ import { fetchLinkedAccountData, normalizeComment, cleanMetrics, recalculateStra
 
 // Helper for fuzzy matching
 function calculateMatchScore(strategyName, idStr) {
-    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const sName = normalize(strategyName);
     const sId = normalize(idStr);
 
-    // Exact containment
+    // 1. Exact containment (Strongest)
     if (sId.includes(sName) || sName.includes(sId)) return 1.0;
 
-    // Check for specific date patterns often mangled (e.g. 1.5.23 vs 1_5_2)
+    // 2. Common Typos & Abbreviations Specific to this user's data
+    // Handle 'long' vs 'log', 'buy' vs 'by', 'stop' vs 'stp', 'plus' vs 'pls'
+    const clean = (s) => s.toLowerCase()
+        .replace(/long/g, 'l')
+        .replace(/log/g, 'l')
+        .replace(/buy/g, 'b')
+        .replace(/by/g, 'b')
+        .replace(/stop/g, 's')
+        .replace(/stp/g, 's')
+        .replace(/plus/g, 'p')
+        .replace(/pls/g, 'p')
+        .replace(/[^a-z0-9]/g, ''); // Remove all other non-alphanumeric
+
+    const cName = clean(strategyName);
+    const cId = clean(idStr);
+
+    // If cleaned versions match or are contained
+    if (cId.includes(cName) || cName.includes(cId)) return 0.95;
+
+    // 3. Date Pattern Matching (High confidence if numbers match)
+    // Extract sequences of digits, e.g. "10523" from "10.5.23"
     const extractDigits = (s) => s.match(/\d+/g)?.join('') || '';
     const digitsName = extractDigits(strategyName);
     const digitsId = extractDigits(idStr);
 
-    if (digitsName.length > 3 && digitsId.includes(digitsName)) return 0.9;
-    if (digitsId.length > 3 && digitsName.includes(digitsId)) return 0.9;
+    // If significant digits match (at least 4 digits to avoid random small number matches)
+    if (digitsName.length >= 4 && digitsId.length >= 4) {
+        if (digitsId.includes(digitsName) || digitsName.includes(digitsId)) return 0.9;
+    }
 
-    // Consonants-only match (Handles abbreviations like BuyStopPlus -> ByStpPls)
+    // 4. Consonants-only match (Fallback for heavy abbreviations)
     const consonants = (s) => s.toLowerCase().replace(/[aeiou]/g, '').replace(/[^a-z0-9]/g, '');
-    const cName = consonants(strategyName);
-    const cId = consonants(idStr);
+    const consName = consonants(strategyName);
+    const consId = consonants(idStr);
 
-    // High threshold for consonant match
-    if (cId.length > 4 && (cId.includes(cName) || cName.includes(cId))) return 0.85;
+    if (consName.length > 5 && (consId.includes(consName) || consName.includes(consId))) return 0.85;
 
     return 0.0;
 }
 
 let mapperModal = null;
-let currentPortfolio = null;
+let currentPortfolio = null; // Can be null in Global Mode
 let selectedStrategyId = null;
 let tempMapping = {};
 let searchTerm = '';
+let strategySearchTerm = ''; // New: Filter strategies
+let selectedSourceFilter = 'all'; // New: Filter IDs by Source
+let globalUniqueIds = []; // Cache for global mode
+let availableSources = new Set(); // New: Track available sources
 
-export function openMagicMapper(portfolio) {
+export function openMagicMapper(portfolio = null) {
     currentPortfolio = portfolio;
+    const isGlobal = !portfolio;
 
-    // Ensure metrics are clean before displaying
-    if (cleanMetrics(currentPortfolio)) {
-        showToast('Optimized trade identifiers for better grouping', 'info');
-        // Trigger a save of the portfolios if possible, or just rely on memory for now
-        // Ideally we would emit an event to save
-        document.dispatchEvent(new CustomEvent('requestSavePortfolios'));
+    // Initialize tempMapping from GLOBAL state
+    tempMapping = {};
+    if (state.magicNumberMap) {
+        Object.keys(state.magicNumberMap).forEach(key => {
+            const val = state.magicNumberMap[key];
+            tempMapping[key] = Array.isArray(val) ? [...val] : (val ? [String(val)] : []);
+        });
     }
 
-    // Initialize tempMapping from state
-    tempMapping = {};
-    Object.keys(state.magicNumberMap).forEach(key => {
-        const val = state.magicNumberMap[key];
-        tempMapping[key] = Array.isArray(val) ? [...val] : (val ? [String(val)] : []);
-    });
+    availableSources.clear();
 
-    // Enforce uniqueness on load (clean up existing conflicts)
-    const seenIds = new Set();
-    Object.keys(tempMapping).forEach(stratId => {
-        const ids = tempMapping[stratId];
-        const uniqueIds = [];
-        ids.forEach(id => {
-            if (!seenIds.has(id)) {
-                seenIds.add(id);
-                uniqueIds.push(id);
+    // Prepare Data Source
+    if (isGlobal) {
+        // AGGREGATE ALL IDs from ALL Portfolios + Track Sources
+        const allStats = {};
+
+        // 1. Saved Portfolios
+        state.savedPortfolios.forEach(p => {
+            availableSources.add(p.name); // Track Source Name
+            if (p.realMetrics && p.realMetrics.magicStats) {
+                Object.values(p.realMetrics.magicStats).forEach(stat => {
+                    const id = String(stat.id);
+                    if (!allStats[id]) {
+                        allStats[id] = { ...stat, sources: new Set([p.name]) }; // Init with Source
+                    } else {
+                        // Merge counts
+                        allStats[id].tradesCount += stat.tradesCount;
+                        allStats[id].totalProfit += stat.totalProfit;
+                        allStats[id].sources.add(p.name); // Add Source
+                    }
+                });
             }
         });
-        tempMapping[stratId] = uniqueIds;
-    });
+
+        // 2. Sandbox Data (from Bridge)
+        if (state.sandboxData && state.sandboxData.processedStats) {
+            const sandboxName = state.sandboxData.sourceName || 'Sandbox';
+            availableSources.add(sandboxName);
+
+            Object.values(state.sandboxData.processedStats).forEach(stat => {
+                const id = String(stat.id);
+                if (!allStats[id]) {
+                    allStats[id] = { ...stat, sources: new Set([sandboxName]) };
+                } else {
+                    allStats[id].tradesCount += stat.tradesCount;
+                    allStats[id].totalProfit += stat.totalProfit;
+                    allStats[id].sources.add(sandboxName);
+                }
+            });
+        }
+
+        globalUniqueIds = Object.values(allStats);
+    } else {
+        // Single Portfolio Mode
+        availableSources.add(currentPortfolio.name);
+        if (cleanMetrics(currentPortfolio)) {
+            showToast('Optimized trade identifiers', 'info');
+        }
+    }
 
     if (!mapperModal) {
         mapperModal = createMapperModal();
         document.body.appendChild(mapperModal);
     }
 
-    // Select first strategy by default
-    if (portfolio.indices.length > 0) {
-        const firstStrat = state.loadedStrategyFiles[portfolio.indices[0]];
-        if (firstStrat) {
-            selectedStrategyId = firstStrat.strategyId || firstStrat.name;
-        }
+    // Populate Source Filter
+    const sourceSelect = mapperModal.querySelector('#mapper-source-filter');
+    if (sourceSelect) {
+        sourceSelect.innerHTML = `<option value="all">All Sources (${availableSources.size})</option>`;
+        availableSources.forEach(source => {
+            sourceSelect.innerHTML += `<option value="${source}">${source}</option>`;
+        });
+        sourceSelect.value = 'all';
     }
 
+    // Reset Filters
+    strategySearchTerm = '';
+    const stratInput = mapperModal.querySelector('#mapper-strategy-search');
+    if (stratInput) stratInput.value = '';
+
     searchTerm = '';
-    const searchInput = mapperModal.querySelector('#mapper-search-input');
-    if (searchInput) searchInput.value = '';
+    const idInput = mapperModal.querySelector('#mapper-search-input');
+    if (idInput) idInput.value = '';
+
+    // Title update
+    const title = mapperModal.querySelector('#mapper-title');
+    if (title) title.innerHTML = isGlobal ? '<span>💊</span> Global Strategy DNA Mapper' : `<span>🔗</span> Mapping: ${portfolio.name}`;
+
+    // Select first strategy by default
+    const strategies = getStrategies();
+    if (strategies.length > 0) {
+        const first = strategies[0];
+        selectedStrategyId = first.strategyId || first.name;
+    }
 
     renderMapperContent();
     mapperModal.classList.remove('hidden');
+
+    // Listener for Sandbox Updates
+    if (!mapperModal._sandboxListener) {
+        mapperModal._sandboxListener = () => {
+            console.log('[Magic Mapper] Strategies/IDs updated from Sandbox');
+            renderMapperContent();
+        };
+        window.addEventListener('sandbox-data-updated', mapperModal._sandboxListener);
+    }
+}
+
+function getStrategies() {
+    let list = [];
+    if (!currentPortfolio) {
+        // Global Mode: Aggregate ALL unique strategies known to the system
+        const candidates = [];
+
+        // 1. Loaded Files
+        if (state.loadedStrategyFiles) {
+            state.loadedStrategyFiles.forEach(s => candidates.push({ strat: s, source: 'Uploaded Files' }));
+        }
+        // 2. Raw Data
+        if (state.rawStrategiesData) {
+            state.rawStrategiesData.forEach(s => candidates.push({ strat: s, source: 'Raw Data' }));
+        }
+
+        // 3. Databank
+        if (state.databankPortfolios) {
+            state.databankPortfolios.forEach(p => {
+                if (p.strategies && Array.isArray(p.strategies)) {
+                    p.strategies.forEach(s => candidates.push({ strat: s, source: `Databank: ${p.id || 'Unnamed'}` }));
+                }
+            });
+        }
+        // 4. Saved Portfolios
+        if (state.savedPortfolios) {
+            state.savedPortfolios.forEach(p => {
+                let strategies = [];
+                if (p.strategies && Array.isArray(p.strategies)) {
+                    strategies = p.strategies;
+                } else if (p.indices && Array.isArray(p.indices)) {
+                    // Reconstruct from indices
+                    strategies = p.indices.map(idx => state.loadedStrategyFiles[idx]).filter(Boolean);
+                }
+
+                strategies.forEach(s => candidates.push({ strat: s, source: p.name || 'Unnamed Portfolio' }));
+            });
+        }
+
+        // Deduplicate by name and MERGE sources
+        const seen = new Map();
+        candidates.forEach(item => {
+            const s = item.strat;
+            if (s && s.name) {
+                if (!seen.has(s.name)) {
+                    // Create a shallow copy to attach metadata without mutating original
+                    seen.set(s.name, { ...s, _sources: [item.source] });
+                } else {
+                    const existing = seen.get(s.name);
+                    if (!existing._sources.includes(item.source)) {
+                        existing._sources.push(item.source);
+                    }
+                }
+            }
+        });
+
+        list = Array.from(seen.values());
+
+    } else {
+        // Portfolio Mode: Only strategies in this portfolio
+        // We verify that indices map to valid loaded files
+        // For consistency, we attach a source here too
+        const sourceName = `Current: ${currentPortfolio.name || 'Portfolio'}`;
+
+        list = currentPortfolio.indices.map(idx => {
+            const s = state.loadedStrategyFiles[idx];
+            return s ? { ...s, _sources: [sourceName] } : null;
+        }).filter(Boolean);
+
+        // Fallback: If indices fail (reloaded state?), try matching names if available in portfolio
+        if (list.length === 0 && currentPortfolio.strategyNames) {
+            list = currentPortfolio.strategyNames.map(name => ({ name, _sources: [sourceName] }));
+        }
+    }
+
+    // Filter by Search Term
+    if (strategySearchTerm) {
+        const term = strategySearchTerm.toLowerCase();
+        list = list.filter(s => s.name.toLowerCase().includes(term));
+    }
+    return list;
 }
 
 function closeMapperModal() {
@@ -106,29 +272,13 @@ function createMapperModal() {
             <!-- Header -->
             <div class="flex justify-between items-center p-6 border-b border-gray-700">
                 <div>
-                    <h2 class="text-2xl font-bold text-white flex items-center gap-2">
-                        <span>🔗</span>
-                        <span>Link Strategies to Myfxbook IDs</span>
+                    <h2 id="mapper-title" class="text-2xl font-bold text-white flex items-center gap-2">
+                        <span>💊</span> Strategy DNA Mapper
                     </h2>
-                    <p class="text-gray-400 text-sm mt-1">Select a strategy on the left, then check the corresponding Myfxbook IDs on the right.</p>
+                    <p class="text-gray-400 text-sm mt-1">Associate unique trade signatures to strategies. Changes apply globally.</p>
                 </div>
                 <div class="flex items-center gap-4">
-                     <button id="mapper-debug-btn" class="text-gray-500 hover:text-yellow-400 transition-colors" title="Show Raw IDs">
-                        🐞
-                    </button>
                     <button id="close-mapper-modal" class="text-gray-400 hover:text-white text-3xl">×</button>
-                </div>
-            </div>
-            
-            <!-- Unmapped Alert (Dynamic) -->
-            <div id="mapper-unmapped-alert" class="hidden mx-6 mt-4 bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-3 flex items-start gap-3">
-                <span class="text-xl">⚠️</span>
-                <div class="flex-1">
-                    <h4 class="text-sm font-bold text-yellow-200">Unmapped Myfxbook Comments Detected</h4>
-                    <p class="text-xs text-yellow-100/70 mt-1">
-                        There are <span id="mapper-unmapped-count" class="font-bold text-white">0</span> unique comments in your Myfxbook data that are not linked to any strategy. 
-                        Please review the "Available" list to ensure all trades are accounted for.
-                    </p>
                 </div>
             </div>
             
@@ -136,8 +286,24 @@ function createMapperModal() {
             <div class="flex flex-1 overflow-hidden" id="mapper-content-area">
                 <!-- Left Column: Strategies -->
                 <div class="w-1/4 border-r border-gray-700 flex flex-col bg-gray-900/30 min-w-[300px]">
-                    <div class="p-3 border-b border-gray-700 font-bold text-gray-400 text-xs uppercase tracking-wider">
-                        Strategies
+                    <div class="p-3 border-b border-gray-700 bg-gray-900/50 flex flex-col gap-2">
+                         <div class="font-bold text-gray-400 text-xs uppercase tracking-wider flex justify-between items-center">
+                            <span>Strategies</span>
+                            <span id="mapper-strategy-count" class="bg-gray-800 px-1.5 rounded text-[10px]">0</span>
+                         </div>
+                         <!-- Strategy Search Input -->
+                         <div class="relative">
+                            <input type="text" id="mapper-strategy-search" 
+                                class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white focus:border-purple-500 focus:outline-none"
+                                placeholder="Filter strategies...">
+                            <span class="absolute right-2 top-1.5 text-gray-500 text-xs">🔍</span>
+                         </div>
+                         <!-- Strategy Source Filter -->
+                         <div class="flex items-center gap-2 mt-2">
+                            <select id="mapper-strategy-source-filter" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-purple-500 focus:outline-none">
+                                <option value="all">All Sources</option>
+                            </select>
+                         </div>
                     </div>
                     <div id="mapper-strategies-list" class="overflow-y-auto flex-1 p-2 space-y-1">
                         <!-- Strategies list -->
@@ -146,24 +312,30 @@ function createMapperModal() {
 
                 <!-- Right Column: Available IDs -->
                 <div class="flex-1 flex flex-col bg-gray-800">
-                    <div class="p-3 border-b border-gray-700 flex justify-between items-center gap-4 bg-gray-800 z-10">
-                        <div class="flex items-center gap-4 flex-1">
+                    <div class="p-3 border-b border-gray-700 flex flex-col gap-3 bg-gray-800 z-10 shadow-md">
+                        <!-- Filter Bar -->
+                        <div class="flex items-center gap-4">
+                             <!-- Search Input -->
                             <div class="relative flex-1 max-w-md">
                                 <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">🔍</span>
                                 <input type="text" id="mapper-search-input" 
                                     class="w-full bg-gray-700 border border-gray-600 rounded-lg pl-9 pr-3 py-1.5 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                     placeholder="Search IDs, symbols...">
                             </div>
-                            <div class="flex gap-2">
-                                <button id="mapper-auto-link-all" class="text-xs text-green-400 hover:text-green-300 font-medium px-2 py-1 rounded hover:bg-gray-700 border border-green-900/50 flex items-center gap-1" title="Automatically link strategies to best matching IDs">
-                                    <span>✨</span> Auto-Link
-                                </button>
-                                <div class="w-px bg-gray-700 mx-1"></div>
-                                <button id="mapper-select-all" class="text-xs text-blue-400 hover:text-blue-300 font-medium px-2 py-1 rounded hover:bg-gray-700">Select All</button>
-                                <button id="mapper-deselect-all" class="text-xs text-gray-400 hover:text-gray-300 font-medium px-2 py-1 rounded hover:bg-gray-700">Deselect All</button>
+                            
+                            <!-- Source Filter -->
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs text-gray-400 font-bold uppercase">Source:</label>
+                                <select id="mapper-source-filter" class="bg-gray-700 border border-gray-600 rounded-lg px-2 py-1.5 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none max-w-[200px]">
+                                    <option value="all">All Sources</option>
+                                    <!-- Populated dynamically -->
+                                </select>
                             </div>
+
+                            <button id="mapper-auto-link-all" class="text-xs text-green-400 hover:text-green-300 font-medium px-2 py-1 rounded hover:bg-gray-700 border border-green-900/50 flex items-center gap-1 ml-auto" title="Automatically link strategies to best matching IDs">
+                                <span>✨</span> Auto-Link
+                            </button>
                         </div>
-                        <span class="text-xs font-normal text-gray-500">Sorted by Similarity & Trades</span>
                     </div>
                     
                     <div id="mapper-ids-list" class="overflow-y-auto flex-1 p-4 flex flex-col gap-6">
@@ -173,13 +345,18 @@ function createMapperModal() {
             </div>
             
             <!-- Footer -->
-            <div class="p-6 border-t border-gray-700 flex justify-end gap-3 bg-gray-800/50">
-                <button id="cancel-mapper-btn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-semibold transition-colors">
-                    Cancel
+            <div class="p-6 border-t border-gray-700 flex justify-between gap-3 bg-gray-800/50">
+                <button id="clear-all-mapper-btn" class="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 rounded-lg font-semibold transition-colors flex items-center gap-2" title="Remove all mappings (Reset)">
+                    <span>🗑️</span> Clear All
                 </button>
-                <button id="save-mapper-btn" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-lg shadow-blue-900/20 transition-all transform hover:scale-105">
-                    Save Mappings
-                </button>
+                <div class="flex gap-3">
+                    <button id="cancel-mapper-btn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-semibold transition-colors">
+                        Close
+                    </button>
+                    <button id="save-mapper-btn" class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold shadow-lg shadow-purple-900/20 transition-all transform hover:scale-105 flex items-center gap-2">
+                        <span>💾</span> Save All Mappings
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -188,140 +365,43 @@ function createMapperModal() {
     modal.querySelector('#cancel-mapper-btn').onclick = closeMapperModal;
 
     modal.querySelector('#save-mapper-btn').onclick = () => {
-        console.log('[Magic Mapper DEBUG] Saving with tempMapping:', JSON.stringify(tempMapping));
-
-        // Update state.magicNumberMap with both ID and Name keys for Robustness
-        const newMap = JSON.parse(JSON.stringify(tempMapping));
-
-        // iterate strategies in current portfolio to finding matching names for IDs
-        currentPortfolio.indices.forEach(idx => {
-            const strat = state.loadedStrategyFiles[idx];
-            if (!strat) return;
-            const sId = strat.strategyId || strat.name;
-            const sName = strat.name;
-
-            // If we have a mapping for the ID...
-            if (newMap[sId]) {
-                const magics = newMap[sId];
-                // ... ensure we also map the Name to it
-                if (sName && sName !== sId) {
-                    newMap[sName] = magics;
-
-                    // Also Map the Clean Name (no csv) just in case
-                    const cleanName = sName.replace(/\.csv$/i, '').trim();
-                    if (cleanName !== sName) {
-                        newMap[cleanName] = magics;
-                    }
-                }
-            }
-        });
-
-        state.magicNumberMap = newMap;
-        saveMagicNumbers();
-
-        // Recalculate metrics based on new mapping
-        recalculateStrategyBreakdown(currentPortfolio);
-
-        showToast('Mappings saved successfully', 'success');
-        renderLiveMonitor();
-        closeMapperModal();
+        saveMappings();
     };
 
+    modal.querySelector('#clear-all-mapper-btn').onclick = () => {
+        if (confirm('Are you sure you want to DELETE ALL mappings? This will reset all strategy associations.\n(Click Save afterwards to make it permanent)')) {
+            console.log('[Magic Mapper] Clearing all mappings');
+            tempMapping = {};
+            selectedStrategyId = null; // Reset selection
+            renderMapperContent();
+            showToast('All mappings cleared. Click Save to persist.', 'warning');
+        }
+    };
+
+    // ID Search Listener
     const searchInput = modal.querySelector('#mapper-search-input');
     searchInput.addEventListener('input', (e) => {
         searchTerm = e.target.value.toLowerCase();
         renderIdsList();
     });
 
-    // Debug Button
-    const debugBtn = modal.querySelector('#mapper-debug-btn');
-    if (debugBtn) {
-        debugBtn.onclick = () => {
-            const magicStats = currentPortfolio.realMetrics?.magicStats || {};
-            const keys = Object.keys(magicStats);
-            const msg = `Found ${keys.length} IDs:\n\n${keys.join('\n')}`;
-            console.log('[Magic Mapper DEBUG] Keys:', keys);
-            alert(msg);
-        };
-    }
+    // Strategy Search Listener
+    const stratInput = modal.querySelector('#mapper-strategy-search');
+    stratInput.addEventListener('input', (e) => {
+        strategySearchTerm = e.target.value;
+        renderStrategiesList();
+    });
 
-    modal.querySelector('#mapper-auto-link-all').onclick = () => {
-        const magicStats = currentPortfolio.realMetrics?.magicStats || {};
-        const potentialMatches = [];
+    // Source Filter Listener
+    const sourceSelect = modal.querySelector('#mapper-source-filter');
+    sourceSelect.addEventListener('change', (e) => {
+        selectedSourceFilter = e.target.value;
+        renderIdsList();
+    });
 
-        // 1. Find all potential matches
-        currentPortfolio.indices.forEach(idx => {
-            const strategy = state.loadedStrategyFiles[idx];
-            if (!strategy) return;
+    modal.querySelector('#mapper-auto-link-all').onclick = autoLinkIds;
 
-            const strategyId = strategy.strategyId || strategy.name;
-            const strategyName = strategy.name;
-
-            Object.values(magicStats).forEach(stat => {
-                // Use improved calculateMatchScore instead of generic calculateSimilarity
-                const score = calculateMatchScore(strategyName, String(stat.id));
-                // Lower threshold slightly as calculateMatchScore is stricter
-                if (score >= 0.8) {
-                    potentialMatches.push({ strategyId, id: String(stat.id), score });
-                }
-            });
-        });
-
-        // 2. Sort by score descending to prioritize best matches
-        potentialMatches.sort((a, b) => b.score - a.score);
-
-        // 3. Assign exclusively (First-Come-First-Served based on score)
-        // We respect existing mappings, so we first mark currently mapped IDs as taken
-        const assignedIds = new Set();
-        Object.values(tempMapping).forEach(ids => {
-            if (Array.isArray(ids)) {
-                ids.forEach(id => assignedIds.add(id));
-            }
-        });
-
-        let linkedCount = 0;
-        potentialMatches.forEach(match => {
-            if (!assignedIds.has(match.id)) {
-                if (!tempMapping[match.strategyId]) tempMapping[match.strategyId] = [];
-                // Double check if we are not adding duplicates (though Set handles it)
-                if (!tempMapping[match.strategyId].includes(match.id)) {
-                    tempMapping[match.strategyId].push(match.id);
-                    assignedIds.add(match.id);
-                    linkedCount++;
-                }
-            }
-        });
-
-        renderMapperContent();
-        if (linkedCount > 0) {
-            showToast(`Auto-linked ${linkedCount} strategies based on name similarity`, 'success');
-        } else {
-            showToast('No new high-confidence matches found', 'info');
-        }
-    };
-
-    modal.querySelector('#mapper-select-all').onclick = () => {
-        if (!selectedStrategyId) return;
-        const visibleIds = getVisibleIds();
-        if (!tempMapping[selectedStrategyId]) tempMapping[selectedStrategyId] = [];
-
-        visibleIds.forEach(stat => {
-            const idStr = String(stat.id);
-            if (!tempMapping[selectedStrategyId].includes(idStr)) {
-                tempMapping[selectedStrategyId].push(idStr);
-            }
-        });
-        renderMapperContent();
-    };
-
-    modal.querySelector('#mapper-deselect-all').onclick = () => {
-        if (!selectedStrategyId || !tempMapping[selectedStrategyId]) return;
-        const visibleIds = getVisibleIds().map(s => String(s.id));
-
-        tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(id => !visibleIds.includes(id));
-        renderMapperContent();
-    };
-
+    // Close on backdrop
     modal.onclick = (e) => {
         if (e.target === modal) closeMapperModal();
     };
@@ -329,43 +409,121 @@ function createMapperModal() {
     return modal;
 }
 
-// Helper: Calculate similarity between two strings (0 to 1)
-function calculateSimilarity(s1, s2) {
-    const longer = s1.length > s2.length ? s1 : s2;
-    const shorter = s1.length > s2.length ? s2 : s1;
-    if (longer.length === 0) return 1.0;
+function saveMappings() {
+    console.log('[Magic Mapper] Saving GLOBAL mappings:', JSON.stringify(tempMapping));
 
-    const editDistance = (s1, s2) => {
-        s1 = s1.toLowerCase();
-        s2 = s2.toLowerCase();
-        const costs = new Array();
-        for (let i = 0; i <= s1.length; i++) {
-            let lastValue = i;
-            for (let j = 0; j <= s2.length; j++) {
-                if (i == 0) costs[j] = j;
-                else {
-                    if (j > 0) {
-                        let newValue = costs[j - 1];
-                        if (s1.charAt(i - 1) != s2.charAt(j - 1))
-                            newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-                        costs[j - 1] = lastValue;
-                        lastValue = newValue;
-                    }
-                }
-            }
-            if (i > 0) costs[s2.length] = lastValue;
+    // Update state.magicNumberMap logic similar to before but preserving structure
+    const newMap = JSON.parse(JSON.stringify(tempMapping));
+
+    // Ensure bidirectional mapping (Name <-> ID safety)
+    // iterate ALL loaded strategies
+    state.loadedStrategyFiles.forEach(strat => {
+        const sId = strat.strategyId || strat.name;
+        const sName = strat.name;
+
+        if (newMap[sId]) {
+            const magics = newMap[sId];
+            if (sName && sName !== sId) newMap[sName] = magics;
+            const cleanName = sName.replace(/\.csv$/i, '').trim();
+            if (cleanName !== sName) newMap[cleanName] = magics;
         }
-        return costs[s2.length];
-    }
+    });
 
-    return (longer.length - editDistance(longer, shorter)) / longer.length;
+    state.magicNumberMap = newMap;
+    saveMagicNumbers(); // Persist to valid_magic_numbers.json
+
+    // Refresh ALL portfolios
+    state.savedPortfolios.forEach(p => {
+        if (p.realMetrics) {
+            recalculateStrategyBreakdown(p);
+        }
+    });
+
+    showToast('Mappings saved globally. All portfolios updated.', 'success');
+    renderLiveMonitor(); // Refresh UI if open
+    closeMapperModal();
+}
+
+function autoLinkIds() {
+    const strategies = getStrategies();
+    const visibleIds = getVisibleIds(); // Helper to get IDs being shown
+
+    let linkedCount = 0;
+
+    // We want to link ANY unmapped ID to a strategy if score is high
+    visibleIds.forEach(stat => {
+        const idStr = String(stat.id);
+
+        // Skip if already mapped (unless we want to re-evaluate? Better safe than sorry, skip)
+        // Actually user wants to fix issues, so let's check if it finds a BETTER match than current?
+        // For now, let's just try to map unmapped ones or ones that look wrong.
+
+        // Find best matching strategy
+        let bestScore = 0;
+        let bestStratId = null;
+
+        strategies.forEach(strat => {
+            const stratName = strat.name;
+            const stratId = strat.strategyId || strat.name;
+
+            const score = calculateMatchScore(stratName, idStr);
+            if (score > bestScore) {
+                bestScore = score;
+                bestStratId = stratId;
+            }
+        });
+
+        // Threshold 0.8 is good for fuzzy matches
+        if (bestScore >= 0.8 && bestStratId) {
+            if (!tempMapping[bestStratId]) tempMapping[bestStratId] = [];
+
+            // Logic: Is this ID already mapped to THIS strategy?
+            if (!tempMapping[bestStratId].includes(idStr)) {
+
+                // Is it mapped to ANOTHER strategy?
+                // If so, we only steal if score is MUCH higher (e.g. 1.0 vs 0.8)
+                // But for now, let's assume "Auto Link" implies "Fix my mappings".
+                // So strict "Steal" logic:
+
+                // Remove from others
+                let stolen = false;
+                Object.keys(tempMapping).forEach(otherId => {
+                    if (otherId !== bestStratId && tempMapping[otherId].includes(idStr)) {
+                        tempMapping[otherId] = tempMapping[otherId].filter(x => x !== idStr);
+                        stolen = true;
+                    }
+                });
+
+                tempMapping[bestStratId].push(idStr);
+                linkedCount++;
+            }
+        }
+    });
+
+    renderMapperContent();
+    if (linkedCount > 0) {
+        showToast(`✨ Auto-linked ${linkedCount} trade signatures! Don't forget to SAVE.`, 'success');
+    } else {
+        showToast('No new matching strategies found.', 'info');
+    }
 }
 
 function getVisibleIds() {
-    const magicStats = currentPortfolio.realMetrics?.magicStats || {};
-    let availableIds = Object.values(magicStats);
+    let availableIds = [];
+    if (currentPortfolio) {
+        availableIds = Object.values(currentPortfolio.realMetrics?.magicStats || {});
+    } else {
+        availableIds = globalUniqueIds;
+    }
 
-    // Filter by search term
+    // Source Filter
+    if (selectedSourceFilter !== 'all') {
+        availableIds = availableIds.filter(stat =>
+            stat.sources && stat.sources.has(selectedSourceFilter)
+        );
+    }
+
+    // Search Filter
     if (searchTerm) {
         availableIds = availableIds.filter(stat =>
             String(stat.id).toLowerCase().includes(searchTerm) ||
@@ -373,245 +531,92 @@ function getVisibleIds() {
         );
     }
 
-    // Sort by similarity to selected strategy if available
-    if (selectedStrategyId) {
-        // Find strategy name
-        const strategyIdx = currentPortfolio.indices.find(idx => {
-            const s = state.loadedStrategyFiles[idx];
-            return (s.strategyId || s.name) === selectedStrategyId;
-        });
-        const strategyName = strategyIdx ? state.loadedStrategyFiles[strategyIdx].name : '';
-
-        availableIds.sort((a, b) => {
-            const simA = calculateMatchScore(strategyName, String(a.id));
-            const simB = calculateMatchScore(strategyName, String(b.id));
-            // Sort descending by similarity
-            if (Math.abs(simA - simB) > 0.1) return simB - simA;
-            // Fallback to trade count
-            return b.tradesCount - a.tradesCount;
-        });
-
-        // Add similarity score to objects for highlighting
-        availableIds.forEach(stat => {
-            stat._similarity = calculateMatchScore(strategyName, String(stat.id));
-        });
-    } else {
-        // Default sort by trade count
-        availableIds.sort((a, b) => b.tradesCount - a.tradesCount);
-    }
+    // Default Sort (Trades Count)
+    // availableIds.sort((a, b) => b.tradesCount - a.tradesCount);
 
     return availableIds;
-}
-
-function renderIdsList() {
-    const idsList = mapperModal.querySelector('#mapper-ids-list');
-    idsList.innerHTML = '';
-
-    // Remove grid classes, ensure flex column
-    idsList.className = 'overflow-y-auto flex-1 p-4 flex flex-col gap-6';
-
-    if (!selectedStrategyId) {
-        idsList.innerHTML = `
-            <div class="text-center py-10 text-gray-500">
-                <p>Select a strategy on the left to start mapping.</p>
-            </div>
-        `;
-        return;
-    }
-
-    const availableIds = getVisibleIds();
-
-    if (availableIds.length === 0) {
-        idsList.innerHTML = `
-            <div class="text-center py-10 text-gray-500">
-                <div class="text-4xl mb-4">📭</div>
-                <h3 class="text-xl font-bold text-gray-300">No IDs Found</h3>
-                <p>${searchTerm ? 'Try a different search term.' : 'Sync your Myfxbook account first.'}</p>
-            </div>
-        `;
-        return;
-    }
-
-    const currentMappedIds = tempMapping[selectedStrategyId] || [];
-
-
-    // Split into 3 Categories
-    const assignedItems = []; // Assigned to THIS strategy
-    const unassignedItems = []; // Globally available (not assigned to anyone)
-    const otherAssignedItems = []; // Assigned to other strategies (stealable)
-
-    // Collect all IDs assigned to OTHER strategies
-    const otherAssignedIds = new Set();
-    Object.keys(tempMapping).forEach(sId => {
-        if (sId !== selectedStrategyId && tempMapping[sId]) {
-            tempMapping[sId].forEach(id => otherAssignedIds.add(String(id)));
-        }
-    });
-
-    availableIds.forEach(stat => {
-        const idStr = String(stat.id);
-        if (currentMappedIds.includes(idStr)) {
-            assignedItems.push(stat);
-        } else if (otherAssignedIds.has(idStr)) {
-            otherAssignedItems.push(stat);
-        } else {
-            unassignedItems.push(stat);
-        }
-    });
-
-    // Helper to render a section
-    const renderSection = (title, items, type) => {
-        if (items.length === 0 && type !== 'unassigned') return; // Skip empty assigned sections
-
-        const section = document.createElement('div');
-        section.className = 'flex flex-col gap-2';
-
-        const header = document.createElement('div');
-        header.className = `flex items-center gap-2 pb-2 border-b ${type === 'current' ? 'border-blue-500/50' : 'border-gray-700/50'} mt-2`;
-
-        let titleColor = 'text-gray-400';
-        if (type === 'current') titleColor = 'text-blue-400';
-        if (type === 'unassigned') titleColor = 'text-green-400';
-
-        header.innerHTML = `
-            <h3 class="text-sm font-bold ${titleColor} uppercase tracking-wider">${title}</h3>
-            <span class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded-full">${items.length}</span>
-        `;
-        section.appendChild(header);
-
-        const list = document.createElement('div');
-        list.className = 'flex flex-col gap-1';
-
-        if (items.length === 0) {
-            list.innerHTML = `<div class="text-xs text-gray-600 italic p-2">No unassigned items available.</div>`;
-        } else {
-            items.forEach(stat => {
-                const idStr = String(stat.id);
-                const isChecked = type === 'current';
-                const isRecommended = (stat._similarity || 0) > 0.8;
-
-                // Determine Owner if Other
-                let ownerName = null;
-                if (type === 'other') {
-                    const ownerStrategyId = Object.keys(tempMapping).find(sId =>
-                        sId !== selectedStrategyId &&
-                        tempMapping[sId] &&
-                        tempMapping[sId].includes(idStr)
-                    );
-                    if (ownerStrategyId) {
-                        const strategyIdx = currentPortfolio.indices.find(idx => {
-                            const s = state.loadedStrategyFiles[idx];
-                            return (s.strategyId || s.name) === ownerStrategyId;
-                        });
-                        ownerName = strategyIdx !== undefined ? state.loadedStrategyFiles[strategyIdx].name : ownerStrategyId;
-                    }
-                }
-
-                const label = document.createElement('label');
-                // Compact Row Styles
-                label.className = `flex items-center gap-3 p-2 rounded border transition-all cursor-pointer group
-                    ${isChecked
-                        ? 'bg-blue-900/20 border-blue-500/50 hover:bg-blue-900/30'
-                        : type === 'unassigned' ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' : 'opacity-70 border-dashed border-gray-700 hover:opacity-100'}
-                    ${isRecommended && !isChecked ? 'ring-1 ring-green-500/50 bg-green-900/10' : ''}
-                `;
-
-                label.innerHTML = `
-                    <input type="checkbox" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-800 focus:ring-blue-500 focus:ring-offset-gray-900 transition-colors" ${isChecked ? 'checked' : ''}>
-                    
-                    <div class="flex-1 min-w-0 flex items-center gap-3 overflow-hidden">
-                        <!-- ID / Comment -->
-                        <div class="flex flex-col min-w-0 flex-1">
-                            <div class="flex items-center gap-2">
-                                <span class="font-mono text-xs font-bold ${isChecked ? 'text-blue-200' : 'text-gray-300'} truncate" title="${stat.exampleRaw || stat.id}">
-                                    ${stat.id}
-                                </span>
-                                ${isRecommended ? '<span class="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-800 animate-pulse">RECOMMENDED</span>' : ''}
-                                ${ownerName ? `<span class="text-[9px] bg-orange-900/30 text-orange-300 px-1.5 py-0.5 rounded border border-orange-800/50 truncate max-w-[150px]" title="Linked to: ${ownerName}">🔗 ${ownerName}</span>` : ''}
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Metrics -->
-                    <div class="flex items-center gap-3 text-xs whitespace-nowrap">
-                        <span class="font-medium text-gray-500 w-12 text-right">${stat.symbol}</span>
-                         <span class="font-mono w-16 text-right ${stat.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}">$${stat.totalProfit.toFixed(0)}</span>
-                        <span class="bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded text-[10px] min-w-[24px] text-center">${stat.tradesCount}</span>
-                    </div>
-                `;
-
-                const checkbox = label.querySelector('input');
-                checkbox.onchange = (e) => {
-                    if (e.target.checked) {
-                        // Steal logic
-                        Object.keys(tempMapping).forEach(sId => {
-                            if (sId !== selectedStrategyId && tempMapping[sId]) {
-                                if (tempMapping[sId].includes(idStr)) {
-                                    tempMapping[sId] = tempMapping[sId].filter(id => id !== idStr);
-                                }
-                            }
-                        });
-                        if (!tempMapping[selectedStrategyId]) tempMapping[selectedStrategyId] = [];
-                        if (!tempMapping[selectedStrategyId].includes(idStr)) {
-                            tempMapping[selectedStrategyId].push(idStr);
-                        }
-                        console.log(`[Magic Mapper DEBUG] Added ${idStr} to ${selectedStrategyId}. New list:`, tempMapping[selectedStrategyId]);
-                    } else {
-                        if (tempMapping[selectedStrategyId]) {
-                            tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(id => id !== idStr);
-                        }
-                    }
-                    renderStrategiesList();
-                    renderIdsList();
-                };
-
-                list.appendChild(label);
-            });
-        }
-        section.appendChild(list);
-        idsList.appendChild(section);
-    };
-
-    // Find strategy name for title
-    const strategyIdx = currentPortfolio.indices.find(idx => {
-        const s = state.loadedStrategyFiles[idx];
-        return (s.strategyId || s.name) === selectedStrategyId;
-    });
-    const strategyName = strategyIdx !== undefined ? state.loadedStrategyFiles[strategyIdx].name : 'Current Strategy';
-
-    // 1. Assigned (Current) - Top priority
-    renderSection(`Assigned to: ${strategyName}`, assignedItems, 'current');
-
-    // 2. Unassigned (Available) - Main pool
-    renderSection('Available (Unassigned)', unassignedItems, 'unassigned');
-
-    // 3. Assigned to Others (Stealable) - Bottom
-    renderSection('Assigned to Other Strategies', otherAssignedItems, 'other');
-
-    // Hide Auto-Link button as requested
-    const autoLinkBtn = mapperModal.querySelector('#mapper-auto-link-all');
-    if (autoLinkBtn) autoLinkBtn.classList.add('hidden');
 }
 
 function renderStrategiesList() {
     const strategiesList = mapperModal.querySelector('#mapper-strategies-list');
     strategiesList.innerHTML = '';
 
-    currentPortfolio.indices.forEach(idx => {
-        const strategy = state.loadedStrategyFiles[idx];
-        if (!strategy) return;
+    const strategies = getStrategies();
 
+    // Populate Source Filter if empty
+    const sourceFilter = document.getElementById('mapper-strategy-source-filter');
+    const selectedSource = sourceFilter ? sourceFilter.value : 'all';
+
+    // always refresh options to capture new sources (e.g. newly loaded portfolios)
+    if (sourceFilter) {
+        const currentSelection = sourceFilter.value;
+        const allSources = new Set();
+
+        strategies.forEach(s => {
+            if (s._sources) s._sources.forEach(src => allSources.add(src));
+        });
+
+        // Clear existing options except "All"
+        // (Assuming first option is 'all')
+        while (sourceFilter.options.length > 1) {
+            sourceFilter.remove(1);
+        }
+
+        // Sort and add options
+        Array.from(allSources).sort().forEach(src => {
+            const opt = document.createElement('option');
+            opt.value = src;
+            opt.textContent = src;
+            sourceFilter.appendChild(opt);
+        });
+
+        // Restore selection if possible, else default to 'all'
+        if (Array.from(sourceFilter.options).some(o => o.value === currentSelection)) {
+            sourceFilter.value = currentSelection;
+        } else {
+            sourceFilter.value = 'all';
+        }
+
+        // Ensure listener is attached (idempotent)
+        sourceFilter.onchange = () => renderStrategiesList();
+    }
+
+    if (strategies.length === 0) { // Check original strategies length
+        strategiesList.innerHTML = `
+            <div class="p-4 text-center text-gray-500 text-xs flex flex-col gap-2">
+                <span>No local strategies found.</span>
+                <span class="text-orange-400">Please import your Strategy Analysis JSON or load strategies first.</span>
+                <p class="opacity-50 mt-2 text-[10px]">The mapper connects your <b>Local Strategies</b> to Myfxbook IDs.</p>
+            </div>
+        `;
+        // Update count
+        const countSpan = mapperModal.querySelector('#mapper-strategy-count');
+        if (countSpan) countSpan.textContent = "0";
+        return;
+    }
+
+    // Filter by Source
+    const filteredStrategies = (selectedSource === 'all')
+        ? strategies
+        : strategies.filter(s => s._sources && s._sources.includes(selectedSource));
+
+    // Update count based on filtered strategies
+    const countSpan = mapperModal.querySelector('#mapper-strategy-count');
+    if (countSpan) countSpan.textContent = filteredStrategies.length;
+
+    filteredStrategies.forEach(strategy => {
         const strategyId = strategy.strategyId || strategy.name;
         const mappedIds = tempMapping[strategyId] || [];
         const isSelected = strategyId === selectedStrategyId;
 
         const div = document.createElement('div');
-        div.className = `p-3 rounded-lg cursor-pointer transition-colors flex flex-col gap-1 border border-transparent ${isSelected ? 'bg-blue-600 text-white border-blue-400 shadow-lg' : 'hover:bg-gray-700 text-gray-300 border-gray-700/50'}`;
+        div.className = `p-3 rounded-lg cursor-pointer transition-colors flex flex-col gap-1 border border-transparent ${isSelected ? 'bg-purple-900/50 border-purple-500 shadow-md ring-1 ring-purple-500/20' : 'hover:bg-gray-700/50 text-gray-400 border-gray-800'}`;
+
         div.innerHTML = `
-            <div class="font-medium text-sm leading-tight break-words">${strategy.name}</div>
+            <div class="font-medium text-sm leading-tight break-words ${isSelected ? 'text-white' : ''}">${strategy.name}</div>
             <div class="flex justify-between items-center mt-1">
                 <span class="text-xs opacity-70">${strategy.symbol || 'Unknown'}</span>
-                ${mappedIds.length > 0 ? `<span class="text-xs bg-black/30 px-2 py-0.5 rounded-full font-mono">${mappedIds.length} linked</span>` : ''}
+                ${mappedIds.length > 0 ? `<span class="text-[10px] bg-purple-500 text-white px-2 py-0.5 rounded-full font-bold shadow-sm">${mappedIds.length}</span>` : ''}
             </div>
         `;
         div.onclick = () => {
@@ -623,34 +628,246 @@ function renderStrategiesList() {
     });
 }
 
-function renderMapperContent() {
-    // 1. Calculate Unmapped Count
-    const magicStats = currentPortfolio.realMetrics?.magicStats || {};
-    const allAvailableIds = Object.keys(magicStats);
+function renderIdsList() {
+    const idsList = mapperModal.querySelector('#mapper-ids-list');
+    idsList.innerHTML = '';
 
-    // Collect all assigned IDs across all strategies
-    const assignedIds = new Set();
-    Object.values(tempMapping).forEach(ids => {
-        if (Array.isArray(ids)) {
-            ids.forEach(id => assignedIds.add(String(id)));
+    if (!selectedStrategyId) {
+        // Allow rendering IDs even without selection (View Only Mode)
+        // idsList.innerHTML = `<div class="text-center py-10 text-gray-500 italic">Select a strategy to begin mapping.</div>`;
+        // return;
+    }
+
+    let allIds = getVisibleIds(); // All filtered IDs
+
+    // Sort: 
+    // 1. Assigned to THIS strategy
+    // 2. Recommended (High Similarity)
+    // 3. Trade Count Desc
+    const currentMapped = tempMapping[selectedStrategyId] || [];
+
+    // Find name for Similarity
+    const strategies = getStrategies();
+    const currentStrat = strategies.find(s => (s.strategyId || s.name) === selectedStrategyId);
+    const stratName = currentStrat ? currentStrat.name : '';
+
+    allIds.sort((a, b) => {
+        const idA = String(a.id);
+        const idB = String(b.id);
+
+        const inA = currentMapped.includes(idA);
+        const inB = currentMapped.includes(idB);
+
+        if (inA !== inB) return inA ? -1 : 1; // Mapped first
+
+        const scoreA = calculateMatchScore(stratName, idA);
+        const scoreB = calculateMatchScore(stratName, idB);
+
+        if (Math.abs(scoreA - scoreB) > 0.1) return scoreB - scoreA; // Similarity second
+
+        return b.tradesCount - a.tradesCount; // Count third
+    });
+
+    // We don't want "Buckets" anymore (requested by user). Just one list.
+    // BUT we need to indicate ownership.
+
+    allIds.forEach(stat => {
+        const idStr = String(stat.id);
+        const isChecked = currentMapped.includes(idStr);
+        const similarity = calculateMatchScore(stratName, idStr);
+        const isRecommended = similarity > 0.8;
+
+        // Find owner if not this strategy
+        let ownerId = null;
+        let ownerName = null;
+        if (!isChecked) {
+            ownerId = Object.keys(tempMapping).find(sId => tempMapping[sId] && tempMapping[sId].includes(idStr));
+            if (ownerId && ownerId !== selectedStrategyId) {
+                // Find name
+                const ownerStrat = state.loadedStrategyFiles.find(s => (s.strategyId || s.name) === ownerId);
+                ownerName = ownerStrat ? ownerStrat.name : ownerId;
+            }
+        }
+
+        const label = document.createElement('label');
+        label.className = `flex items-center gap-3 p-2 rounded border transition-all cursor-pointer group relative
+            ${isChecked
+                ? 'bg-purple-900/20 border-purple-500/50 hover:bg-purple-900/30'
+                : 'bg-gray-800 border-gray-700 hover:bg-gray-700'}
+            ${isRecommended && !isChecked ? 'ring-1 ring-green-500/40 bg-green-900/5' : ''}
+        `;
+
+        label.innerHTML = `
+            <input type="checkbox" class="form-checkbox h-4 w-4 text-purple-500 rounded border-gray-600 bg-gray-800 focus:ring-purple-500 focus:ring-offset-gray-900 transition-colors z-10" ${isChecked ? 'checked' : ''}>
+            
+            <div class="flex-1 min-w-0 flex flex-col gap-0.5 z-0">
+                <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs font-bold ${isChecked ? 'text-purple-200' : 'text-gray-300'} truncate" title="${stat.exampleRaw || stat.id}">
+                        ${stat.id}
+                    </span>
+                    ${isRecommended ? '<span class="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-800 animate-pulse">MATCH</span>' : ''}
+                </div>
+                
+                ${ownerName ? `
+                <div class="text-[10px] text-orange-400 flex items-center gap-1 bg-orange-900/10 px-1.5 py-0.5 rounded w-fit border border-orange-900/30">
+                    <span>🔗</span> Linked to: <span class="font-bold truncate max-w-[200px]">${ownerName}</span>
+                </div>` : ''}
+            </div>
+
+            <!-- Metrics -->
+            <div class="flex items-center gap-4 text-xs whitespace-nowrap z-0">
+                <span class="font-bold text-gray-500 w-12 text-right">${stat.symbol || '???'}</span>
+                <span class="font-mono w-16 text-right ${(Number(stat.totalProfit) || 0) >= 0 ? 'text-green-400' : 'text-red-400'}">$${(Number(stat.totalProfit) || 0).toFixed(0)}</span>
+                <span class="bg-gray-800 text-gray-400 px-2 py-0.5 rounded text-[10px] min-w-[24px] text-center border border-gray-700">${stat.tradesCount}</span>
+
+                <!-- Inspect Button -->
+                <button class="p-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white rounded transition-colors shadow-sm border border-gray-600 z-20"
+                    title="Inspect Trades"
+                    onclick="event.preventDefault(); window.MagicMapper_inspectTrades('${stat.id}')">
+                    🔍
+                </button>
+            </div>
+        `;
+
+        const checkbox = label.querySelector('input');
+        checkbox.onchange = (e) => {
+            if (e.target.checked) {
+                // Steal logic: Remove from anyone else
+                Object.keys(tempMapping).forEach(sId => {
+                    if (sId !== selectedStrategyId && tempMapping[sId]) {
+                        tempMapping[sId] = tempMapping[sId].filter(x => x !== idStr);
+                    }
+                });
+
+                // Add to Current
+                if (!tempMapping[selectedStrategyId]) tempMapping[selectedStrategyId] = [];
+                tempMapping[selectedStrategyId].push(idStr);
+            } else {
+                // Remove
+                if (tempMapping[selectedStrategyId]) {
+                    tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(x => x !== idStr);
+                }
+            }
+            // Re-render to update UI (steal status, counts)
+            renderStrategiesList();
+            renderIdsList();
+        };
+
+        idsList.appendChild(label);
+    });
+}
+
+// Global Inspector Function
+window.MagicMapper_inspectTrades = (magicId) => {
+    console.log(`[MagicMapper] Inspecting trades for ID: ${magicId}`);
+
+    // Aggregate trades
+    let allTrades = [];
+
+    state.linkedAccounts.forEach(acc => {
+        if (acc.metrics && acc.metrics._tradesById && acc.metrics._tradesById[magicId]) {
+            const accountTrades = acc.metrics._tradesById[magicId].map(t => ({
+                ...t,
+                _accountName: acc.name
+            }));
+            allTrades = allTrades.concat(accountTrades);
         }
     });
 
-    const unmappedCount = allAvailableIds.filter(id => !assignedIds.has(String(id))).length;
-
-    // 2. Update Alert
-    const alertBox = mapperModal.querySelector('#mapper-unmapped-alert');
-    const countSpan = mapperModal.querySelector('#mapper-unmapped-count');
-
-    if (alertBox && countSpan) {
-        if (unmappedCount > 0) {
-            alertBox.classList.remove('hidden');
-            countSpan.textContent = unmappedCount;
-        } else {
-            alertBox.classList.add('hidden');
-        }
+    // Also check Sandbox / Deep Scan Data
+    if (state.sandboxData && state.sandboxData.tradesById && state.sandboxData.tradesById[magicId]) {
+        const sandboxTrades = state.sandboxData.tradesById[magicId].map(t => ({
+            ...t,
+            _accountName: 'Sandbox / Deep Scan'
+        }));
+        allTrades = allTrades.concat(sandboxTrades);
     }
 
+    // Sort desc by date
+    allTrades.sort((a, b) => new Date(b.closeTime) - new Date(a.closeTime));
+
+    // Render Modal (Reuse simple modal logic or create new)
+    let modal = document.getElementById('trade-inspector-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'trade-inspector-modal';
+        modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-[70] hidden';
+        modal.innerHTML = `
+            <div class="bg-gray-900 rounded-xl shadow-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center p-4 border-b border-gray-700 bg-gray-800 rounded-t-xl">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <span>🔍</span> Trade Inspector: <span id="inspector-magic-id" class="text-sky-400 font-mono"></span>
+                    </h3>
+                    <button onclick="document.getElementById('trade-inspector-modal').classList.add('hidden')" class="text-gray-400 hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-auto p-0 custom-scrollbar">
+                    <table class="w-full text-left text-xs text-gray-300">
+                        <thead class="bg-gray-800 text-gray-400 sticky top-0 uppercase font-medium">
+                            <tr>
+                                <th class="p-3">Open Date</th>
+                                <th class="p-3">Close Date</th>
+                                <th class="p-3">Type</th>
+                                <th class="p-3">Size</th>
+                                <th class="p-3">Symbol</th>
+                                <th class="p-3 text-right">Profit</th>
+                                <th class="p-3 text-right">Pips</th>
+                                <th class="p-3">Comment</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inspector-table-body" class="divide-y divide-gray-800">
+                            <tr><td colspan="8" class="p-8 text-center text-gray-500 italic">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="p-2 border-t border-gray-700 bg-gray-800/50 rounded-b-xl text-xs text-gray-500 text-right">
+                    Total Trades: <span id="inspector-total-count" class="text-white font-bold">0</span>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+    }
+
+    // Populate
+    modal.querySelector('#inspector-magic-id').textContent = magicId;
+    const tbody = modal.querySelector('#inspector-table-body');
+    const countSpan = modal.querySelector('#inspector-total-count');
+
+    tbody.innerHTML = '';
+
+    if (allTrades.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-gray-500 italic">No trades found for this ID.</td></tr>`;
+    } else {
+        allTrades.forEach(t => {
+            const profitVal = typeof t.profit === 'number' ? t.profit : parseFloat(String(t.profit).replace(/[^0-9.-]/g, '')) || 0;
+            const isWin = profitVal >= 0;
+            const safe = (val) => (val === undefined || val === null || val === 'undefined' || val === '') ? '-' : val;
+
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-gray-800/50 transition-colors';
+            row.innerHTML = `
+                <td class="p-3 whitespace-nowrap text-gray-400">${safe(t.openTime)}</td>
+                <td class="p-3 whitespace-nowrap text-gray-400">${safe(t.closeTime)}</td>
+                <td class="p-3 font-bold ${String(t.action).includes('Buy') ? 'text-emerald-500' : 'text-red-500'}">${t.action}</td>
+                <td class="p-3">${safe(t.lots)}</td>
+                <td class="p-3 font-bold text-gray-300">${t.symbol}</td>
+                <td class="p-3 text-right font-bold ${isWin ? 'text-emerald-400' : 'text-red-400'}">$${profitVal.toFixed(2)}</td>
+                <td class="p-3 text-right ${t.pips >= 0 ? 'text-green-500' : 'text-red-500'}">${safe(t.pips)}</td>
+                <td class="p-3 text-gray-400 max-w-[200px] truncate" title="${t.comment}">${t.comment}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    countSpan.textContent = allTrades.length;
+    modal.classList.remove('hidden');
+};
+
+function renderMapperContent() {
     renderStrategiesList();
     renderIdsList();
 }
+
+

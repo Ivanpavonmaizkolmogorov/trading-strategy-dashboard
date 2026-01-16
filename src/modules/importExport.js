@@ -26,6 +26,7 @@ export const exportAnalysis = () => {
         tableViews: state.tableViews,
         activeViews: state.activeViews,
         databankPortfolios: state.databankPortfolios,
+        magicNumberMap: state.magicNumberMap, // <-- Persist Magic Mappings
     };
 
     const stateString = JSON.stringify(appState);
@@ -78,6 +79,12 @@ const mergeState = async (importedState) => {
             newPortfoliosAdded++;
         }
     });
+
+    // 4. Merge Magic Mappings
+    if (importedState.magicNumberMap) {
+        state.magicNumberMap = { ...state.magicNumberMap, ...importedState.magicNumberMap };
+        console.log('[ImportExport] Merged Magic Mappings.');
+    }
 
     if (newPortfoliosAdded > 0) {
         alert(`${newPortfoliosAdded} portafolios nuevos han sido fusionados con tu sesión.`);
@@ -141,7 +148,9 @@ const restoreState = async (importedState) => {
     state.nextPortfolioId = importedState.nextPortfolioId || (state.savedPortfolios.length ? Math.max(...state.savedPortfolios.map(p => p.id || 0)) + 1 : 0);
     state.tableViews = importedState.tableViews || state.tableViews;
     state.activeViews = importedState.activeViews || state.activeViews;
+    state.activeViews = importedState.activeViews || state.activeViews;
     state.databankPortfolios = importedState.databankPortfolios || [];
+    state.magicNumberMap = importedState.magicNumberMap || {}; // Restore Magic Mappings
 
     updateTradesFilesList();
 

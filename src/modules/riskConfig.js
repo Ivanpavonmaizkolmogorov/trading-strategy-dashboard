@@ -250,8 +250,13 @@ const populateModal = (portfolio) => {
         row.className = 'hover:bg-gray-700/30 transition-colors group';
         row.innerHTML = `
             <td class="px-4 py-3">
-                <div class="text-white font-medium mb-2 text-sm truncate" title="${strategyName}">
-                    ${strategyName}
+                <div class="flex items-center mb-2">
+                    <div class="text-white font-medium text-sm truncate" title="${strategyName}">
+                        ${strategyName}
+                    </div>
+                    <button class="copy-strat-btn ml-2 text-gray-500 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100" data-name="${strategyName}" title="Copy Name">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                    </button>
                 </div>
                 <div class="flex items-center gap-3">
                     <span class="text-[10px] text-gray-500 font-mono w-6 text-right">$0</span>
@@ -294,6 +299,20 @@ const populateModal = (portfolio) => {
 
     document.querySelectorAll('.risk-slider').forEach(slider => {
         slider.addEventListener('input', (e) => handleRiskChange(e, 'slider'));
+    });
+
+    // Add event listeners to copy buttons
+    document.querySelectorAll('.copy-strat-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            const name = btn.dataset.name.replace(/\.csv$/i, '');
+            navigator.clipboard.writeText(name).then(() => {
+                showToast(`Copied to clipboard`, 'success');
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+                showToast('Failed to copy', 'error');
+            });
+        };
     });
 
     // Initial calculation

@@ -27,6 +27,7 @@ export const ALL_METRICS = {
     maxConsecutiveWins: { label: 'Max Consecutive Wins', class: 'p-2 text-center' },
     maxMarginRequired: { label: 'Max Margin Req.', class: 'p-2 text-center' },
     gammaFlowScore: { label: 'Gamma Flow Score', class: 'p-2 text-center' },
+    correlationWithBase: { label: 'Corr. vs Base', class: 'p-2 text-center text-amber-400' },
     cagr: { label: 'CAGR %', class: 'p-2 text-center' },
     cagr_custom_score: { label: 'Optimized Score', class: 'p-2 text-center font-bold text-sky-400' },
 };
