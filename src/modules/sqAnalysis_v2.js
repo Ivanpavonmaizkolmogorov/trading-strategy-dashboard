@@ -91,7 +91,7 @@ export const calculateSQMetrics = (trades) => {
         }
         const dd = peakEquity - currentEquity; // Positive value representing drop
         if (dd > maxDD) {
-            console.log(`[SQ Metrics] New Max DD Found: ${dd.toFixed(2)} (Peak: ${peakEquity.toFixed(2)} -> Curr: ${currentEquity.toFixed(2)}) at ${t.exitTime}. Last Trade PnL: ${pnl.toFixed(2)}`);
+            // console.log(`[SQ Metrics] New Max DD Found: ${dd.toFixed(2)} (Peak: ${peakEquity.toFixed(2)} -> Curr: ${currentEquity.toFixed(2)}) at ${t.exitTime}. Last Trade PnL: ${pnl.toFixed(2)}`);
             maxDD = dd;
         }
 
@@ -135,7 +135,7 @@ export const calculateSQMetrics = (trades) => {
             if (peakTime) {
                 currentStagnation = (t.exitTime.getTime() - peakTime) / (1000 * 60 * 60 * 24);
                 if (currentStagnation > maxStagnationDays) {
-                    console.log(`[SQ Metrics] New Max Stagnation Days in Drawdown: ${currentStagnation.toFixed(1)} days.`);
+                    // console.log(`[SQ Metrics] New Max Stagnation Days in Drawdown: ${currentStagnation.toFixed(1)} days.`);
                     maxStagnationDays = currentStagnation;
                 }
             }
@@ -722,11 +722,116 @@ const calculateMarkovChain = (trades, timeData) => {
     };
 };
 
+// --- TRADE MATCHING HELPER ---
+const matchTrades = (btTrades, realTrades) => {
+    const roundToHour = (d) => {
+        if (!d) return null;
+        const x = new Date(d);
+        x.setMinutes(0, 0, 0, 0);
+        return x.getTime();
+    };
+
+    const btMap = new Map();
+    btTrades.forEach(t => {
+        const k = roundToHour(t.openTime);
+        if (!k) return;
+        if (!btMap.has(k)) btMap.set(k, []);
+        btMap.get(k).push(t);
+    });
+
+    const matches = [];
+    const orphanReal = [];
+    const matchedBtIds = new Set();
+
+    realTrades.forEach(real => {
+        const k = roundToHour(real.openTime);
+        const candidates = btMap.get(k);
+        let best = null;
+
+        if (candidates) {
+            const avail = candidates.filter(c => !matchedBtIds.has(c));
+            let bestScore = -1;
+
+            avail.forEach(bt => {
+                let score = 0;
+                // Time proximity (minute diff reversed)
+                const diffMin = Math.abs(bt.openTime - real.openTime) / 60000;
+                if (diffMin < 90) score += (100 - diffMin); // Tolerance 90 mins
+
+                // Symbol Match
+                if (real.symbol && bt.symbol && real.symbol.toLowerCase() === bt.symbol.toLowerCase()) score += 200;
+
+                // Type Match
+                if (real.type && bt.type && real.type.toLowerCase() === bt.type.toLowerCase()) score += 100;
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = bt;
+                }
+            });
+        }
+
+        if (best) {
+            matches.push({ real, bt: best });
+            matchedBtIds.add(best);
+        } else {
+            orphanReal.push(real);
+        }
+    });
+
+    const orphanBT = btTrades.filter(t => !matchedBtIds.has(t));
+
+    // Sort Descending by Real Exit Time (or Open Time)
+    matches.sort((a, b) => b.real.openTime - a.real.openTime);
+    orphanReal.sort((a, b) => b.openTime - a.openTime);
+    orphanBT.sort((a, b) => b.openTime - a.openTime);
+
+    return { matches, orphanReal, orphanBT };
+};
+
 export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selectedPeriod = 'month', strategiesList = [], currentStrategyId = 'all', currentDataType = 'backtest', markovPeriod = 'trade', markovDepth = 1, currentFreqSelection = 'All', portfoliosList = [], currentPortfolioIndex = -1, secondaryMetrics = null, dateRange = {}) => {
     if (!metrics) return '<div class="text-gray-400 text-center p-10">No hay datos suficientes para el análisis.</div>';
 
+    // --- STATE FOR EXPORT ---
+    if (!window.latestSQAnalysisData) window.latestSQAnalysisData = null;
+
+    window.copySQAnalysisJSON = () => {
+        if (!window.latestSQAnalysisData) {
+            alert("No analysis data available to copy.");
+            return;
+        }
+        const json = JSON.stringify(window.latestSQAnalysisData, null, 2);
+        navigator.clipboard.writeText(json).then(() => {
+            const btn = document.getElementById('sq-copy-json-btn');
+            if (btn) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '✅ Copied!';
+                setTimeout(() => btn.innerHTML = originalText, 2000);
+            }
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            alert("Failed to copy data.");
+        });
+    };
+
+
+
     const formatMoney = (val) => val !== undefined && val !== null ? `$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
     const formatNum = (val, dec = 2) => val !== undefined && val !== null ? val.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : '-';
+
+    // --- Dynamic Modal Title ---
+    let modalTitle = 'Monthly Performance';
+    if (selectedPeriod === 'trade') modalTitle = 'Trade Analysis';
+    else if (selectedPeriod === 'year') modalTitle = 'Yearly Performance';
+    else if (selectedPeriod === 'week') modalTitle = 'Weekly Performance';
+    else if (selectedPeriod === 'day') modalTitle = 'Daily Performance';
+
+    if (currentStrategyId !== 'all') {
+        const strat = strategiesList.find(s => s.id === currentStrategyId);
+        if (strat) {
+            modalTitle = strat.name.replace('.csv', '').trim();
+        }
+    }
 
     const metricsOptions = [
         { value: 'pnl', label: 'Net Profit' },
@@ -743,7 +848,8 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
         { value: 'month', label: 'Monthly' },
         { value: 'week', label: 'Weekly' },
         { value: 'day', label: 'Daily' },
-        { value: 'year', label: 'Yearly' }
+        { value: 'year', label: 'Yearly' },
+        { value: 'trade', label: 'Trade-Level' }
     ];
 
     const strategyOptions = strategiesList.map(s =>
@@ -766,6 +872,9 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
             <option value="all" ${currentStrategyId === 'all' ? 'selected' : ''}>All Strategies (Portfolio)</option>
             ${strategyOptions}
         </select>
+        <button onclick="const sel = document.getElementById('sq-strategy-select'); if(sel.value !== 'all') window.addStrategyToQuarantine(sel.options[sel.selectedIndex].text.trim());" class="ml-2 text-red-500 hover:text-red-400 p-1 rounded hover:bg-gray-700 transition-colors" title="Mover estrategia a Cuarentena">
+            ☣️
+        </button>
     `;
 
     const dateControls = `
@@ -814,6 +923,41 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
             <select id="sq-metric-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500">
                 ${metricsOptions.map(o => `<option value="${o.value}" ${o.value === selectedMetric ? 'selected' : ''}>${o.label}</option>`).join('')}
             </select>
+            
+            <!-- Quick View Buttons -->
+            <button onclick="const p=document.getElementById('sq-period-select');const d=document.getElementById('sq-data-type-select');if(p&&d){p.value='month';d.value='comparison';p.dispatchEvent(new Event('change'));d.dispatchEvent(new Event('change'));}" class="ml-2 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded px-2 py-1 border border-gray-500 transition-colors" title="Default View (Monthly Comparison)">
+                📅 Default
+            </button>
+            <button onclick="const p=document.getElementById('sq-period-select');const d=document.getElementById('sq-data-type-select');if(p&&d){p.value='trade';d.value='comparison';p.dispatchEvent(new Event('change'));d.dispatchEvent(new Event('change'));}" class="ml-1 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded px-2 py-1 border border-gray-500 transition-colors" title="Trade Level Comparison">
+                🔬 Trade Split
+            </button>
+
+            <!-- Copy JSON Button -->
+             <button id="sq-copy-json-btn" onclick="window.copySQAnalysisJSON()" class="ml-2 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded px-2 py-1 border border-gray-500 transition-colors flex items-center gap-1" title="Copy Analysis Data to Clipboard (JSON)">
+                📋 JSON
+            </button>
+            
+            ${(selectedPeriod === 'trade' && currentDataType === 'comparison') ? `
+            <button onclick="window.showAnalysisBreakdown()" class="ml-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 hover:text-amber-200 text-xs rounded px-2 py-1 border border-amber-600/50 transition-colors flex items-center gap-1 animate-pulse" title="View Breakdown by Strategy">
+                📊 Breakdown
+            </button>
+            <button onclick="(() => { 
+                const sId = '${currentStrategyId}';
+                // Try to find name in the global list if accessible, or passed lists
+                // We don't have strategiesList here easily as a JS object in HTML string context.
+                // BUT we are building the string inside the JS function where strategiesList IS available!
+                // So we can compute the name RIGHT HERE in the template literal.
+                // Nice.
+             })()" style="display:none"></button>
+            <!-- Compute Name for PnL Chart -->
+            <button onclick="window.showPnLChart('${(() => {
+                const sObj = strategiesList.find(s => s.id === currentStrategyId);
+                const name = sObj ? sObj.name : currentStrategyId;
+                // Escape quotes
+                return name.replace(/'/g, "\\'");
+            })()}')" class="ml-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 hover:text-blue-200 text-xs rounded px-2 py-1 border border-blue-600/50 transition-colors flex items-center gap-1" title="Chart PnL Comparison">
+                📈 Chart PnL
+            </button>` : ''}
             <!-- R-Squared Value Container -->
             <div id="sq-r2-container" class="ml-2 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs hidden">
                 <span class="text-gray-400">R²:</span>
@@ -932,7 +1076,279 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
         return `<tr class="hover:bg-gray-700/30 transition-colors">${cells}</tr>`;
     };
 
-    if (selectedPeriod === 'month') {
+    if (selectedPeriod === 'trade') {
+        const arrow = analysisDateSortAsc ? '▲' : '▼';
+        headersHTML = `
+            <th class="py-2 px-2 text-left font-bold text-gray-300 cursor-pointer select-none" onclick="window.toggleAnalysisSort()">Time ${arrow}</th>
+            <th class="py-2 px-2 text-left text-gray-400">Symbol</th>
+            <th class="py-2 px-2 text-left text-gray-400">Type</th>
+            <th class="py-2 px-2 text-right text-gray-400">Size</th>
+            <th class="py-2 px-2 text-right text-gray-400">Open Price</th>
+            <th class="py-2 px-2 text-right text-gray-400">PnL (Real)</th>
+            <th class="py-2 px-2 text-right text-gray-400">PnL (BT)</th>
+            <th class="py-2 px-2 text-right text-gray-400">Diff</th>
+        `;
+
+        let rows = '';
+        const btTrades = metrics ? (metrics.trades || []) : [];
+        const realTrades = secondaryMetrics ? (secondaryMetrics.trades || []) : [];
+
+        // Sorting
+        const mk = analysisDateSortAsc ? 1 : -1;
+
+        // --- REFACTORED RENDER LOGIC ---
+        if (currentDataType === 'comparison' && realTrades.length > 0) {
+            const results = matchTrades(btTrades, realTrades);
+
+            // Helper for Smart Symbol Display
+            const getSmartSymbol = (t, strategies) => {
+                // 1. Try Strategy Name via ID (for Backtest trades mostly)
+                if (t.strategyId && strategies && strategies.length > 0) {
+                    const strat = strategies.find(s => s.id === t.strategyId);
+                    if (strat) return strat.name.replace('.csv', '').trim();
+                }
+
+                // 2. Use Comment (Magic) if available (Common for Real/Orphan Real)
+                // Use this as primary fallback as per user request (Strategy Name > Magic > Symbol)
+                if (t.comment && t.comment.trim().length > 0) {
+                    return t.comment.replace('.csv', '').trim();
+                }
+
+                // 3. Fallback to Symbol
+                return t.symbol || '-';
+            };
+
+            // 1. CALCULATE STATS FIRST
+            const sumPnL = (list) => list.reduce((acc, x) => acc + x.pnl, 0);
+            const sumMatchedReal = results.matches.reduce((acc, x) => acc + x.real.pnl, 0);
+            const sumMatchedBT = results.matches.reduce((acc, x) => acc + x.bt.pnl, 0);
+            const sumMatchedDiff = results.matches.reduce((acc, x) => acc + (x.real.pnl - x.bt.pnl), 0);
+
+            const sumOrphanReal = sumPnL(results.orphanReal);
+            const sumOrphanBT = sumPnL(results.orphanBT);
+
+            const totalRealPnL = sumMatchedReal + sumOrphanReal;
+            const totalBTPnL = sumMatchedBT + sumOrphanBT;
+            const totalDiff = totalRealPnL - totalBTPnL;
+
+            // R2 Helpers
+            const calculateR2 = (arrX, arrY) => {
+                if (arrX.length < 2 || arrX.length !== arrY.length) return 0;
+                const n = arrX.length;
+                const meanX = arrX.reduce((a, b) => a + b, 0) / n;
+                const meanY = arrY.reduce((a, b) => a + b, 0) / n;
+                let num = 0, denX = 0, denY = 0;
+                for (let i = 0; i < n; i++) {
+                    const dx = arrX[i] - meanX;
+                    const dy = arrY[i] - meanY;
+                    num += dx * dy;
+                    denX += dx * dx;
+                    denY += dy * dy;
+                }
+                const r = num / Math.sqrt(denX * denY);
+                return r * r;
+            };
+
+            const xMatched = results.matches.map(m => m.bt.pnl);
+            const yMatched = results.matches.map(m => m.real.pnl);
+            const r2Matched = calculateR2(xMatched, yMatched);
+
+            // Global Set
+            const xGlobal = [...xMatched];
+            const yGlobal = [...yMatched];
+            results.orphanReal.forEach(r => { xGlobal.push(0); yGlobal.push(r.pnl); });
+            results.orphanBT.forEach(b => { xGlobal.push(b.pnl); yGlobal.push(0); });
+            const r2Global = calculateR2(xGlobal, yGlobal);
+
+            // Capture for Export
+            window.latestSQAnalysisData = {
+                matches: results.matches.map(m => ({
+                    displaySymbol: getSmartSymbol(m.bt, strategiesList) || getSmartSymbol(m.real, strategiesList),
+                    bt: m.bt,
+                    real: m.real,
+                    diff: (m.real.pnl || 0) - (m.bt.pnl || 0)
+                })),
+                orphanReal: results.orphanReal.map(r => ({
+                    ...r,
+                    displaySymbol: getSmartSymbol(r, strategiesList)
+                })),
+                orphanBT: results.orphanBT.map(b => ({
+                    ...b,
+                    displaySymbol: getSmartSymbol(b, strategiesList)
+                })),
+                totals: { // Will be populated after calc
+                    matched: { real: sumMatchedReal, bt: sumMatchedBT, diff: sumMatchedDiff, r2: r2Matched },
+                    orphanReal: { pnl: sumOrphanReal, count: results.orphanReal.length },
+                    orphanBT: { pnl: sumOrphanBT, count: results.orphanBT.length },
+                    global: { real: totalRealPnL, bt: totalBTPnL, diff: totalDiff, r2: r2Global }
+                }
+            };
+            // Dispatch Event for Listeners (e.g. PnL Modal)
+            window.dispatchEvent(new CustomEvent('sq-analysis-rendered', {
+                detail: window.latestSQAnalysisData
+            }));
+
+
+            // 2. RENDER SECTIONS SEQUENTIALLY
+
+            // --- A) MATCHED SECTION ---
+
+
+            // MATCHED
+            if (results.matches.length > 0) {
+                // Header
+                rows += `<tr class="bg-gray-800/50"><td colspan="8" class="py-2 px-4 text-xs font-bold text-emerald-400 uppercase tracking-wider border-b border-gray-700">Matched Trades (${results.matches.length})</td></tr>`;
+
+                // Rows
+                results.matches.sort((a, b) => (a.real.openTime - b.real.openTime) * mk);
+                results.matches.forEach(m => {
+                    const r = m.real;
+                    const b = m.bt;
+                    // Fallback to 0 if PnL is missing to avoid calculation errors
+                    const rPnL = r.pnl !== undefined ? r.pnl : 0;
+                    const bPnL = b.pnl !== undefined ? b.pnl : 0;
+
+                    const diff = rPnL - bPnL;
+                    const diffClass = Math.abs(diff) > 0.01 ? (diff >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-500';
+                    const timeDiff = Math.abs(r.openTime - b.openTime) / 60000;
+
+                    rows += `
+                        <tr class="hover:bg-gray-700/30 border-b border-gray-800 transition-colors">
+                            <td class="py-2 px-2 text-gray-300 whitespace-nowrap">
+                                <div>${r.openTime ? r.openTime.toISOString().replace('T', ' ').slice(0, 16) : '-'}</div>
+                                <div class="text-[10px] text-gray-500">Δ ${timeDiff.toFixed(0)}m</div>
+                            </td>
+                            <td class="py-2 px-2 text-gray-400 text-xs">${getSmartSymbol(b, strategiesList) || getSmartSymbol(r, strategiesList)}</td>
+                            <td class="py-2 px-2 text-gray-400 text-xs">${r.type || b.type || '-'}</td>
+                            <td class="py-2 px-2 text-right text-gray-400 text-xs">${formatNum(r.size || b.size || 0)}</td>
+                            <td class="py-2 px-2 text-right text-gray-400 text-xs">${formatNum(r.openPrice || b.openPrice || 0, 4)}</td>
+                            <td class="py-2 px-2 text-right font-mono font-bold ${r.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(r.pnl)}</td>
+                            <td class="py-2 px-2 text-right font-mono ${b.pnl >= 0 ? 'text-emerald-500/70' : 'text-red-500/70'}">${formatMoney(b.pnl)}</td>
+                            <td class="py-2 px-2 text-right font-mono text-xs ${diffClass}">${formatMoney(diff)}</td>
+                        </tr>
+                     `;
+                });
+
+                // Total Row (IMMEDIATE)
+                rows += `
+                    <tr class="bg-gray-800 font-bold border-b border-gray-700">
+                        <td colspan="5" class="py-2 px-4 text-emerald-400 text-right uppercase text-xs">Matched Total (R²: ${r2Matched.toFixed(3)})</td>
+                        <td class="py-2 px-2 text-right font-mono ${sumMatchedReal >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(sumMatchedReal)}</td>
+                        <td class="py-2 px-2 text-right font-mono ${sumMatchedBT >= 0 ? 'text-emerald-500/70' : 'text-red-500/70'}">${formatMoney(sumMatchedBT)}</td>
+                        <td class="py-2 px-2 text-right font-mono text-xs text-gray-400">${formatMoney(sumMatchedDiff)}</td>
+                    </tr>
+                 `;
+            }
+
+
+            // --- B) ORPHAN REAL SECTION ---
+            if (results.orphanReal.length > 0) {
+                rows += `<tr class="bg-gray-800/50"><td colspan="8" class="py-2 px-4 text-xs font-bold text-amber-400 uppercase tracking-wider border-b border-gray-700 mt-4">Orphan Real Trades (${results.orphanReal.length}) <span class="text-gray-500 font-normal normal-case">- Not found in Backtest</span></td></tr>`;
+                results.orphanReal.sort((a, b) => (a.openTime - b.openTime) * mk);
+                results.orphanReal.forEach(r => {
+                    rows += `
+                        <tr class="hover:bg-gray-700/30 border-b border-gray-800 transition-colors bg-red-900/5">
+                            <td class="py-2 px-2 text-gray-300 whitespace-nowrap">${r.openTime ? r.openTime.toISOString().replace('T', ' ').slice(0, 16) : '-'}</td>
+                            <td class="py-2 px-2 text-gray-400 text-xs">${getSmartSymbol(r, strategiesList)}</td>
+                            <td class="py-2 px-2 text-gray-400 text-xs">${r.type || '-'}</td>
+                            <td class="py-2 px-2 text-right text-gray-400 text-xs">${formatNum(r.size || 0)}</td>
+                            <td class="py-2 px-2 text-right text-gray-400 text-xs">${formatNum(r.openPrice || 0, 4)}</td>
+                            <td class="py-2 px-2 text-right font-mono font-bold ${r.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(r.pnl)}</td>
+                            <td class="py-2 px-2 text-right text-gray-500">-</td>
+                            <td class="py-2 px-2 text-right text-gray-500">-</td>
+                        </tr>
+                     `;
+                });
+
+                // Total Row (IMMEDIATE)
+                rows += `
+                    <tr class="bg-gray-800 font-bold border-b border-gray-700">
+                        <td colspan="5" class="py-2 px-4 text-amber-400 text-right uppercase text-xs">Orphan Real Total</td>
+                        <td class="py-2 px-2 text-right font-mono ${sumOrphanReal >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(sumOrphanReal)}</td>
+                        <td class="py-2 px-2 text-right font-mono text-gray-500">-</td>
+                        <td class="py-2 px-2 text-right font-mono text-xs text-gray-400">-</td>
+                    </tr>
+                `;
+            }
+
+
+            // ORPHAN BACKTEST
+
+
+
+
+            // --- C) ORPHAN BACKTEST SECTION ---
+            if (results.orphanBT.length > 0) {
+                rows += `<tr class="bg-gray-800/50"><td colspan="8" class="py-2 px-4 text-xs font-bold text-blue-400 uppercase tracking-wider border-b border-gray-700 mt-4">Orphan Backtest Trades (${results.orphanBT.length}) <span class="text-gray-500 font-normal normal-case">- Not executed in Real</span></td></tr>`;
+                results.orphanBT.sort((a, b) => (a.openTime - b.openTime) * mk);
+                const displayLimit = 200;
+                results.orphanBT.slice(0, displayLimit).forEach(b => {
+                    rows += `
+                        <tr class="hover:bg-gray-700/30 border-b border-gray-800 transition-colors opacity-60">
+                            <td class="py-2 px-2 text-gray-300 whitespace-nowrap">${b.openTime ? b.openTime.toISOString().replace('T', ' ').slice(0, 16) : '-'}</td>
+                            <td class="py-2 px-2 text-gray-400 text-xs">${getSmartSymbol(b, strategiesList)}</td>
+                            <td class="py-2 px-2 text-gray-400 text-xs">${b.type || '-'}</td>
+                            <td class="py-2 px-2 text-right text-gray-400 text-xs">${formatNum(b.size || 0)}</td>
+                            <td class="py-2 px-2 text-right text-gray-400 text-xs">${formatNum(b.openPrice || 0, 4)}</td>
+                            <td class="py-2 px-2 text-right text-gray-500">-</td>
+                            <td class="py-2 px-2 text-right font-mono font-bold ${b.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(b.pnl)}</td>
+                            <td class="py-2 px-2 text-right text-gray-500">-</td>
+                        </tr>
+                     `;
+                });
+                if (results.orphanBT.length > displayLimit) {
+                    rows += `<tr><td colspan="8" class="text-center text-xs text-gray-500 py-2">... ${results.orphanBT.length - displayLimit} more hidden ...</td></tr>`;
+                }
+
+                // IMPROVED: Orphan Backtest Total Row Injection (Immediate)
+                const sumPnLSafe = (list) => list.reduce((acc, x) => acc + (x.pnl || 0), 0);
+                const sumOrphanBTSec = sumPnLSafe(results.orphanBT);
+
+                rows += `
+                    <tr class="bg-gray-800 font-bold border-b border-gray-700">
+                        <td colspan="5" class="py-2 px-4 text-blue-400 text-right uppercase text-xs">Orphan Backtest Total</td>
+                        <td class="py-2 px-2 text-right font-mono text-gray-500">-</td>
+                        <td class="py-2 px-2 text-right font-mono ${sumOrphanBTSec >= 0 ? 'text-emerald-500/70' : 'text-red-500/70'}">${formatMoney(sumOrphanBTSec)}</td>
+                        <td class="py-2 px-2 text-right font-mono text-xs text-gray-400">-</td>
+                    </tr>
+                `;
+            }
+
+            // --- D) GLOBAL TOTALS ---
+            // Re-calculate stats for global summary
+
+            rows += `
+                <tr class="bg-gray-900 border-t-4 border-gray-600 font-bold text-sm">
+                    <td colspan="5" class="py-3 px-4 text-white text-right uppercase">Global Total (All Sources) - R²: <span class="${r2Global > 0.7 ? 'text-emerald-400' : 'text-yellow-400'}">${r2Global.toFixed(3)}</span></td>
+                    <td class="py-3 px-2 text-right font-mono ${totalRealPnL >= 0 ? 'text-emerald-400' : 'text-red-400'} text-base">${formatMoney(totalRealPnL)}</td>
+                    <td class="py-3 px-2 text-right font-mono ${totalBTPnL >= 0 ? 'text-emerald-400' : 'text-red-400'} text-base opacity-70">${formatMoney(totalBTPnL)}</td>
+                    <td class="py-3 px-2 text-right font-mono ${totalDiff >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(totalDiff)}</td>
+                </tr>
+            `;
+
+        } else {
+            // Single View (Backtest or Real)
+            const trades = currentDataType === 'real' ? realTrades : btTrades;
+            trades.sort((a, b) => (a.openTime - b.openTime) * mk);
+
+            trades.forEach(t => {
+                rows += `
+                        <tr class="hover:bg-gray-700/30 border-b border-gray-800 transition-colors">
+                            <td class="py-2 px-2 text-gray-300 whitespace-nowrap">${t.openTime ? t.openTime.toISOString().replace('T', ' ').slice(0, 16) : '-'}</td>
+                            <td class="py-2 px-2 text-gray-400 text-xs">${t.symbol || '-'}</td>
+                            <td class="py-2 px-2 text-gray-400 text-xs">${t.type || '-'}</td>
+                            <td class="py-2 px-2 text-right text-gray-400 text-xs">${formatNum(t.size || 0)}</td>
+                            <td class="py-2 px-2 text-right text-gray-400 text-xs">${formatNum(t.openPrice || 0, 4)}</td>
+                            <td class="py-2 px-2 text-right font-mono font-bold ${t.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(t.pnl)}</td>
+                            <td class="py-2 px-2 text-right text-gray-600">-</td>
+                            <td class="py-2 px-2 text-right text-gray-600">-</td>
+                        </tr>
+                     `;
+            });
+        }
+        tableRows = rows;
+    }
+    else if (selectedPeriod === 'month') {
         const primaryBucket = safeTimeData.month || {};
         const secondaryBucket = (secondaryMetrics && secondaryMetrics.timeData && currentDataType === 'comparison') ? secondaryMetrics.timeData.month : {};
         const allYears = new Set([...Object.keys(primaryBucket), ...Object.keys(secondaryBucket)]);
@@ -1252,7 +1668,7 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
         <div class="p-6 space-y-6">
             <div class="bg-gray-800/50 rounded-lg border border-gray-700 overflow-hidden">
                 <div class="p-3 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center">
-                    <h3 class="text-amber-400 font-bold text-sm uppercase tracking-wider">Monthly Performance</h3>
+                    <h3 class="text-amber-400 font-bold text-sm uppercase tracking-wider truncate max-w-xl" title="${modalTitle}">${modalTitle}</h3>
                     ${headerControls} 
                 </div>
                 <div class="${overflowClass} max-h-[500px] overflow-y-auto custom-scrollbar">
@@ -1570,6 +1986,19 @@ export const parseTradesFromContent = (content) => {
         let exitReason = '';
         if (idxCloseType !== -1) exitReason = cols[idxCloseType] ? cols[idxCloseType].trim() : '';
 
+        // NEW: Extended Parsing
+        const idxSymbol = h.findIndex(c => c === 'symbol' || c === 'instrument');
+        const idxType = h.findIndex(c => c === 'type' || c === 'direction' || c === 'order');
+        const idxSize = h.findIndex(c => c === 'size' || c === 'lots' || c === 'amount');
+        const idxOpenPrice = h.findIndex(c => c.includes('open') && c.includes('price'));
+        const idxClosePrice = h.findIndex(c => (c.includes('close') || c.includes('exit')) && c.includes('price'));
+
+        const symbol = idxSymbol !== -1 ? cols[idxSymbol] : '';
+        const type = idxType !== -1 ? cols[idxType] : '';
+        const size = idxSize !== -1 ? parseFlexibleFloat(cols[idxSize]) : 0;
+        const openPrice = idxOpenPrice !== -1 ? parseFlexibleFloat(cols[idxOpenPrice]) : 0;
+        const closePrice = idxClosePrice !== -1 ? parseFlexibleFloat(cols[idxClosePrice]) : 0;
+
         const duration = (exitTime && openTime) ? (exitTime - openTime) : 0;
 
         trades.push({
@@ -1578,7 +2007,12 @@ export const parseTradesFromContent = (content) => {
             exitTime: exitTime || new Date(),
             duration: Math.max(0, duration),
             comment: comment,
-            exitReason: exitReason
+            exitReason: exitReason,
+            symbol: symbol,
+            type: type,
+            size: size,
+            openPrice: openPrice,
+            closePrice: closePrice
         });
     }
     return trades;
@@ -1693,13 +2127,24 @@ export const parseTradesFromData = (data) => {
             if (exitKey) exitReason = row[exitKey];
         }
 
+        const symbol = row.symbol || row.Symbol || row.instrument || '';
+        const type = row.type || row.Type || row.direction || row.action || '';
+        const size = parseFlexibleFloat(row.size || row.lots || row.amount || 0);
+        const openPrice = parseFlexibleFloat(row.open_price || row.openPrice || row['open price'] || 0);
+        const closePrice = parseFlexibleFloat(row.close_price || row.closePrice || row.exit_price || row['close price'] || 0);
+
         trades.push({
             pnl: parseFloat(pnl),
             openTime: openTime || new Date(),
             exitTime: exitTime || new Date(),
             duration: Math.max(0, duration),
             comment: String(comment).trim(),
-            exitReason: String(exitReason).trim()
+            exitReason: String(exitReason).trim(),
+            symbol: String(symbol).trim(),
+            type: String(type).trim(),
+            size: size,
+            openPrice: openPrice,
+            closePrice: closePrice
         });
     });
 
@@ -1984,12 +2429,12 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         return d.toISOString().split('T')[0];
     };
 
-    const getRealTrades = (stratId) => {
+    const getRealTrades = (stratIdInput) => {
         if (!portfolio || !portfolio.realMetrics || !portfolio.realMetrics._tradesById) return [];
 
         const tradesById = portfolio.realMetrics._tradesById;
         const magicMap = state.magicNumberMap || {};
-        let targetMagics = [];
+        let rawRealTrades = [];
 
         // ROBUST MAPPING Helper
         const resolveMagic = (sId) => {
@@ -2030,32 +2475,39 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             return null;
         };
 
-        if (stratId === 'all') {
-            strategiesList.forEach(s => {
-                const m = resolveMagic(s.id);
-                if (m) {
-                    if (Array.isArray(m)) targetMagics.push(...m);
-                    else targetMagics.push(String(m));
-                }
-            });
+        // Determine IDs to iterate
+        let idsToProcess = [];
+        if (stratIdInput === 'all') {
+            idsToProcess = strategiesList.map(s => s.id);
+        } else if (Array.isArray(stratIdInput)) {
+            idsToProcess = stratIdInput;
         } else {
-            const m = resolveMagic(stratId);
-            if (m) {
-                if (Array.isArray(m)) targetMagics.push(...m);
-                else targetMagics.push(String(m));
-            }
+            idsToProcess = [stratIdInput];
         }
-        targetMagics = [...new Set(targetMagics)];
 
-        let rawRealTrades = [];
-        targetMagics.forEach(magic => {
-            const ids = String(magic).split(',').map(s => s.trim());
-            ids.forEach(id => {
-                if (tradesById[id]) rawRealTrades.push(...tradesById[id]);
+        idsToProcess.forEach(sId => {
+            const m = resolveMagic(sId);
+            if (!m) return;
+
+            // Get Strategy Name for Display
+            let displayName = sId;
+            const sObj = strategiesList.find(s => s.id === sId);
+            if (sObj && sObj.name) displayName = sObj.name;
+
+            const magicList = Array.isArray(m) ? m : [String(m)];
+
+            magicList.forEach(magicStr => {
+                const subIds = String(magicStr).split(',').map(s => s.trim());
+                subIds.forEach(realMagic => {
+                    if (tradesById[realMagic]) {
+                        // Clone and Tag with Display Name
+                        const tagged = tradesById[realMagic].map(t => ({ ...t, displaySymbol: displayName }));
+                        rawRealTrades.push(...tagged);
+                    }
+                });
             });
         });
 
-        // Normalize
         let totalP = 0, totalS = 0, totalC = 0;
         let normalized = rawRealTrades.map(t => {
             const openTime = new Date(t.openTime);
@@ -2084,11 +2536,12 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                 comment: t.comment || '',
                 exitReason: t.comment || '',
                 duration: exitTime - openTime,
+                displaySymbol: t.displaySymbol, // CRITICAL: Preserve strategy name for aggregation
                 // Debug: Store components for detailed verification if needed
                 _rawP: p, _rawS: s, _rawC: c
             };
         });
-        console.log(`[SQ DEBUG] getRealTrades Summary for ${stratId}:`);
+        console.log(`[SQ DEBUG] getRealTrades Summary for ${stratIdInput}:`);
         console.log(`[SQ DEBUG]   Count: ${normalized.length}`);
         console.log(`[SQ DEBUG]   Sum Profit: ${totalP.toFixed(2)}`);
         console.log(`[SQ DEBUG]   Sum Swap: ${totalS.toFixed(2)}`);
@@ -2106,7 +2559,16 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         // 1. Fetch Datasets
         let backtestTrades = [];
         if (currentStrategyId === 'all') backtestTrades = allPortfolioTrades;
+        else if (Array.isArray(currentStrategyId)) backtestTrades = allPortfolioTrades.filter(t => currentStrategyId.includes(t.strategyId));
         else backtestTrades = allPortfolioTrades.filter(t => t.strategyId === currentStrategyId);
+
+        // Tag backtest trades with displaySymbol (Strategy Name) for breakdown grouping
+        const stratMap = new Map();
+        strategiesList.forEach(s => stratMap.set(s.id, s.name));
+        backtestTrades = backtestTrades.map(t => ({
+            ...t,
+            displaySymbol: stratMap.get(t.strategyId) || t.strategyId
+        }));
 
         let realTrades = [];
         if (currentDataType === 'real' || currentDataType === 'comparison') {
@@ -2206,6 +2668,7 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             filteredTrades = filterByDate(applyMult(backtestTrades, currentBtMult)); // Primary (Backtest)
             const fReal = filterByDate(applyMult(realTrades, currentRealMult));
             secondaryMetrics = calculateSQMetrics(fReal);
+            if (secondaryMetrics) secondaryMetrics.trades = fReal; // Attach trades for matching logic
 
             primaryTradesForAudit = filteredTrades;
             secondaryTradesForAudit = fReal;
@@ -2737,7 +3200,7 @@ window.showExitDetails = (category) => {
 
 // --- STAGNATION AUDIT TOOL ---
 window.openStagnationAudit = (yearStr, weekStr, type) => {
-    console.group(`[Stagnation Audit] ${type.toUpperCase()} | ${yearStr} - W${weekStr}`);
+    console.group(`[Stagnation Audit] ${type.toUpperCase()} | ${yearStr} | ${weekStr}`);
     const data = window.activeAnalysisData;
     const dataType = data.dataType || 'unknown';
     console.log(`[Audit Debug] Active Analysis Mode: ${dataType} | Request: ${type}`);
@@ -2823,3 +3286,1021 @@ window.openStagnationAudit = (yearStr, weekStr, type) => {
 };
 
 // ... existing code ...
+
+// --- GLOBAL BREAKDOWN HELPERS ---
+const formatMoneyBreakdown = (val) => val !== undefined && val !== null ? `$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
+
+const normalizeCompareData = (d) => {
+    if (d.matches) return { matches: d.matches, orphanReal: d.orphanReal, orphanBT: d.orphanBT };
+
+    // Trade-by-Trade Matching Logic
+    const btTrades = d.primaryTrades || [];
+    const realTrades = d.secondaryTrades || [];
+
+    const matches = [];
+    const orphanReal = [];
+    const orphanBT = [];
+
+    if (d.dataType === 'comparison' && btTrades.length > 0 && realTrades.length > 0) {
+        // Create a set of matched indices
+        const matchedBT = new Set();
+        const matchedReal = new Set();
+
+        // Matching criteria: displaySymbol + Type + OpenTime (with tolerance)
+        const TIME_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+
+        realTrades.forEach((rt, rIdx) => {
+            let bestMatch = null;
+            let bestTimeDiff = Infinity;
+
+            btTrades.forEach((bt, bIdx) => {
+                if (matchedBT.has(bIdx)) return; // Already matched
+
+                // Check symbol match (use displaySymbol if available, fallback to comment match logic)
+                const rtSym = rt.displaySymbol || rt.comment || rt.strategyId || 'Unknown';
+                const btSym = bt.displaySymbol || bt.strategyId || 'Unknown';
+
+                const symbolMatch = rtSym === btSym ||
+                    rtSym.includes(btSym) ||
+                    btSym.includes(rtSym);
+
+                if (!symbolMatch) return;
+
+                // Check type match
+                if (rt.type && bt.type && rt.type.toLowerCase() !== bt.type.toLowerCase()) return;
+
+                // Check time proximity
+                const timeDiff = Math.abs(rt.openTime - bt.openTime);
+                if (timeDiff < TIME_TOLERANCE_MS && timeDiff < bestTimeDiff) {
+                    bestTimeDiff = timeDiff;
+                    bestMatch = bIdx;
+                }
+            });
+
+            if (bestMatch !== null) {
+                matches.push({
+                    real: rt,
+                    bt: btTrades[bestMatch],
+                    displaySymbol: rt.displaySymbol || btTrades[bestMatch].displaySymbol
+                });
+                matchedReal.add(rIdx);
+                matchedBT.add(bestMatch);
+            } else {
+                orphanReal.push(rt);
+            }
+        });
+
+        // Collect unmatched BT trades
+        btTrades.forEach((bt, idx) => {
+            if (!matchedBT.has(idx)) {
+                orphanBT.push(bt);
+            }
+        });
+    } else {
+        // Non-comparison mode: just categorize
+        if (d.dataType === 'backtest') {
+            orphanBT.push(...btTrades);
+        } else if (d.dataType === 'real') {
+            orphanReal.push(...realTrades);
+        }
+    }
+
+    return { matches, orphanReal, orphanBT };
+};
+
+const getSym = (t) => t.displaySymbol || t.strategyId || t.symbol || "Unknown";
+
+// --- NEW: Strategy Drill Down Logic (Global) ---
+window.showStrategyDrillDown = (sym) => {
+    const d = window.activeAnalysisData;
+    if (!d) return;
+    const { matches, orphanReal, orphanBT } = normalizeCompareData(d);
+
+    const matchMatches = matches.filter(m => getSym(m) === sym); // Note: matches usually have displaySymbol on the match obj, but check logic
+    // Actually match objects are { real: t, bt: t, displaySymbol: s }. 
+    // If we normalized, our fallback arrays are TRADES, not match objects.
+    // We need to handle that distinction.
+
+    // REFINED LOGIC for Drill Down filtering:
+    const targetReal = matches.filter(m => m.displaySymbol === sym);
+    const targetOrphanR = orphanReal.filter(r => getSym(r) === sym);
+    const targetOrphanB = orphanBT.filter(b => getSym(b) === sym);
+
+    let content = '';
+
+    const renderSection = (title, trades, isMatch) => {
+        if (trades.length === 0) return '';
+        let rows = trades.map(t => {
+            const real = isMatch ? t.real : (title.includes('Real') ? t : null);
+            const bt = isMatch ? t.bt : (title.includes('Backtest') ? t : null);
+            // Derive props from available obj
+            const primary = real || bt;
+            const time = primary.openTime ? new Date(primary.openTime).toISOString().slice(0, 16).replace('T', ' ') : '-';
+
+            const pnlVal = isMatch ? real.pnl : primary.pnl; // Show Real PnL for match, or orphan pnl
+            const btPnlVal = isMatch ? bt.pnl : null;
+
+            return `
+                <tr class="border-b border-gray-700 hover:bg-gray-700/50">
+                    <td class="p-2 text-xs text-gray-300">${time}</td>
+                    <td class="p-2 text-xs text-gray-400">${primary.type || (primary.comment ? primary.comment.split(' ')[0] : '-')}</td>
+                    <td class="p-2 text-right font-mono text-xs ${pnlVal > 0 ? 'text-emerald-400' : (pnlVal < 0 ? 'text-red-400' : 'text-gray-500')}">${formatMoneyBreakdown(pnlVal)}</td>
+                    ${isMatch ? `<td class="p-2 text-right font-mono text-xs ${btPnlVal > 0 ? 'text-emerald-500/70' : (btPnlVal < 0 ? 'text-red-500/70' : 'text-gray-500/70')}">${formatMoneyBreakdown(btPnlVal)}</td>` : ''}
+                </tr>
+                `;
+        }).join('');
+        return `
+            <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase mb-2 border-b border-gray-700 pb-1">${title} (${trades.length})</h4>
+                <table class="w-full text-left">
+                    <thead class="text-[10px] text-gray-500 uppercase"><tr><th>Time</th><th>Type</th><th class="text-right">PnL</th>${isMatch ? '<th class="text-right">BT PnL</th>' : ''}</tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+            `;
+    };
+
+    content += renderSection('Matched Trades', targetReal, true);
+    content += renderSection('Orphan Real Trades', targetOrphanR, false);
+    content += renderSection('Orphan Backtest Trades', targetOrphanB, false);
+
+    const modal = document.createElement('div');
+    modal.className = "fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
+            <div class="p-3 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-gray-200 font-bold text-sm truncate pr-4">${sym}</h3>
+                <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div class="overflow-y-auto p-4 custom-scrollbar">
+                ${content || '<div class="text-gray-500 text-center italic">No trades found.</div>'}
+            </div>
+        </div>
+        `;
+    document.body.appendChild(modal);
+};
+
+// --- NEW: Breakdown Modal Logic (Global) ---
+window.showAnalysisBreakdown = () => {
+    if (!window.activeAnalysisData) return alert("No data available.");
+    const d = window.activeAnalysisData;
+    const { matches, orphanReal, orphanBT } = normalizeCompareData(d);
+
+    // AGGREGATE BY STRATEGY (displaySymbol)
+    const aggregations = {};
+    const add = (sym, type, val) => {
+        if (!aggregations[sym]) aggregations[sym] = { real: 0, bt: 0 };
+        aggregations[sym][type] += Number(val || 0);
+    };
+
+    // Add matched trades (both real and bt)
+    matches.forEach(m => {
+        const sym = m.displaySymbol || 'Unknown';
+        add(sym, 'real', m.real.pnl);
+        add(sym, 'bt', m.bt.pnl);
+    });
+
+    // Add orphan real (only real PnL)
+    orphanReal.forEach(r => {
+        const sym = r.displaySymbol || r.comment || r.strategyId || 'Unknown';
+        add(sym, 'real', r.pnl);
+    });
+
+    // Add orphan BT (only BT PnL)
+    orphanBT.forEach(b => {
+        const sym = b.displaySymbol || b.strategyId || 'Unknown';
+        add(sym, 'bt', b.pnl);
+    });
+
+    // Separate strategies vs orphans (comments without strategy name)
+    const groupStrategies = [];
+    const groupOrphans = [];
+
+    Object.keys(aggregations).sort().forEach(sym => {
+        const r = aggregations[sym];
+        const diff = r.real - r.bt;
+        const pct = r.bt !== 0 ? ((r.bt - r.real) / r.bt) * 100 : null;
+        const item = { sym, ...r, diff, pct };
+
+        // Heuristic: if sym contains " - " or "Improved", it's a strategy name
+        const isStrategyName = sym.includes(' - ') || sym.includes('Improved') || sym.includes('.');
+        if (isStrategyName) {
+            groupStrategies.push(item);
+        } else {
+            groupOrphans.push(item);
+        }
+    });
+
+    // Calculate R² for matched trades
+    let rSquared = null;
+    if (matches.length > 0) {
+        const realPnls = matches.map(m => m.real.pnl);
+        const btPnls = matches.map(m => m.bt.pnl);
+        const meanReal = realPnls.reduce((a, b) => a + b, 0) / realPnls.length;
+        const meanBT = btPnls.reduce((a, b) => a + b, 0) / btPnls.length;
+
+        let ssRes = 0, ssTot = 0;
+        for (let i = 0; i < matches.length; i++) {
+            ssRes += Math.pow(realPnls[i] - btPnls[i], 2);
+            ssTot += Math.pow(realPnls[i] - meanReal, 2);
+        }
+        rSquared = ssTot > 0 ? 1 - (ssRes / ssTot) : 0;
+    }
+
+    // HTML Generators
+    const formatPct = (v) => {
+        if (v === null || isNaN(v)) return '<span class="text-gray-600">-</span>';
+        const color = v > 0 ? 'text-red-400' : (v < 0 ? 'text-emerald-400' : 'text-gray-400');
+        return `<span class="${color} font-mono text-xs">${v.toFixed(1)}%</span>`;
+    };
+
+    const generateRow = (item) => {
+        // Diff: Real - BT (positive = better real performance → green, negative = worse → red)
+        const diffClass = Math.abs(item.diff) > 0.01 ? (item.diff > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-500';
+        // Real PnL: positive → green, negative → red
+        const realClass = item.real > 0 ? 'text-emerald-400' : (item.real < 0 ? 'text-red-400' : 'text-gray-500');
+        // BT PnL: positive → green, negative → red
+        const btClass = item.bt > 0 ? 'text-emerald-500/70' : (item.bt < 0 ? 'text-red-500/70' : 'text-gray-500/70');
+
+        return `
+            <tr class="hover:bg-gray-700/30 border-b border-gray-700">
+                <td class="py-2 px-4 text-gray-300 font-mono text-xs">
+                    <div class="flex items-center justify-between group">
+                        <span class="truncate max-w-[300px]" title="${item.sym}">${item.sym}</span>
+                        <span onclick="window.showStrategyDrillDown('${item.sym.replace(/'/g, "\\'")}' )" class="ml-2 text-gray-500 hover:text-amber-400 cursor-pointer transition-colors" title="Inspect Trades">🔍</span>
+                    </div>
+                </td>
+                <td class="py-2 px-4 text-right font-mono text-sm ${realClass}">${formatMoneyBreakdown(item.real)}</td>
+                <td class="py-2 px-4 text-right font-mono text-sm ${btClass}">${formatMoneyBreakdown(item.bt)}</td>
+                <td class="py-2 px-4 text-right font-mono text-xs ${diffClass}">${formatMoneyBreakdown(item.diff)}</td>
+                <td class="py-2 px-4 text-right">${formatPct(item.pct)}</td>
+            </tr>
+        `;
+    };
+
+    const generateSubtotal = (label, items) => {
+        const sumReal = items.reduce((a, b) => a + b.real, 0);
+        const sumBT = items.reduce((a, b) => a + b.bt, 0);
+        const sumDiff = items.reduce((a, b) => a + b.diff, 0);
+        const sumPct = sumBT !== 0 ? ((sumBT - sumReal) / sumBT) * 100 : null;
+
+        const diffClass = Math.abs(sumDiff) > 0.01 ? (sumDiff > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-500';
+        const realClass = sumReal > 0 ? 'text-emerald-400' : (sumReal < 0 ? 'text-red-400' : 'text-gray-500');
+        const btClass = sumBT > 0 ? 'text-emerald-500/70' : (sumBT < 0 ? 'text-red-500/70' : 'text-gray-500/70');
+
+        return `
+            <tr class="bg-gray-800/80 font-bold border-b border-gray-600">
+                <td class="py-2 px-4 text-amber-500/80 text-right text-xs uppercase tracking-wider">${label}</td>
+                <td class="py-2 px-4 text-right font-mono text-sm ${realClass}">${formatMoneyBreakdown(sumReal)}</td>
+                <td class="py-2 px-4 text-right font-mono text-sm ${btClass}">${formatMoneyBreakdown(sumBT)}</td>
+                <td class="py-2 px-4 text-right font-mono text-xs ${diffClass}">${formatMoneyBreakdown(sumDiff)}</td>
+                <td class="py-2 px-4 text-right">${formatPct(sumPct)}</td>
+            </tr>
+        `;
+    };
+
+    // Build HTML
+    let htmlRows = '';
+
+    // 1. Orphans (comments without strategy name) - TOP
+    if (groupOrphans.length > 0) {
+        htmlRows += `<tr><td colspan="5" class="py-2 px-4 text-xs font-bold text-gray-500 uppercase bg-gray-900/40">Unmatched Real Ops (Likely Orphans)</td></tr>`;
+        htmlRows += groupOrphans.map(generateRow).join('');
+        htmlRows += generateSubtotal('Real Only Subtotal', groupOrphans);
+    }
+
+    // 2. Identified Strategies - BOTTOM
+    if (groupStrategies.length > 0) {
+        htmlRows += `<tr><td colspan="5" class="py-2 px-4 text-xs font-bold text-blue-400 uppercase bg-gray-900/40 mt-4">Matched / Backtested Strategies</td></tr>`;
+        htmlRows += groupStrategies.map(generateRow).join('');
+        htmlRows += generateSubtotal('Strategies Subtotal', groupStrategies);
+    }
+
+    // 3. Grand Total
+    const allItems = [...groupOrphans, ...groupStrategies];
+    const grandReal = allItems.reduce((a, b) => a + b.real, 0);
+    const grandBT = allItems.reduce((a, b) => a + b.bt, 0);
+    const grandDiff = allItems.reduce((a, b) => a + b.diff, 0);
+    const grandPct = grandBT !== 0 ? ((grandBT - grandReal) / grandBT) * 100 : null;
+
+    htmlRows += `
+        <tr class="bg-gray-900 font-bold border-t-2 border-amber-500/50">
+            <td class="py-4 px-4 text-amber-400 text-right text-sm uppercase tracking-wider">GRAND TOTAL${rSquared !== null ? ` (R²: ${rSquared.toFixed(3)})` : ''}</td>
+            <td class="py-4 px-4 text-right font-mono text-base ${grandReal > 0 ? 'text-emerald-400' : (grandReal < 0 ? 'text-red-400' : 'text-gray-500')}">${formatMoneyBreakdown(grandReal)}</td>
+            <td class="py-4 px-4 text-right font-mono text-base ${grandBT > 0 ? 'text-emerald-500/70' : (grandBT < 0 ? 'text-red-500/70' : 'text-gray-500/70')}">${formatMoneyBreakdown(grandBT)}</td>
+            <td class="py-4 px-4 text-right font-mono text-sm ${grandDiff > 0 ? 'text-emerald-400' : (grandDiff < 0 ? 'text-red-400' : 'text-gray-500')}">${formatMoneyBreakdown(grandDiff)}</td>
+            <td class="py-4 px-4 text-right">${formatPct(grandPct)}</td>
+        </tr>
+    `;
+
+    // Modal HTML
+    const modal = document.createElement('div');
+    modal.className = "fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900/50">
+                <h3 class="text-amber-400 font-bold text-lg uppercase tracking-wider">Strategy PnL Breakdown & Var</h3>
+                <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-white transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="overflow-y-auto flex-1 p-4 custom-scrollbar">
+                <table class="w-full text-left border-collapse">
+                    <thead class="sticky top-0 bg-gray-900 text-xs text-gray-400 uppercase font-bold z-10">
+                        <tr>
+                            <th class="py-2 px-4 border-b border-gray-700">Strategy / ID</th>
+                            <th class="py-2 px-4 border-b border-gray-700 text-right">Real PnL</th>
+                            <th class="py-2 px-4 border-b border-gray-700 text-right">Backtest PnL</th>
+                            <th class="py-2 px-4 border-b border-gray-700 text-right">Diff</th>
+                            <th class="py-2 px-4 border-b border-gray-700 text-right" title="(BT-Real)/BT">% Var</th>
+                        </tr>
+                    </thead>
+                    <tbody>${htmlRows}</tbody>
+                </table>
+            </div> 
+            <div class="p-3 border-t border-gray-700 bg-gray-900/50 text-right text-xs text-gray-500">
+                Strategies: ${allItems.length} | Matched Trades: ${matches.length} | Orphan Real: ${orphanReal.length} | Orphan BT: ${orphanBT.length}
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+};
+
+// --- NEW: PnL Chart Modal (Cumulative) ---
+// --- NEW: PnL Chart Modal (Cumulative) ---
+window.showPnLChart = (initialStrategy = 'all') => {
+    if (!window.latestSQAnalysisData || !window.latestSQAnalysisData.matches) {
+        return alert("No matched trade data available for charting.");
+    }
+
+    // Use `let` for these so they can be updated by the event listener
+    let matches = window.latestSQAnalysisData.matches || [];
+    let orphanReal = window.latestSQAnalysisData.orphanReal || [];
+    let orphanBT = window.latestSQAnalysisData.orphanBT || [];
+
+    // Initialize global threshold if not exists
+    if (typeof window.pnlChartThreshold === 'undefined') {
+        window.pnlChartThreshold = 80;
+    }
+
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = "fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div class="p-3 border-b border-gray-700 flex justify-between items-center bg-gray-900 gap-3">
+                <h3 id="sq-pnl-modal-title" class="text-gray-200 font-bold text-sm truncate max-w-[400px]">Cumulative PnL Comparison (BT vs Real)</h3>
+                <div class="flex items-center gap-2">
+                    <label class="text-gray-400 text-xs" title="Divergence threshold: difference in PnL change">⚠️ Threshold:</label>
+                    <input type="number" id="pnl-div-threshold" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500 w-20 text-center" value="${window.pnlChartThreshold}" min="1" step="10" inputmode="numeric">
+                </div>
+                <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-white ml-auto">✕</button>
+            </div>
+            <div class="overflow-y-auto p-6 custom-scrollbar flex-1">
+                <div class="relative w-full" style="height: 500px;">
+                    <canvas id="pnl-chart-canvas"></canvas>
+                </div>
+                <div class="mt-4 flex gap-4 justify-center text-xs">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 bg-blue-500/70"></div>
+                        <span class="text-gray-400">Backtest PnL</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 bg-emerald-500"></div>
+                        <span class="text-gray-400">Real PnL</span>
+                    </div>
+                    <div id="pnl-chart-stats" class="flex items-center gap-2 ml-4 text-gray-400">
+                        <!-- Stats will be injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Function to render the chart
+    const renderChart = (filteredMatches, filteredOrphanReal, filteredOrphanBT, divThreshold) => {
+        // Combine all trades into a unified format
+        const allTrades = [];
+
+        // Add matched trades (have both BT and Real)
+        filteredMatches.forEach(m => {
+            allTrades.push({
+                time: m.real.openTime || m.bt.openTime,
+                btPnL: m.bt.pnl || 0,
+                realPnL: m.real.pnl || 0,
+                type: 'matched',
+                displaySymbol: m.displaySymbol || m.bt.strategyId || 'Unknown'
+            });
+        });
+
+        // Add orphan real trades (only Real PnL)
+        filteredOrphanReal.forEach(r => {
+            allTrades.push({
+                time: r.openTime,
+                btPnL: 0, // No BT data
+                realPnL: r.pnl || 0,
+                type: 'orphan-real',
+                displaySymbol: r.displaySymbol || r.comment || r.strategyId || 'Unknown'
+            });
+        });
+
+        // Add orphan BT trades (only BT PnL)
+        filteredOrphanBT.forEach(bt => {
+            allTrades.push({
+                time: bt.openTime,
+                btPnL: bt.pnl || 0,
+                realPnL: 0, // No Real data
+                type: 'orphan-bt',
+                displaySymbol: bt.displaySymbol || bt.strategyId || 'Unknown'
+            });
+        });
+
+        // Sort all trades chronologically
+        const sorted = allTrades.sort((a, b) => a.time - b.time);
+
+        // Calculate cumulative PnL
+        const chartData = [];
+        let cumBT = 0;
+        let cumReal = 0;
+
+        sorted.forEach((trade, idx) => {
+            cumBT += trade.btPnL;
+            cumReal += trade.realPnL;
+            chartData.push({
+                index: idx,
+                time: trade.time,
+                cumBT: cumBT,
+                cumReal: cumReal,
+                btPnL: trade.btPnL,
+                realPnL: trade.realPnL,
+                type: trade.type,
+                displaySymbol: trade.displaySymbol
+            });
+        });
+
+        const canvas = document.getElementById('pnl-chart-canvas');
+        if (!canvas || chartData.length === 0) {
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#1f2937';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No trades for selected strategy', canvas.width / 2, canvas.height / 2);
+            }
+            return;
+        }
+
+        const ctx = canvas.getContext('2d');
+        const parent = canvas.parentElement;
+        canvas.width = parent.clientWidth;
+        canvas.height = parent.clientHeight;
+
+        // Chart dimensions
+        const padding = { top: 40, right: 60, bottom: 60, left: 80 };
+        const chartWidth = canvas.width - padding.left - padding.right;
+        const chartHeight = canvas.height - padding.top - padding.bottom;
+
+        // Find min/max for Y axis
+        const allValues = chartData.flatMap(d => [d.cumBT, d.cumReal]);
+        const minY = Math.min(0, ...allValues);
+        const maxY = Math.max(...allValues);
+        const rangeY = maxY - minY;
+        const paddingY = rangeY * 0.1;
+        const yMin = minY - paddingY;
+        const yMax = maxY + paddingY;
+
+        // Scale functions
+        const scaleX = (index) => padding.left + (index / (chartData.length - 1)) * chartWidth;
+        const scaleY = (value) => padding.top + chartHeight - ((value - yMin) / (yMax - yMin)) * chartHeight;
+
+        // Clear canvas
+        ctx.fillStyle = '#1f2937';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw grid
+        ctx.strokeStyle = '#374151';
+        ctx.lineWidth = 1;
+        const gridLines = 8;
+        for (let i = 0; i <= gridLines; i++) {
+            const y = padding.top + (i / gridLines) * chartHeight;
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(padding.left + chartWidth, y);
+            ctx.stroke();
+        }
+
+        // Draw Y axis labels
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= gridLines; i++) {
+            const value = yMin + (i / gridLines) * (yMax - yMin);
+            const y = padding.top + chartHeight - (i / gridLines) * chartHeight;
+            ctx.fillText('$' + value.toFixed(0), padding.left - 10, y + 4);
+        }
+
+        // Draw zero line if needed
+        if (yMin < 0 && yMax > 0) {
+            const zeroY = scaleY(0);
+            ctx.strokeStyle = '#6b7280';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(padding.left, zeroY);
+            ctx.lineTo(padding.left + chartWidth, zeroY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Draw lines
+        const drawLine = (data, color, lineWidth = 2) => {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            ctx.beginPath();
+            data.forEach((d, i) => {
+                const x = scaleX(i);
+                const y = scaleY(d);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+        };
+
+        // Draw BT line (blue, semi-transparent)
+        drawLine(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.7)', 3);
+
+        // Draw Real line (green)
+        drawLine(chartData.map(d => d.cumReal), 'rgba(16, 185, 129, 1)', 3);
+
+        // Draw points with divergence detection
+        const drawPoints = (data, color) => {
+            data.forEach((d, i) => {
+                const x = scaleX(i);
+                const y = scaleY(d);
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        };
+
+        // Draw BT points (blue)
+        drawPoints(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.9)');
+
+        // Draw Real points with divergence detection (categorize as positive/negative)
+        let positiveDiv = 0; // Real better than BT
+        let negativeDiv = 0; // Real worse than BT
+        let sumPosDiv = 0;
+        let sumNegDiv = 0;
+
+        chartData.forEach((d, i) => {
+            const x = scaleX(i);
+            const y = scaleY(d.cumReal);
+
+            // Detect divergence: compare direction of movement
+            let divergenceType = null; // null, 'positive', or 'negative'
+
+            if (i > 0) {
+                const prevBT = chartData[i - 1].cumBT;
+                const prevReal = chartData[i - 1].cumReal;
+                const btChange = d.cumBT - prevBT;
+                const realChange = d.cumReal - prevReal;
+
+                // Divergence occurs when:
+                // 1. BT moves but Real doesn't (or vice versa)
+                // 2. They move in opposite directions
+                // 3. Difference between changes is >= threshold
+                const btMoving = Math.abs(btChange) > 0.01;
+                const realMoving = Math.abs(realChange) > 0.01;
+                const changeDiff = Math.abs(btChange - realChange);
+
+                let isDivergent = false;
+
+                // Divergence logic simplified: ONLY trigger if difference exceeds threshold
+                if (changeDiff >= divThreshold) {
+                    isDivergent = true;
+                }
+
+                // Classify divergence as positive or negative
+                if (isDivergent) {
+                    // Positive: Real performed better than BT
+                    // Negative: Real performed worse than BT
+                    if (realChange > btChange) {
+                        divergenceType = 'positive'; // Real better
+                        positiveDiv++;
+                        sumPosDiv += changeDiff;
+                    } else {
+                        divergenceType = 'negative'; // Real worse
+                        negativeDiv++;
+                        sumNegDiv += changeDiff;
+                    }
+                }
+            }
+
+            // Color based on divergence type
+            let pointColor = 'rgba(16, 185, 129, 1)'; // Green (aligned)
+            if (divergenceType === 'positive') {
+                pointColor = 'rgba(251, 191, 36, 1)'; // Amber/Orange (positive divergence)
+            } else if (divergenceType === 'negative') {
+                pointColor = 'rgba(239, 68, 68, 1)'; // Red (negative divergence)
+            }
+
+            ctx.fillStyle = pointColor;
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, 2 * Math.PI);
+            ctx.fill();
+        });
+
+        const totalDiv = positiveDiv + negativeDiv;
+        const avgPos = positiveDiv > 0 ? (sumPosDiv / positiveDiv).toFixed(2) : '0.00';
+        const avgNeg = negativeDiv > 0 ? (sumNegDiv / negativeDiv).toFixed(2) : '0.00';
+        const avgTotal = totalDiv > 0 ? ((sumPosDiv + sumNegDiv) / totalDiv).toFixed(2) : '0.00';
+
+
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        const labelStep = Math.max(1, Math.floor(chartData.length / 10));
+        chartData.forEach((d, i) => {
+            if (i % labelStep === 0 || i === chartData.length - 1) {
+                const x = scaleX(i);
+                const dateStr = d.time.toISOString().slice(0, 10);
+                ctx.fillText(dateStr, x, canvas.height - padding.bottom + 20);
+            }
+        });
+
+        // Chart title
+        ctx.fillStyle = '#f3f4f6';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Cumulative PnL Over Time', canvas.width / 2, 20);
+
+        // Display final values with enhanced statistics (LEFT SIDE)
+        const finalBT = chartData[chartData.length - 1].cumBT;
+        const finalReal = chartData[chartData.length - 1].cumReal;
+        const totalDiff = finalReal - finalBT;
+
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'left';
+        const leftX = padding.left + 10;
+
+        // BT Net Profit
+        ctx.fillStyle = 'rgba(59, 130, 246, 1)';
+        ctx.fillText('BT: $' + finalBT.toFixed(2), leftX, padding.top + 20);
+
+        // Real Net Profit
+        ctx.fillStyle = 'rgba(16, 185, 129, 1)';
+        ctx.fillText('Real: $' + finalReal.toFixed(2), leftX, padding.top + 40);
+
+        // Total Difference
+        ctx.fillStyle = totalDiff >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
+        ctx.fillText('Diff: $' + totalDiff.toFixed(2), leftX, padding.top + 60);
+
+        // Divergence statistics
+        // Divergence statistics
+        ctx.fillStyle = 'rgba(251, 191, 36, 1)'; // Amber
+        ctx.fillText(`🟠 Div+: ${positiveDiv} (Avg: $${avgPos})`, leftX, padding.top + 80);
+        ctx.fillStyle = 'rgba(239, 68, 68, 1)'; // Red
+        ctx.fillText(`🔴 Div-: ${negativeDiv} (Avg: $${avgNeg})`, leftX, padding.top + 100);
+        ctx.fillStyle = '#9ca3af'; // Gray
+        ctx.fillText(`Total Div: ${totalDiv} (Avg: $${avgTotal})`, leftX, padding.top + 120);
+
+        // Update stats
+        const statsDiv = document.getElementById('pnl-chart-stats');
+        if (statsDiv) {
+            statsDiv.innerHTML = `<span>Trades: ${chartData.length}</span>`;
+        }
+
+        // Change cursor to crosshair
+        canvas.style.cursor = 'crosshair';
+
+        // Add tooltip functionality
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Find closest point
+            let closestPoint = null;
+            let minDistance = 15; // Max distance to trigger tooltip
+
+            chartData.forEach((d, i) => {
+                const x = scaleX(i);
+                const yBT = scaleY(d.cumBT);
+                const yReal = scaleY(d.cumReal);
+
+                // Check distance to Real point (primary)
+                const distReal = Math.sqrt(Math.pow(mouseX - x, 2) + Math.pow(mouseY - yReal, 2));
+                if (distReal < minDistance) {
+                    minDistance = distReal;
+                    closestPoint = { ...d, index: i, isReal: true };
+                }
+
+                // Check distance to BT point
+                const distBT = Math.sqrt(Math.pow(mouseX - x, 2) + Math.pow(mouseY - yBT, 2));
+                if (distBT < minDistance) {
+                    minDistance = distBT;
+                    closestPoint = { ...d, index: i, isReal: false };
+                }
+            });
+
+            // Clear previous tooltip area and redraw (simplified approach)
+            if (closestPoint) {
+                // Redraw to clear old tooltip
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Redraw grid
+                ctx.fillStyle = '#1f2937';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.strokeStyle = '#374151';
+                ctx.lineWidth = 1;
+                for (let i = 0; i <= 8; i++) {
+                    const y = padding.top + (i / 8) * chartHeight;
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, y);
+                    ctx.lineTo(padding.left + chartWidth, y);
+                    ctx.stroke();
+                }
+
+                // Redraw Y labels
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '11px monospace';
+                ctx.textAlign = 'right';
+                for (let i = 0; i <= 8; i++) {
+                    const value = yMin + (i / 8) * (yMax - yMin);
+                    const y = padding.top + chartHeight - (i / 8) * chartHeight;
+                    ctx.fillText('$' + value.toFixed(0), padding.left - 10, y + 4);
+                }
+
+                // Redraw zero line
+                if (yMin < 0 && yMax > 0) {
+                    const zeroY = scaleY(0);
+                    ctx.strokeStyle = '#6b7280';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, zeroY);
+                    ctx.lineTo(padding.left + chartWidth, zeroY);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // Redraw lines
+                const drawLine = (data, color, lineWidth = 2) => {
+                    if (data.length === 0) return;
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = lineWidth;
+                    ctx.beginPath();
+                    data.forEach((d, i) => {
+                        const x = scaleX(i);
+                        const y = scaleY(d);
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    });
+                    ctx.stroke();
+                };
+                drawLine(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.7)', 3);
+                drawLine(chartData.map(d => d.cumReal), 'rgba(16, 185, 129, 1)', 3);
+
+                // Redraw all points (simplified)
+                drawPoints(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.9)');
+                chartData.forEach((d, i) => {
+                    const x = scaleX(i);
+                    const y = scaleY(d.cumReal);
+                    let pointColor = 'rgba(16, 185, 129, 1)';
+                    if (i > 0) {
+                        const prevBT = chartData[i - 1].cumBT;
+                        const prevReal = chartData[i - 1].cumReal;
+                        const btChange = d.cumBT - prevBT;
+                        const realChange = d.cumReal - prevReal;
+                        const btMoving = Math.abs(btChange) > 0.01;
+                        const realMoving = Math.abs(realChange) > 0.01;
+                        const changeDiff = Math.abs(btChange - realChange);
+                        let isDivergent = false;
+                        if (changeDiff >= divThreshold) {
+                            isDivergent = true;
+                        }
+                        if (isDivergent) {
+                            pointColor = (realChange > btChange) ? 'rgba(251, 191, 36, 1)' : 'rgba(239, 68, 68, 1)';
+                        }
+                    }
+                    ctx.fillStyle = pointColor;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+
+                // Redraw X labels, title, and stats (keeping them visible)
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                const labelStep = Math.max(1, Math.floor(chartData.length / 10));
+                chartData.forEach((d, i) => {
+                    if (i % labelStep === 0 || i === chartData.length - 1) {
+                        const x = scaleX(i);
+                        ctx.fillText(d.time.toISOString().slice(0, 10), x, canvas.height - padding.bottom + 20);
+                    }
+                });
+                ctx.fillStyle = '#f3f4f6';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Cumulative PnL Over Time', canvas.width / 2, 20);
+
+                // Redraw left stats
+                ctx.font = '12px monospace';
+                ctx.textAlign = 'left';
+                ctx.fillStyle = 'rgba(59, 130, 246, 1)';
+                ctx.fillText('BT: $' + finalBT.toFixed(2), leftX, padding.top + 20);
+                ctx.fillStyle = 'rgba(16, 185, 129, 1)';
+                ctx.fillText('Real: $' + finalReal.toFixed(2), leftX, padding.top + 40);
+                ctx.fillStyle = totalDiff >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
+                ctx.fillText('Diff: $' + totalDiff.toFixed(2), leftX, padding.top + 60);
+                ctx.fillStyle = 'rgba(251, 191, 36, 1)';
+                ctx.fillText(`🟠 Div+: ${positiveDiv} (Avg: $${avgPos})`, leftX, padding.top + 80);
+                ctx.fillStyle = 'rgba(239, 68, 68, 1)';
+                ctx.fillText(`🔴 Div-: ${negativeDiv} (Avg: $${avgNeg})`, leftX, padding.top + 100);
+                ctx.fillStyle = '#9ca3af';
+                ctx.fillText(`Total Div: ${totalDiv} (Avg: $${avgTotal})`, leftX, padding.top + 120);
+
+                // Draw tooltip
+                const btVal = closestPoint.btPnL;
+                const realVal = closestPoint.realPnL;
+                const diff = realVal - btVal;
+
+                // DIV DEBUG LOGS
+                if (closestPoint.index > 0) {
+                    const idx = closestPoint.index;
+                    const prevBT = chartData[idx - 1].cumBT;
+                    const prevReal = chartData[idx - 1].cumReal;
+                    const btChange = closestPoint.cumBT - prevBT;
+                    const realChange = closestPoint.cumReal - prevReal;
+                    const changeDiff = Math.abs(btChange - realChange);
+                    const isDiv = changeDiff >= divThreshold;
+
+                    if (isDiv) {
+                        const divType = (realChange > btChange) ? 'POSITIVE (Amber)' : 'NEGATIVE (Red)';
+                        console.log(`[Tooltip Debug] Idx: ${idx} | Time: ${closestPoint.time.toISOString().slice(0, 16)}`);
+                        console.log(`   - BT Change: ${btChange.toFixed(2)} | Real Change: ${realChange.toFixed(2)}`);
+                        console.log(`   - Diff: ${changeDiff.toFixed(2)} (Threshold: ${divThreshold})`);
+                        console.log(`   - Divergence? ${isDiv} | Type: ${divType}`);
+                    }
+                }
+
+                // New values for tooltip
+                const strategyName = closestPoint.displaySymbol || 'Unknown Strategy';
+
+                // Format date with time (HH:mm)
+                const dateObj = closestPoint.time;
+                const dateStr = dateObj.toISOString().slice(0, 10);
+                const timeStr = dateObj.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+                const dateTimeStr = `${dateStr} ${timeStr}`;
+
+                const cumBT = closestPoint.cumBT;
+                const cumReal = closestPoint.cumReal;
+
+                const tooltipW = 230;
+                const tooltipX = mouseX - (tooltipW / 2); // Centered horizontally
+                const tooltipY = mouseY - 180; // Shifted further up
+                const tooltipH = 160;
+
+                // Tooltip background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+                ctx.fillRect(tooltipX, tooltipY, tooltipW, tooltipH);
+                ctx.strokeStyle = '#6b7280';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(tooltipX, tooltipY, tooltipW, tooltipH);
+
+                // Tooltip text
+                ctx.textAlign = 'left';
+                let currentY = tooltipY + 16;
+                const lineHeight = 16;
+                const startX = tooltipX + 10;
+
+                // Strategy Name
+                ctx.font = 'bold 12px sans-serif';
+                ctx.fillStyle = '#f3f4f6';
+                // Truncate if too long
+                let displayName = strategyName;
+                if (displayName.length > 28) displayName = displayName.substring(0, 25) + '...';
+                ctx.fillText(displayName, startX, currentY);
+                currentY += lineHeight + 4; // Extra spacing
+
+                // Trade Date & Time
+                ctx.font = '11px monospace';
+                ctx.fillStyle = '#9ca3af';
+                ctx.fillText('Time: ' + dateTimeStr, startX, currentY);
+                currentY += lineHeight;
+
+                // Separator
+                ctx.fillStyle = '#4b5563';
+                ctx.fillRect(startX, currentY - 6, tooltipW - 20, 1);
+                currentY += 4;
+
+                // Values
+                ctx.font = '11px monospace';
+
+                // Trade PnL (Net Profit)
+                ctx.fillStyle = 'rgba(59, 130, 246, 1)';
+                ctx.fillText(`PnL BT  : $${btVal.toFixed(2)}`, startX, currentY);
+                currentY += lineHeight;
+
+                ctx.fillStyle = 'rgba(16, 185, 129, 1)';
+                ctx.fillText(`PnL Real: $${realVal.toFixed(2)}`, startX, currentY);
+                currentY += lineHeight;
+
+                // Trade PnL Difference
+                ctx.fillStyle = diff >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
+                ctx.fillText(`Trd Diff: $${diff.toFixed(2)}`, startX, currentY);
+                currentY += lineHeight;
+
+                // Cumulative PnL Separator
+                ctx.fillStyle = '#4b5563';
+                ctx.fillRect(startX, currentY - 6, tooltipW - 80, 1);
+                currentY += 4;
+
+                // Cumulative (Y-axis)
+                ctx.fillStyle = 'rgba(59, 130, 246, 1)';
+                ctx.fillText(`Cum BT  : $${cumBT.toFixed(2)}`, startX, currentY);
+                currentY += lineHeight;
+
+                ctx.fillStyle = 'rgba(16, 185, 129, 1)';
+                ctx.fillText(`Cum Real: $${cumReal.toFixed(2)}`, startX, currentY);
+                currentY += lineHeight;
+
+
+            }
+        });
+    };
+
+    // Initial render
+    setTimeout(() => {
+        // We TRUST window.latestSQAnalysisData to contain the relevant data for the current view.
+        // We do NOT filter it further, because Orphans often lack the metadata (displaySymbol) to match strictly,
+        // leading to them being hidden (the "User Error" description).
+
+        if (initialStrategy !== 'all') {
+            const titleEl = document.getElementById('sq-pnl-modal-title');
+            if (titleEl) {
+                // Determine clean name from initialStrategy (filename)
+                const cleanName = initialStrategy.replace('.csv', '').trim();
+                titleEl.innerText = cleanName;
+                titleEl.title = initialStrategy;
+            }
+        } else {
+            const titleEl = document.getElementById('sq-pnl-modal-title');
+            if (titleEl) {
+                titleEl.innerText = 'Cumulative PnL Comparison (BT vs Real)';
+                titleEl.title = '';
+            }
+        }
+
+        renderChart(matches, orphanReal, orphanBT, window.pnlChartThreshold);
+    }, 100);
+
+    // Listen for Global Updates (from Main App) to Refresh Chart
+    window.addEventListener('sq-analysis-rendered', (e) => {
+        console.log('[PnL Chart] Received Global Update Event. Refreshing...');
+        const data = e.detail;
+        if (!data) return;
+
+        // Update local references
+        matches = data.matches || [];
+        orphanReal = data.orphanReal || [];
+        orphanBT = data.orphanBT || [];
+
+        // Get current threshold value
+        const thresholdInput = document.getElementById('pnl-div-threshold');
+        const divThreshold = thresholdInput ? parseFloat(thresholdInput.value) || 80 : 80;
+
+        // Check current selection in modal
+        const currVal = selector.value;
+
+        if (currVal !== 'all') {
+            // Filter
+            let fMatches = matches.filter(m => (m.displaySymbol || m.bt.strategyId) === currVal);
+            let fReal = orphanReal.filter(r => (r.displaySymbol || r.comment || r.strategyId) === currVal);
+            let fBt = orphanBT.filter(b => (b.displaySymbol || b.strategyId) === currVal);
+            renderChart(fMatches, fReal, fBt, divThreshold);
+
+            // Also ensure title is correct
+            const titleEl = document.getElementById('sq-pnl-modal-title');
+            if (titleEl && selector.selectedIndex >= 0) {
+                const stratName = selector.options[selector.selectedIndex].text;
+                titleEl.innerText = stratName.replace('.csv', '').trim();
+                titleEl.title = stratName;
+            }
+
+        } else {
+            renderChart(matches, orphanReal, orphanBT, divThreshold);
+            const titleEl = document.getElementById('sq-pnl-modal-title');
+            if (titleEl) {
+                titleEl.innerText = 'Cumulative PnL Comparison (BT vs Real)';
+                titleEl.title = '';
+            }
+        }
+    }, 150);
+};

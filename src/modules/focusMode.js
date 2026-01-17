@@ -2,7 +2,7 @@ import { state } from '../state.js';
 import { dom } from '../dom.js';
 import { renderEquityChart, renderScatterChart, renderLorenzChart, renderChartsForTab, renderPortfolioComparisonCharts, renderRealityCheckTab } from '../ui.js';
 import { STRATEGY_COLORS } from '../config.js';
-import { renderSQAnalysis } from './sqAnalysis_v2.js?v=10';
+import { renderSQAnalysis } from './sqAnalysis_v2.js?v=11';
 
 export const focusMode = {
     active: false,
@@ -19,8 +19,8 @@ export const focusMode = {
         this.enable(item, type, rowElement);
     },
 
-    enable(item, type, rowElement) {
-        console.log('[FocusMode] enable() called. Type:', type, 'Item:', item.name || item.id);
+    enable(item, type, rowElement, options = {}) {
+        console.log('[FocusMode] enable() called. Type:', type, 'Item:', item.name || item.id, 'Options:', options);
         const id = item.id || item.name; // Use name as fallback ID if needed
 
         // --- FIX: ALWAYS Refresh data from Global State ---
@@ -35,9 +35,26 @@ export const focusMode = {
         }
 
         if (this.focusedItems.has(id)) {
-            // Deselect if already selected
-            console.log('[FocusMode] Item already selected, deselecting:', id);
-            this.deselectItem(id);
+            // Deselect if already selected, unless forceSelect is true
+            if (options.forceSelect) {
+                console.log('[FocusMode] Item already selected, but forceSelect is TRUE. Keeping selection and updating data.');
+                // Update data in place just in case
+                const existing = this.focusedItems.get(id);
+
+                // Toggle Logic Check
+                let nextOverlayState = existing.showBacktestOverlay;
+                if (options.toggleOverlay) {
+                    // Inverse current state (default true if undefined)
+                    const currentState = (existing.showBacktestOverlay !== false);
+                    nextOverlayState = !currentState;
+                    console.log(`[FocusMode] 🔀 Toggling Overlay for '${id}' to: ${nextOverlayState}`);
+                }
+
+                this.focusedItems.set(id, { ...existing, ...freshItem, type, rowElement, showBacktestOverlay: nextOverlayState });
+            } else {
+                console.log('[FocusMode] Item already selected, deselecting:', id);
+                this.deselectItem(id);
+            }
         } else {
             // Select new item
             console.log('[FocusMode] Selecting new item:', id);
@@ -47,7 +64,8 @@ export const focusMode = {
             const colorIndex = this.focusedItems.size % STRATEGY_COLORS.length;
             const color = STRATEGY_COLORS[colorIndex];
 
-            this.focusedItems.set(id, { ...freshItem, type, rowElement, color });
+            // Default showBacktestOverlay to true for individually focused items
+            this.focusedItems.set(id, { ...freshItem, type, rowElement, color, showBacktestOverlay: true });
             this.highlightRow(rowElement, color);
         }
 
@@ -65,6 +83,9 @@ export const focusMode = {
         if (this.focusedItems.size === 1) {
             document.addEventListener('keydown', this.handleEscKey);
         }
+
+        // Return the current state of the item for UI updates
+        return this.focusedItems.get(id);
     },
 
     /**
@@ -296,17 +317,65 @@ export const focusMode = {
 
             // REHYDRATION: If strategy item lacks analysis (e.g., Virtual Strategy from Reality Check), try to find it
             if (item.type === 'strategy' && !item.analysis && window.analysisResults) {
+                // Helper to check if analysis is valid (has actual data)
+                const isValidAnalysis = (r) => {
+                    // Check if analyzing a direct strategy object or a wrapped result
+                    const analysis = r.analysis || r;
+                    return analysis &&
+                        analysis.chartData &&
+                        analysis.chartData.equityCurve &&
+                        analysis.chartData.equityCurve.length > 0;
+                };
+
                 // Try to find by originalIndex first
-                if (item.originalIndex !== undefined && item.originalIndex !== -1 && window.analysisResults[item.originalIndex]) {
+                if (item.originalIndex !== undefined && item.originalIndex !== -1 && window.analysisResults[item.originalIndex] && isValidAnalysis(window.analysisResults[item.originalIndex])) {
                     item.analysis = window.analysisResults[item.originalIndex].analysis;
                     console.log(`[FocusMode] 💧 Rehydrated analysis from originalIndex: ${item.originalIndex}`);
                 }
-                // Fallback: Find by Name
+                // Fallback: Find by Name (with fuzzy .csv matching)
                 else if (item.name) {
-                    const found = window.analysisResults.find(r => r.name === item.name);
+                    // Helper for fuzzy match
+                    const isMatch = (target, query) => {
+                        if (!target || !query) return false;
+                        if (target === query) return true;
+                        if (target === query + '.csv') return true;
+                        if (target.replace('.csv', '') === query) return true;
+                        if (query.replace('.csv', '') === target) return true;
+                        return false;
+                    };
+
+                    // 1. Check window.analysisResults
+                    let found = window.analysisResults.find(r => isMatch(r.name, item.name) && isValidAnalysis(r));
+                    let source = 'window.analysisResults';
+
+                    // 2. Check state.strategies
+                    if (!found && state.strategies) {
+                        found = state.strategies.find(s => isMatch(s.name, item.name) && isValidAnalysis(s));
+                        source = 'state.strategies';
+                    }
+
+                    // 3. Check inside Saved Portfolios (Deep Scan)
+                    if (!found && state.savedPortfolios) {
+                        for (const p of state.savedPortfolios) {
+                            if (p.strategies && Array.isArray(p.strategies)) {
+                                const strat = p.strategies.find(s => isMatch(s.name, item.name) && isValidAnalysis(s));
+                                if (strat) {
+                                    found = strat;
+                                    source = `SavedPortfolio(${p.name})`;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     if (found && found.analysis) {
                         item.analysis = found.analysis;
-                        console.log(`[FocusMode] 💧 Rehydrated analysis from Name Match: ${item.name}`);
+                        // Also hydrate other missing props if available
+                        if (!item.metrics && found.metrics) item.metrics = found.metrics;
+
+                        console.log(`[FocusMode] 💧 Rehydrated analysis from ${source}: ${item.name} -> ${found.name} (${found.analysis.chartData.equityCurve.length} pts)`);
+                    } else {
+                        console.warn(`[FocusMode] ⚠️ Method 'enable' failed to find VALID backtest analysis for: ${item.name}`);
                     }
                 }
             }
@@ -484,10 +553,23 @@ export const focusMode = {
             };
 
             // For single strategies, we need to pass the name as a strategy so magic number lookup works
+            // BUT, passing 'strategies' array makes UI.js treat it as a portfolio which might trigger aggregation logic that fails for ghost strategies.
+            // We should rely on 'strategyNames' for Reality Check lookup.
             if (item.type === 'strategy') {
-                analysisObj.strategies = [item.name];
+                // analysisObj.strategies = [item.name]; // REMOVED to prevent Portfolio Masquerade
+                // Ensure strategyNames contains the name for Reality Check to work
+                if (!analysisObj.strategyNames) {
+                    analysisObj.strategyNames = [item.name];
+                }
             } else if (item.strategies) {
                 analysisObj.strategies = item.strategies;
+            }
+
+            // DEBUG: Verify Analysis Data before sending to UI
+            if (analysisObj.analysis && analysisObj.analysis.chartData && analysisObj.analysis.chartData.equityCurve) {
+                console.log(`[FocusMode] 📤 Sending Analysis for ${item.name}: ${analysisObj.analysis.chartData.equityCurve.length} points`);
+            } else {
+                console.warn(`[FocusMode] ⚠️ Sending Analysis for ${item.name} WITHOUT equity curve! Keys:`, Object.keys(analysisObj.analysis || {}));
             }
 
             analyses.push(analysisObj);
@@ -581,7 +663,7 @@ export const focusMode = {
                     }
 
                     console.log(`[FocusMode] Updating SQ Analysis for strategy: ${finalId} (Name: ${strategyId}) in portfolio ${parentPortfolioIndex}`);
-                    renderSQAnalysis(parentPortfolioIndex, 'saved', finalId, window.activeAnalysisData?.dataType || 'backtest');
+                    renderSQAnalysis(parentPortfolioIndex, 'saved', finalId, 'comparison');
                 } else {
                     // If not found by ID, maybe by name?
                     // Or maybe it's a databank portfolio?
@@ -590,13 +672,67 @@ export const focusMode = {
             } else if (item.type === 'saved') {
                 // If a Saved Portfolio is focused, update SQ Analysis to show that portfolio
                 console.log(`[FocusMode] Updating SQ Analysis for focused portfolio index: ${item.index}`);
-                renderSQAnalysis(item.index, 'saved', 'all', window.activeAnalysisData?.dataType || 'backtest');
+                renderSQAnalysis(item.index, 'saved', 'all', 'comparison');
             }
-        } else {
-            // If multiple or zero, maybe reset to 'all'?
-            // We need to know which portfolio we were looking at.
-            // This is tricky without state tracking.
-            // For now, let's only handle the single selection case which is the user request.
+        } else if (this.focusedItems.size > 1) {
+            // MULTI-SELECTION LOGIC
+            const items = Array.from(this.focusedItems.values()).filter(i => i.type === 'strategy');
+            if (items.length > 0) {
+                // Try to identify parent portfolio from first item
+                let parentPortfolioIndex = -1;
+                const first = items[0];
+
+                // Priority 1: sourcePortfolioIndex
+                if (first.sourcePortfolioIndex !== undefined && first.sourcePortfolioIndex !== null) {
+                    parentPortfolioIndex = first.sourcePortfolioIndex;
+                }
+                // Priority 2: Search by Name/ID of first item
+                else {
+                    let searchId = first.id || first.name;
+                    if (first.originalIndex !== undefined && state.loadedStrategyFiles[first.originalIndex]) {
+                        searchId = state.loadedStrategyFiles[first.originalIndex].strategyId || state.loadedStrategyFiles[first.originalIndex].name;
+                    }
+                    parentPortfolioIndex = state.savedPortfolios.findIndex(p => p.strategyIds && p.strategyIds.includes(searchId));
+
+                    // Fallback check by name
+                    if (parentPortfolioIndex === -1) {
+                        parentPortfolioIndex = state.savedPortfolios.findIndex(p => p.strategyNames && p.strategyNames.includes(searchId));
+                    }
+                }
+
+                if (parentPortfolioIndex !== -1) {
+                    // Collect all IDs
+                    const validIds = [];
+                    items.forEach(item => {
+                        // Resolve ID logic...
+                        let sId = item.id || item.name;
+                        if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
+                            const f = state.loadedStrategyFiles[item.originalIndex];
+                            sId = f.strategyId || f.name;
+                        }
+
+                        // Resolve to internal ID using portfolio maps
+                        const portfolio = state.savedPortfolios[parentPortfolioIndex];
+                        if (portfolio && portfolio.strategyNames && portfolio.strategyIds) {
+                            // Try to match by Name -> ID mapping
+                            // The 'sId' we have might be the ID or the Name depending on source.
+                            // Let's check if sId exists in strategyNames
+                            const nameIdx = portfolio.strategyNames.indexOf(sId);
+                            if (nameIdx !== -1 && portfolio.strategyIds[nameIdx]) {
+                                sId = portfolio.strategyIds[nameIdx];
+                            }
+                        }
+                        validIds.push(sId);
+                    });
+
+                    if (validIds.length > 0) {
+                        console.log(`[FocusMode] Updating SQ Analysis for ${validIds.length} strategies in portfolio ${parentPortfolioIndex}`);
+                        renderSQAnalysis(parentPortfolioIndex, 'saved', validIds, 'comparison');
+                    }
+                } else {
+                    console.warn("[FocusMode] Could not determine parent portfolio for multi-selection.");
+                }
+            }
         }
 
         // REALITY CHECK PANEL LOGIC

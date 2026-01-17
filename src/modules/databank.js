@@ -8,7 +8,7 @@ import { focusMode } from './focusMode.js';
 import { generatePortfolioId } from '../utils.js'; // Import ID generator
 import { loadBrokerConfig } from './brokerConfig.js';
 
-import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=10';
+import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=11';
 import { getFullAnalysisFromBackend } from '../analysis.js';
 
 /**

@@ -104,27 +104,17 @@ export const saveMagicNumbers = () => {
 };
 
 // Funciones de persistencia para Cuarentena (Global Ban)
+// NOTA: La persistencia en localStorage se ha ELIMINADO intencionalmente.
+// La lista de cuarentena ahora solo vive en el estado de la sesión y se guarda/carga vía JSON (Exportar/Importar Estado).
 export const loadQuarantineList = () => {
-    try {
-        const stored = localStorage.getItem('quarantinedStrategyNames');
-        if (stored) {
-            const list = JSON.parse(stored);
-            state.quarantinedStrategyNames = new Set(list);
-            console.log(`[State] Loaded ${list.length} quarantined strategies.`);
-        }
-    } catch (e) {
-        console.error('[State] Error loading Quarantine List:', e);
-    }
+    // No-op: Se carga vía importState()
+    console.log('[State] Quarantine List init: Relying on session/imported state only.');
 };
 
 export const saveQuarantineList = () => {
-    try {
-        const list = Array.from(state.quarantinedStrategyNames);
-        localStorage.setItem('quarantinedStrategyNames', JSON.stringify(list));
-        console.log(`[State] Saved ${list.length} quarantined strategies.`);
-    } catch (e) {
-        console.error('[State] Error saving Quarantine List:', e);
-    }
+    // No-op: Se guarda vía exportState()
+    // Solo logueamos para confirmar cambios en memoria
+    console.log(`[State] Quarantine List updated (Memory): ${state.quarantinedStrategyNames.size} strategies.`);
 };
 
 export const loadSavedPortfolios = () => {

@@ -7,7 +7,7 @@ import { ALL_METRICS, STRATEGY_COLORS, CHART_OPTIONS } from './config.js?v=10';
 import { destroyChart, destroyAllCharts, formatMetricForDisplay, hideError, parseCsv } from './utils.js';
 import { focusMode } from './modules/focusMode.js';
 import { renderStrategiesTable as renderStrategiesTableModule } from './modules/strategiesTable.js';
-import { renderSQAnalysis, calculateSQMetrics } from './modules/sqAnalysis_v2.js?v=10';
+import { renderSQAnalysis, calculateSQMetrics } from './modules/sqAnalysis_v2.js?v=11';
 import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig, selectedSavedPortfolios, clearSelectedSavedPortfolios } from './modules/savedPortfoliosTable.js';
 import { unlinkAccount } from './modules/myfxbookUI.js';
 import { openSlaveAccountsModal } from './modules/slaveAccounts.js';
@@ -753,6 +753,89 @@ const getRealTradesByName = (stratName) => {
     return allRealTrades;
 };
 
+// --- HELPER: Calculate Real Metrics for Portfolio on the Fly ---
+const calculatePortfolioRealMetrics = (portfolio) => {
+    // Return existing if valid? Maybe forcing re-calc is safer to ensure it matches current strategies.
+    // if (portfolio.calculatedRealMetrics) return portfolio.calculatedRealMetrics;
+
+    console.log(`[UI] 🧮 Calculating Real Metrics for Portfolio: ${portfolio.name}`);
+    let allRealTrades = [];
+    const sourceData = portfolio.realMetrics && portfolio.realMetrics._tradesById ? portfolio.realMetrics._tradesById : {};
+
+    // Fallback: If portfolio has no trades, maybe we can look in a MASTER portfolio?
+    // For now, strictly use portfolio's own attached data (DrGero case).
+
+    let strategyNames = [];
+    // Identify Strategies
+    if (portfolio.strategyNames && Array.isArray(portfolio.strategyNames)) {
+        strategyNames = portfolio.strategyNames;
+    } else if (portfolio.strategies && Array.isArray(portfolio.strategies)) {
+        strategyNames = portfolio.strategies.map(s => s.name || s);
+    } else if (portfolio.indices && window.analysisResults) {
+        strategyNames = portfolio.indices.map(i => window.analysisResults[i]?.name).filter(Boolean);
+    }
+
+    if (strategyNames.length > 0) {
+        const normalize = s => s.replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+        strategyNames.forEach(stratName => {
+            // Resolve Strategy ID/Magic
+            let strategyId = stratName;
+            const normalizedStratName = normalize(stratName);
+            const file = state.loadedStrategyFiles.find(f => normalize(f.name) === normalizedStratName);
+            if (file && file.strategyId) strategyId = file.strategyId;
+
+            // Lookup Magic Numbers
+            const mapById = state.magicNumberMap[strategyId];
+            const mapByName = state.magicNumberMap[stratName];
+            const mapByNormName = state.magicNumberMap[normalizedStratName];
+            let magicRaw = mapById || mapByNormName || mapByName;
+
+            if (magicRaw) {
+                let magics = Array.isArray(magicRaw) ? magicRaw : String(magicRaw).split(',').map(m => m.trim()).filter(Boolean);
+                magics.forEach(m => {
+                    if (sourceData[m]) {
+                        allRealTrades = allRealTrades.concat(sourceData[m]);
+                    }
+                });
+            }
+        });
+    }
+
+    if (allRealTrades.length > 0) {
+        // Normalize for Engine
+        const parseDate = (d) => {
+            if (!d) return null;
+            const clean = typeof d === 'string' ? d.replace(/\./g, '/') : d;
+            const dateObj = new Date(clean);
+            return isNaN(dateObj.getTime()) ? null : dateObj;
+        };
+
+        const normalizedForEngine = allRealTrades.map(t => {
+            const p = parseFloat(t.profit) || 0;
+            const s = parseFloat(t.swap) || 0;
+            const c = parseFloat(t.commission) || 0;
+            const pnl = p + s + c;
+            const parsedClose = parseDate(t.closeTime || t.closeDate);
+            const parsedOpen = parseDate(t.openTime || t.openDate || t.OpenTime);
+            const effectiveExit = parsedClose || parsedOpen;
+            return {
+                ...t, pnl, closeTime: parsedClose, openTime: parsedOpen, exitTime: effectiveExit
+            };
+        }).filter(t => t.exitTime && !isNaN(t.pnl)).sort((a, b) => a.exitTime - b.exitTime);
+
+        console.log(`[UI] 🧮 Aggregated ${normalizedForEngine.length} trades for ${portfolio.name}`);
+        const result = calculateSQMetrics(normalizedForEngine);
+        // Cache it?
+        portfolio.calculatedRealMetrics = result;
+        return result;
+    } else {
+        console.warn(`[UI] ⚠️ No real trades found for ${portfolio.name} (Strategies: ${strategyNames.length})`);
+        return {};
+    }
+};
+
+
 export const displaySavedPortfoliosList = () => {
     // Initialize table if needed
     initSavedPortfoliosTable();
@@ -1063,91 +1146,128 @@ export const displaySavedPortfoliosList = () => {
                     container.appendChild(badge);
                 }
 
-                // --- REALITY CHECK BADGE & BUTTON ---
-                if (state.activeViewMode === 'reality-check' && p.realMetrics) {
-                    // Calculate Risk Metrics
-                    let ddPercent = 0;
-                    let stagPercent = 0;
-                    let riskIcon = '🛡️';
-                    let riskColor = 'text-green-400';
-                    let stagLabel = '';
+                // --- REALITY CHECK / BACKTEST TRADES BUTTON ---
+                // Shows 🔍 button if we have Real Metrics (Reality Check) OR if we are in Backtest Mode (Aggregated View)
+                const showReal = state.activeViewMode === 'reality-check' && p.realMetrics;
+                const showBacktest = state.activeViewMode === 'backtest';
 
-                    const backtestMaxDD = Math.abs(Number(p.metrics?.maxDrawdownInDollars || p.metrics?.maxDrawdown || 0));
-                    let maxRealDD = Math.abs(Number(p.realMetrics?.maxDrawdown || 0));
+                if (showReal || showBacktest) {
+                    // Badge Logic (Only for Reality Check)
+                    if (showReal) {
+                        let ddPercent = 0;
+                        let stagPercent = 0;
+                        let riskIcon = '🛡️';
+                        let riskColor = 'text-green-400';
+                        let stagLabel = '';
 
-                    if (p.realMetrics._tradesById) {
-                        const allRealTrades = Object.values(p.realMetrics._tradesById).flat()
-                            .filter(t => (t.action || t.type) !== 'Deposit' && (t.action || t.type) !== 'Transfer')
-                            .sort((a, b) => new Date(a.closeDate || a.closeTime) - new Date(b.closeDate || b.closeTime));
+                        const backtestMaxDD = Math.abs(Number(p.metrics?.maxDrawdownInDollars || p.metrics?.maxDrawdown || 0));
+                        let maxRealDD = Math.abs(Number(p.realMetrics?.maxDrawdown || 0));
 
-                        if (allRealTrades.length > 0) {
-                            // Calculate MaxDD and Equity
-                            let maxEq = -Infinity;
-                            let lastHighIndex = 0;
-                            let lastHighTime = new Date(allRealTrades[0].closeDate || allRealTrades[0].closeTime).getTime();
-                            let currentEq = 0;
-                            let calculatedMaxDD = 0;
+                        if (p.realMetrics._tradesById) {
+                            const allRealTrades = Object.values(p.realMetrics._tradesById).flat()
+                                .filter(t => (t.action || t.type) !== 'Deposit' && (t.action || t.type) !== 'Transfer')
+                                .sort((a, b) => new Date(a.closeDate || a.closeTime) - new Date(b.closeDate || b.closeTime));
 
-                            allRealTrades.forEach((t, idx) => {
-                                currentEq += (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
-                                if (currentEq > maxEq) {
-                                    maxEq = currentEq;
-                                    lastHighIndex = idx;
-                                    lastHighTime = new Date(t.closeDate || t.closeTime).getTime();
+                            if (allRealTrades.length > 0) {
+                                // Calculate MaxDD and Equity
+                                let maxEq = -Infinity;
+                                let lastHighIndex = 0;
+                                let lastHighTime = new Date(allRealTrades[0].closeDate || allRealTrades[0].closeTime).getTime();
+                                let currentEq = 0;
+                                let calculatedMaxDD = 0;
+
+                                allRealTrades.forEach((t, idx) => {
+                                    currentEq += (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
+                                    if (currentEq > maxEq) {
+                                        maxEq = currentEq;
+                                        lastHighIndex = idx;
+                                        lastHighTime = new Date(t.closeDate || t.closeTime).getTime();
+                                    }
+                                    const dd = maxEq - currentEq;
+                                    if (dd > calculatedMaxDD) calculatedMaxDD = dd;
+                                });
+
+                                // Use calculated MaxDD if original is missing or NaN
+                                if (!maxRealDD || isNaN(maxRealDD)) {
+                                    maxRealDD = calculatedMaxDD;
+                                    console.log(`[UI] Calculated missing MaxDD for ${p.name}: ${maxRealDD}`);
                                 }
-                                const dd = maxEq - currentEq;
-                                if (dd > calculatedMaxDD) calculatedMaxDD = dd;
-                            });
 
-                            // Use calculated MaxDD if original is missing or NaN
-                            if (!maxRealDD || isNaN(maxRealDD)) {
-                                maxRealDD = calculatedMaxDD;
-                                console.log(`[UI] Calculated missing MaxDD for ${p.name}: ${maxRealDD}`);
-                            }
-
-                            if (state.stagnationMode === 'trades') {
-                                const currentStagnationTrades = (allRealTrades.length - 1) - lastHighIndex;
-                                const limit = Number(p.metrics?.maxStagnationTrades || 0);
-                                if (limit > 0) stagPercent = (currentStagnationTrades / limit) * 100;
-                                stagLabel = 'Stag(T)';
-                            } else {
-                                const lastDate = new Date(allRealTrades[allRealTrades.length - 1].closeDate || allRealTrades[allRealTrades.length - 1].closeTime).getTime();
-                                const currentStagnationDays = (lastDate - lastHighTime) / (1000 * 60 * 60 * 24);
-                                const limit = Number(p.metrics?.maxStagnationDays || 0);
-                                if (limit > 0) stagPercent = (currentStagnationDays / limit) * 100;
-                                stagLabel = 'Stag(D)';
+                                if (state.stagnationMode === 'trades') {
+                                    const currentStagnationTrades = (allRealTrades.length - 1) - lastHighIndex;
+                                    const limit = Number(p.metrics?.maxStagnationTrades || 0);
+                                    if (limit > 0) stagPercent = (currentStagnationTrades / limit) * 100;
+                                    stagLabel = 'Stag(T)';
+                                } else {
+                                    const lastDate = new Date(allRealTrades[allRealTrades.length - 1].closeDate || allRealTrades[allRealTrades.length - 1].closeTime).getTime();
+                                    const currentStagnationDays = (lastDate - lastHighTime) / (1000 * 60 * 60 * 24);
+                                    const limit = Number(p.metrics?.maxStagnationDays || 0);
+                                    if (limit > 0) stagPercent = (currentStagnationDays / limit) * 100;
+                                    stagLabel = 'Stag(D)';
+                                }
                             }
                         }
+
+                        // console.log(`[UI] Debug Badge: Portfolio ${p.name} - BacktestDD: ${backtestMaxDD}, RealDD: ${maxRealDD}`);
+
+                        if (backtestMaxDD > 0) {
+                            ddPercent = (maxRealDD / backtestMaxDD) * 100;
+                        } else {
+                            ddPercent = 0;
+                        }
+
+                        const maxRisk = Math.max(ddPercent, stagPercent);
+                        if (maxRisk >= 100) { riskColor = 'text-red-500 font-bold'; riskIcon = '🚨'; }
+                        else if (maxRisk >= 80) { riskColor = 'text-orange-400'; riskIcon = '⚠️'; }
+
+                        const badge = document.createElement('span');
+                        badge.className = `ml-2 ${riskColor} text-xs bg-gray-800 px-1.5 py-0.5 rounded border border-gray-600`;
+                        badge.textContent = `DD: ${ddPercent.toFixed(0)}% | ${stagLabel}: ${stagPercent.toFixed(0)}% ${riskIcon}`;
+
+                        // Append badge to the name group (first line)
+                        nameGroup.appendChild(badge);
                     }
-
-                    console.log(`[UI] Debug Badge: Portfolio ${p.name} - BacktestDD: ${backtestMaxDD}, RealDD: ${maxRealDD}`);
-
-                    if (backtestMaxDD > 0) {
-                        ddPercent = (maxRealDD / backtestMaxDD) * 100;
-                    } else {
-                        ddPercent = 0;
-                    }
-
-                    const maxRisk = Math.max(ddPercent, stagPercent);
-                    if (maxRisk >= 100) { riskColor = 'text-red-500 font-bold'; riskIcon = '🚨'; }
-                    else if (maxRisk >= 80) { riskColor = 'text-orange-400'; riskIcon = '⚠️'; }
-
-                    const badge = document.createElement('span');
-                    badge.className = `ml-2 ${riskColor} text-xs bg-gray-800 px-1.5 py-0.5 rounded border border-gray-600`;
-                    badge.textContent = `DD: ${ddPercent.toFixed(0)}% | ${stagLabel}: ${stagPercent.toFixed(0)}% ${riskIcon}`;
-
-                    // Append badge to the name group (first line)
-                    nameGroup.appendChild(badge);
 
                     const btn = document.createElement('button');
                     btn.className = 'ml-2 text-gray-400 hover:text-white transition-colors';
-                    btn.title = 'View Real Trades';
+                    btn.title = showReal ? 'View Real Trades' : 'View Backtest Trades (Aggregated)';
                     btn.innerHTML = '🔍';
                     btn.onclick = (e) => {
                         e.stopPropagation();
-                        openRealTradesModal(originalIndex, 'saved');
+                        // Determine type: 'saved' (Real) or 'saved-backtest'
+                        const modalType = showReal ? 'saved' : 'saved-backtest';
+                        openRealTradesModal(originalIndex, modalType);
                     };
                     nameGroup.appendChild(btn);
+
+                    // Backtest Overlay Toggle (Reality Check Only)
+                    if (showReal) {
+                        const btnOverlay = document.createElement('button');
+                        const isOverlayOn = p.showBacktestOverlay !== false; // Default True
+                        btnOverlay.className = `ml-2 transition-colors ${isOverlayOn ? 'text-sky-400 hover:text-sky-300' : 'text-gray-600 hover:text-gray-400'}`;
+                        btnOverlay.title = isOverlayOn ? 'Hide Backtest Overlay' : 'Show Backtest Overlay';
+                        btnOverlay.innerHTML = '👁️';
+                        btnOverlay.onclick = (e) => {
+                            e.stopPropagation();
+                            p.showBacktestOverlay = !isOverlayOn;
+                            // Re-render table to update icon state
+                            displaySavedPortfoliosList();
+                            // If this portfolio is selected, refresh chart
+                            if (selectedSavedPortfolios.has(originalIndex)) {
+                                // Trigger chart update logic (simulating selection change or calling render directly)
+                                // We need to re-fetch/process data. The easiest way is to trigger the checkbox listener logic
+                                // or call the function that updates the chart based on selectedSavedPortfolios.
+                                // It seems 'updateComparisonCharts' or similar is used.
+                                // Since we don't have direct access to 'updateComparisonCharts' here (it interacts with analysis results),
+                                // let's try to trigger a re-render if the main function is exposed or dispatch event.
+                                // For now, simple re-render of table is confirmed. Chart update needs 'renderPortfolioComparisonCharts' with data.
+                                // Attempt to trigger global update:
+                                const event = new CustomEvent('portfolioSelectionChanged');
+                                document.dispatchEvent(event);
+                            }
+                        };
+                        nameGroup.appendChild(btnOverlay);
+                    }
 
                     // Risk Breakdown Button
                     const btnRisk = document.createElement('button');
@@ -1173,12 +1293,32 @@ export const displaySavedPortfoliosList = () => {
                 td.textContent = p.indices ? p.indices.length : 0;
                 td.className += ' text-right';
             } else {
-                let value = p.metrics?.[key];
+                let value;
+                const isRealMode = state.activeViewMode === 'reality-check';
 
-                // Fix for Ret/DD mismatch (key is returnDD, data is profitMaxDD_Ratio or returnDDRatio)
-                if (key === 'returnDD' && value === undefined) {
+                // DATA SOURCE TOGGLE: Real vs Backtest
+                if (isRealMode) {
+                    // Always try to calculate/retrieve aggregated metrics
+                    const realStats = calculatePortfolioRealMetrics(p);
+
+                    if (realStats) {
+                        value = realStats[key];
+                        // Aliases
+                        if (value === undefined) {
+                            if (key === 'returnDD') value = realStats.profitMaxDD_Ratio || realStats.returnDDRatio;
+                            else if (key === 'maxDrawdownInDollars') value = realStats.maxDD;
+                        }
+                    }
+                } else {
+                    // Backtest Mode (Default)
+                    value = p.metrics?.[key];
+                }
+
+                // Fix for Ret/DD mismatch (Backtest key fallback)
+                if (key === 'returnDD' && value === undefined && !isRealMode) {
                     value = p.metrics?.['profitMaxDD_Ratio'] || p.metrics?.['returnDDRatio'];
                 }
+
                 if (typeof value === 'number') {
                     td.textContent = formatMetricForDisplay(value, key);
                     td.className += ' text-right';
@@ -1186,7 +1326,7 @@ export const displaySavedPortfoliosList = () => {
                         td.className += value >= 0 ? ' text-green-400' : ' text-red-400';
                     }
                 } else {
-                    td.textContent = value || '-';
+                    td.textContent = (value !== undefined && value !== null) ? value : '-';
                     td.className += ' text-right';
                 }
             }
@@ -1339,6 +1479,24 @@ export const displaySavedPortfoliosList = () => {
             updateDeleteButton();
         });
     });
+
+    // AUTO-RENDER IN REALITY CHECK MODE
+    if (state.activeViewMode === 'reality-check') {
+        const analysesToRender = portfoliosToDisplay.map(p => {
+            return {
+                name: p.name,
+                savedIndex: state.savedPortfolios.findIndex(sp => sp.id === p.id),
+                analysis: p.analysis || p, // Fallback
+                realMetrics: p.realMetrics,
+                showBacktestOverlay: p.showBacktestOverlay,
+                strategyNames: p.strategyNames || p.strategies,
+                color: p.color
+            };
+        }).filter(a => a.savedIndex !== -1);
+
+        console.log(`[ANTIGRAVITY] 🔄 Auto-Rendering ${analysesToRender.length} portfolios for Reality Check.`);
+        setTimeout(() => renderPortfolioComparisonCharts(analysesToRender), 50);
+    }
 };
 
 // Make globally accessible for savedPortfoliosTable modal
@@ -1470,7 +1628,7 @@ const renderComparisonTable = (portfolioAnalysis) => {
     container.innerHTML = '';
     container.classList.remove('hidden');
 
-    const backtestMetrics = portfolioAnalysis.analysis.metrics;
+    const backtestMetrics = portfolioAnalysis.analysis?.metrics;
     const realMetrics = portfolioAnalysis.realMetrics;
 
     if (!backtestMetrics || !realMetrics) return;
@@ -1530,7 +1688,7 @@ const renderComparisonTable = (portfolioAnalysis) => {
     container.innerHTML = html;
 };
 
-import { initComparisonTab } from './modules/tradeComparator.js';
+
 
 /**
  * Cambia el modo de vista (Backtest vs Reality Check vs SQ Overview vs Real vs SQ).
@@ -1542,7 +1700,7 @@ export const switchViewMode = (mode) => {
     const tabBacktest = document.getElementById('tab-backtest');
     const tabReality = document.getElementById('tab-reality-check');
     const tabSQ = document.getElementById('tab-sq-stats');
-    const tabRealVsSq = document.getElementById('tab-real-vs-sq');
+
 
     const activeClass = 'text-sm font-semibold text-white border-b-2 border-sky-500 pb-1 transition-colors';
     const inactiveClass = 'text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors';
@@ -1550,7 +1708,7 @@ export const switchViewMode = (mode) => {
     if (tabBacktest) tabBacktest.className = mode === 'backtest' ? activeClass : inactiveClass;
     if (tabReality) tabReality.className = mode === 'reality-check' ? activeClass : inactiveClass;
     if (tabSQ) tabSQ.className = mode === 'sq-stats' ? activeClass : inactiveClass;
-    if (tabRealVsSq) tabRealVsSq.className = mode === 'real-vs-sq' ? activeClass : inactiveClass;
+
 
     // Toggle View Containers
     const chartView = document.getElementById('chart-view-container');
@@ -1572,16 +1730,8 @@ export const switchViewMode = (mode) => {
 
         // Mode specific actions
         if (mode === 'real-vs-sq') {
-            // Real vs SQ Audit Mode
-            if (compTableContainer) {
-                compTableContainer.style.maxHeight = 'none'; // Allow full expansion
-                compTableContainer.classList.remove('hidden');
-                initComparisonTab();
-            }
-            // Hide charts? Or keep them?
-            // Maybe hide charts to give full space to audit
-            document.getElementById('portfolioEquityChart').parentElement.classList.add('hidden');
-            document.getElementById('portfolioDrawdownChart').parentElement.classList.add('hidden');
+            // Real vs SQ Audit Mode - REMOVED
+            // Legacy functionality was here.
         } else {
             // Backtest / Reality Check
             document.getElementById('portfolioEquityChart').parentElement.classList.remove('hidden');
@@ -1642,17 +1792,23 @@ export const switchViewMode = (mode) => {
  * Renderiza los gráficos de comparación de portafolios.
  */
 export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
-    console.log('[UI] renderPortfolioComparisonCharts called with', portfolioAnalyses.length, 'items. Mode:', state.activeViewMode);
+    console.log('[ANTIGRAVITY] renderPortfolioComparisonCharts called with', portfolioAnalyses.length, 'items. Mode:', state.activeViewMode);
     const canvasId = 'portfolioEquityChart';
     destroyChart(canvasId);
     const ctx = document.getElementById(canvasId)?.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+        console.error('[ANTIGRAVITY] Canvas context not found for', canvasId);
+        return;
+    }
 
     dom.portfolioComparisonChartSection.classList.remove('hidden');
 
     if (portfolioAnalyses.length === 0 && state.comparisonPortfolioIndex === null) {
+        console.log('[ANTIGRAVITY] No analyses to render and no comparison index.');
         return;
     }
+
+
 
     let allAnalyses = [...portfolioAnalyses];
     const originalResult = (window.analysisResults || []).find(r => r.isTemporaryOriginal);
@@ -1761,17 +1917,79 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 const r = parseInt(color.slice(1, 3), 16);
                 const g = parseInt(color.slice(3, 5), 16);
                 const b = parseInt(color.slice(5, 7), 16);
-                color = `rgba(${r}, ${g}, ${b}, 0.3)`; // 30% opacity
+                color = `rgba(${r}, ${g}, ${b}, 0.6)`; // 60% opacity
             } else if (color.startsWith('rgb')) {
-                color = color.replace('rgb', 'rgba').replace(')', ', 0.3)');
+                color = color.replace('rgb', 'rgba').replace(')', ', 0.6)');
             }
         }
 
-        // AUTO-ZOOM & ISOLATION: In Reality Check mode, HIDE backtest data to let Real data scale properly
+        // AUTO-ZOOM & ISOLATION: In Reality Check mode
         if (state.activeViewMode === 'reality-check') {
-            // Hide backtest data completely to focus on Real Evolution
-            finalData = [];
-            console.log(`[UI] 🔍 Reality Check: Hiding backtest data to focus on Real Evolution.`);
+            const hasRealData = result.realMetrics && result.realMetrics._tradesById;
+            const showOverlay = result.showBacktestOverlay !== false; // Default TRUE by double-negation (undefined != false -> true)
+
+            console.log(`[ANTIGRAVITY] 🔍 Reality Check Logic for ${result.name}:`, { showOverlay, hasRealData, trades: result.realMetrics?._tradesById ? Object.keys(result.realMetrics._tradesById).length : 0 });
+
+            if (showOverlay && hasRealData) {
+                let minRealDate = Infinity;
+                if (result.realMetrics._tradesById) {
+                    Object.values(result.realMetrics._tradesById).flat().forEach(t => {
+                        const d = new Date(t.closeTime || t.closeDate).getTime();
+                        if (d < minRealDate) minRealDate = d;
+                    });
+                }
+
+                if (minRealDate !== Infinity) {
+                    console.log(`[ANTIGRAVITY] ✂️ Trimming Backtest to match Real Start: ${new Date(minRealDate).toISOString()} (${minRealDate})`);
+
+                    if (finalData.length > 0) {
+                        const originalLen = finalData.length;
+                        finalData = finalData.filter(pt => {
+                            // Helper to extract Time from generic point structure
+                            let t;
+                            if (typeof pt === 'object') {
+                                if ('x' in pt) {
+                                    t = pt.x;
+                                    // Fix: Parse string dates (e.g. "2009-01-02") to timestamp
+                                    if (typeof t === 'string' && isNaN(t)) {
+                                        t = new Date(t).getTime();
+                                    }
+                                }
+                                else if ('date' in pt) t = new Date(pt.date).getTime();
+                                else if (Array.isArray(pt)) t = pt[0]; // [x, y]
+                            }
+
+                            if (!t) return true; // Keep if no time found (safe fallback)
+                            return t >= minRealDate;
+                        });
+                        console.log(`[ANTIGRAVITY]    - Trimmed from ${originalLen} to ${finalData.length} points.`);
+                    }
+                } else {
+                    console.warn('[ANTIGRAVITY] minRealDate is Infinity despite hasRealData=true. Inspect _tradesById structure.');
+                }
+            } else if (!hasRealData) {
+                // Logic to hide backtest if NO real data is handled by the filter loop above?
+                // Wait, the filter loop (lines 1803+) removes portfolios without real metrics entirely from 'allAnalyses'.
+                // So if we are here, hasRealData SHOULD be true, unless 'realMetrics' exists but '_tradesById' is empty/malformed.
+                // But if users toggles Overlay OFF, we clear it.
+                if (!showOverlay) {
+                    finalData = [];
+                    console.log(`[ANTIGRAVITY] 🔍 Overlay explicitly OFF. Hiding backtest data.`);
+                }
+            } else {
+                // hasRealData is FALSE inside here?
+                // Logic: showOverlay is T/F.
+                // If showOverlay is FALSE -> Clear.
+                if (!showOverlay) {
+                    finalData = [];
+                    console.log(`[ANTIGRAVITY] 🔍 Overlay OFF. Hiding backtest.`);
+                }
+                // If showOverlay is TRUE but !hasRealData -> We likely show full backtest?
+                // OR we strictly hide backtest in Reality Check if it doesn't match Real?
+                // Currently: display full backtest if no real data?
+                // The filter block at 1803 removed items with NO real metrics.
+                // So hasRealData should be true.
+            }
         }
 
         if (finalData !== rawEquityCurve) {
@@ -2953,6 +3171,58 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
             }
         }
 
+    } else if (type === 'saved-backtest') {
+        strategyOrPortfolio = state.savedPortfolios[index];
+        if (strategyOrPortfolio) {
+            console.log(`[UI] Aggregating Backtest Trades for Portfolio: ${strategyOrPortfolio.name}`);
+
+            if (strategyOrPortfolio.indices && strategyOrPortfolio.indices.length > 0) {
+                // Iterate strategies and aggregate trades
+                strategyOrPortfolio.indices.forEach(idx => {
+                    // Get raw data for this strategy
+                    // IMPORTANT: state.rawStrategiesData should be populated.
+                    const rawTrades = state.rawStrategiesData ? state.rawStrategiesData[idx] : null;
+
+                    if (rawTrades && Array.isArray(rawTrades)) {
+                        // Map and concat
+                        const mappedTrades = rawTrades.map(row => ({
+                            openTime: row.entry_date ? new Date(row.entry_date) : null,
+                            closeTime: row.exit_date ? new Date(row.exit_date) : null,
+                            type: (row.type !== undefined) ? row.type : (row.direction || '?'),
+                            size: parseFloat(row.size) || 0,
+                            symbol: row.symbol || '',
+                            openPrice: parseFloat(row.open_price || row.price || 0),
+                            closePrice: parseFloat(row.close_price || row.price || 0),
+                            profit: parseFloat(row.pnl) || 0,
+                            swap: parseFloat(row.swap) || 0,
+                            commission: parseFloat(row.commission) || 0,
+                            magicNumber: row.magic || row.magic_number || 0,
+                            comment: (row.comment || '') + ` (Strategy ${idx})` // Append strategy info
+                        })).filter(t => t.openTime && t.closeTime);
+
+                        allRealTrades = allRealTrades.concat(mappedTrades);
+                    } else {
+                        console.warn(`[UI] Missing raw data for strategy index ${idx} in portfolio.`);
+                    }
+                });
+
+                console.log(`[UI] Aggregated ${allRealTrades.length} trades from ${strategyOrPortfolio.indices.length} strategies.`);
+            } else {
+                console.warn('[UI] Portfolio has no indices to aggregate backtest data.');
+            }
+
+            // Calculate temporary stats for header (Always calculate for Backtest to ensure consistency)
+            if (allRealTrades.length > 0) {
+                // FIX: row.pnl from parseCsv (and thus t.profit) is now NET PnL (includes swap/comm).
+                // We must NOT add swap/comm again.
+                const realStats = calculateSQMetrics(
+                    allRealTrades.map(t => ({ ...t, exitTime: t.closeTime, pnl: t.profit }))
+                );
+                strategyOrPortfolio.tempRealStats = realStats;
+                strategyOrPortfolio.tempRealStats.isBacktest = true; // Flag for UI if needed
+            }
+        }
+
     } else if (type === 'backtest') {
         const file = state.loadedStrategyFiles[index];
         if (file) {
@@ -3257,17 +3527,206 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
 
         let label = '-';
         let usedPercent = 0;
+        let btNum = 0;
 
         if (btVal !== null) {
-            const numBt = parseFloat(btVal);
-            if (!isNaN(numBt) && numBt !== 0) {
+            btNum = parseFloat(btVal);
+            if (!isNaN(btNum) && btNum !== 0) {
                 if (isPercent) {
-                    label = `${numBt.toFixed(2)}%`;
-                    // Can't calculate reliable % used if BT is % and Peak is $. 
+                    label = `${btNum.toFixed(2)}%`;
                 } else {
-                    label = isMoney ? `$${numBt.toFixed(2)}` : numBt.toFixed(0);
-                    usedPercent = (currentPeak / numBt) * 100;
+                    label = isMoney ? `$${btNum.toFixed(2)}` : btNum.toFixed(0);
+                    usedPercent = (currentPeak / btNum) * 100;
                 }
+            }
+        }
+
+        // DEBUG: Trace Entry
+        if (headerId.includes('dd') && isMoney) {
+            console.log(`[RiskHeader ERROR-TRACE] Header: ${headerId}, btNum: ${btNum}, type: ${type}, index: ${index}`);
+        }
+
+        // --- Calculate Stats (Mean/Freq) ---
+        let statsHtml = '';
+        if (btNum > 0) {
+            let metricCurve = [];
+            let eventPeaks = []; // Capture Peak of each Drawdown Event for Mean Calc
+
+            // PREFERRED: Use Raw Strategies Data if available (Exact Precision)
+            let rawTrades = null;
+            let stratIndex = index;
+
+            // Resolve Index if Name is passed
+            if (typeof index === 'string' && type === 'strategy') {
+                // Try to find index in loadedStrategyFiles
+                if (state.loadedStrategyFiles) {
+                    let idx = state.loadedStrategyFiles.findIndex(f => f.name === index);
+
+                    // Retry with .csv if not found and input doesn't have it
+                    if (idx === -1 && !index.endsWith('.csv')) {
+                        idx = state.loadedStrategyFiles.findIndex(f => f.name === `${index}.csv`);
+                    }
+                    // Retry without .csv if not found and input has it
+                    if (idx === -1 && index.endsWith('.csv')) {
+                        const cleanName = index.replace('.csv', '');
+                        idx = state.loadedStrategyFiles.findIndex(f => f.name === cleanName);
+                    }
+
+                    if (idx !== -1) {
+                        stratIndex = idx;
+                        console.log(`[RiskHeader] Resolved name '${index}' to index ${idx}`);
+                    } else {
+                        console.warn(`[RiskHeader] Could not resolve name '${index}' to an index in loadedStrategyFiles.`);
+                    }
+                }
+            }
+
+            // Check raw data availability
+            if (type === 'strategy' && state.rawStrategiesData && state.rawStrategiesData[stratIndex]) {
+                rawTrades = state.rawStrategiesData[stratIndex];
+                console.log(`[RiskHeader] Found Raw Trades for Strategy Index ${stratIndex}: ${rawTrades.length} rows.`);
+            } else if (type === 'saved') {
+                console.log(`[RiskHeader] Portfolio mode. No single raw file expected. Using Fallback.`);
+            }
+
+            if (rawTrades) {
+                // DEBUG: Inspect Data Quality
+                if (rawTrades.length > 0) {
+                    // console.log(`[RiskHeader Debug] Header: ${headerId}, Keys:`, Object.keys(rawTrades[0]));
+                    // console.log(`[RiskHeader Debug] Sample PnL:`, rawTrades.slice(0, 5).map(t => t.pnl || t.profit));
+                    if (rawTrades[0].hasOwnProperty('drawdown') || rawTrades[0].hasOwnProperty('Drawdown')) {
+                        console.log(`[RiskHeader Debug] Explicit Drawdown Col Found.`);
+                    } else {
+                        console.log(`[RiskHeader Debug] NO Explicit Drawdown Column.`);
+                    }
+                }
+
+                // Check if explicit column exists
+                const hasExplicitDD = rawTrades.length > 0 && (rawTrades[0].hasOwnProperty('drawdown') || rawTrades[0].hasOwnProperty('Drawdown'));
+
+                if (hasExplicitDD && isMoney && headerId.includes('dd')) {
+                    // USE EXPLICIT COLUMN (User Request: "It is in the column")
+                    // If we want "Average Peak DD", we still need to find peaks in this series.
+                    // Let's stick to Event Peaks but using the Column values as source.
+
+                    let currentEventPeak = 0;
+                    rawTrades.forEach(t => {
+                        const val = parseFloat(t.drawdown || t.Drawdown || 0);
+                        if (val === 0) {
+                            if (currentEventPeak > 0.01) eventPeaks.push(currentEventPeak);
+                            currentEventPeak = 0;
+                            metricCurve.push(0);
+                        } else {
+                            if (val > currentEventPeak) currentEventPeak = val;
+                            metricCurve.push(val);
+                        }
+                    });
+                    if (currentEventPeak > 0.01) eventPeaks.push(currentEventPeak);
+
+                } else {
+                    // Reconstruct from Raw Trades (Logic confirmed robust)
+                    let runningBal = 0;
+                    let maxBal = 0;
+                    let maxBalIdx = -1;
+                    let maxBalTime = 0;
+
+                    let currentEventPeak = 0;
+
+                    const type = isMoney ? 'dd' : (headerId.includes('days') ? 'stag_days' : 'stag_trades');
+
+                    rawTrades.forEach((t, i) => {
+                        const profit = parseFloat(t.profit) || 0;
+                        runningBal += profit;
+
+                        const time = new Date(t.closeTime || t.openTime).getTime();
+
+                        let val = 0;
+                        let isNewHigh = false;
+
+                        if (runningBal >= maxBal) {
+                            maxBal = runningBal;
+                            maxBalIdx = i;
+                            maxBalTime = time;
+                            isNewHigh = true;
+                        } else {
+                            if (type === 'dd') val = maxBal - runningBal;
+                            else if (type === 'stag_days') val = Math.max(0, (time - maxBalTime) / 86400000);
+                            else if (type === 'stag_trades') val = i - maxBalIdx;
+                        }
+
+                        if (isNewHigh) {
+                            if (currentEventPeak > 0.01) eventPeaks.push(currentEventPeak); // Filter noise < 0.01
+                            currentEventPeak = 0;
+                            metricCurve.push(0);
+                        } else {
+                            if (val > currentEventPeak) currentEventPeak = val;
+                            metricCurve.push(val);
+                        }
+                    });
+                    // Capture last event if active
+                    if (currentEventPeak > 0.01) eventPeaks.push(currentEventPeak);
+                }
+
+            } else {
+                // FALLBACK: Use Chart Data
+                let equityCurve = strategyOrPortfolio?.analysis?.chartData?.equityCurve;
+                if (!equityCurve && strategyOrPortfolio?.metrics?.chartData?.equityCurve) {
+                    equityCurve = strategyOrPortfolio.metrics.chartData.equityCurve;
+                }
+
+                if (equityCurve && equityCurve.length > 0) {
+                    console.log(`[RiskHeader] Using Equity Curve Fallback. Points: ${equityCurve.length}`);
+                    let maxBal = -Infinity;
+                    let maxBalIdx = -1;
+                    let maxBalTime = 0;
+                    let currentEventPeak = 0;
+
+                    const type = isMoney ? 'dd' : (headerId.includes('days') ? 'stag_days' : 'stag_trades');
+
+                    equityCurve.forEach((pt, idx) => {
+                        const y = pt.y;
+                        const t = pt.t;
+                        let val = 0;
+                        let isNewHigh = false;
+
+                        if (y >= maxBal) {
+                            maxBal = y; maxBalIdx = idx; maxBalTime = t;
+                            isNewHigh = true;
+                        } else {
+                            if (type === 'dd') val = maxBal - y;
+                            else if (type === 'stag_days') val = Math.max(0, (t - maxBalTime) / 86400000);
+                            else if (type === 'stag_trades') val = idx - maxBalIdx;
+                        }
+
+                        if (isNewHigh) {
+                            if (currentEventPeak > 0.01) eventPeaks.push(currentEventPeak);
+                            currentEventPeak = 0;
+                            metricCurve.push(0);
+                        } else {
+                            if (val > currentEventPeak) currentEventPeak = val;
+                            metricCurve.push(val);
+                        }
+                    });
+                    if (currentEventPeak > 0.01) eventPeaks.push(currentEventPeak);
+                } else {
+                    console.log(`[RiskHeader] No Equity Curve found for fallback.`);
+                }
+            }
+
+            if (metricCurve.length > 0) {
+                // Mean: Use Event Peaks if available (better), else nonZeros
+                // Filter small peaks (noise) if < 1% of Max BT? No, keep it absolute but clean.
+                // We already filtered < 0.01
+
+                const validPeaks = eventPeaks.filter(p => p > 0);
+                const mean = validPeaks.length ? (validPeaks.reduce((a, b) => a + b, 0) / validPeaks.length) : 0;
+
+                // Frequency: % of points above threshold (Exposure)
+                const incidents = metricCurve.filter(v => v >= btNum).length;
+                const freq = (incidents / metricCurve.length) * 100;
+
+                const meanDisp = isMoney ? `$${mean.toFixed(0)}` : mean.toFixed(1);
+                statsHtml = `<span class="text-gray-500 ml-1" title="Max BT Stats:\n[Avg: ${meanDisp}]: Media de los Picos de Evento\n[Freq: ${freq.toFixed(1)}%]: % Tiempo en este nivel">[Avg: ${meanDisp}] (Freq: ${freq.toFixed(1)}%)</span>`;
             }
         }
 
@@ -3278,9 +3737,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
         if (usedPercent > 80) usedColor = 'text-red-500 font-bold';
         else if (usedPercent > 50) usedColor = 'text-orange-400';
 
-        const usedHtml = (label !== '-' && !isPercent && usedPercent > 0) ? `<br><span class="${usedColor} text-[10px]">(${usedPercent.toFixed(1)}% Used)</span>` : '';
-
-        header.innerHTML = `${title}<div class="text-[10px] text-gray-400 font-normal mt-0.5 leading-tight">Max BT: ${label}${usedHtml}</div>`;
+        header.innerHTML = `${title}<div class="text-[10px] text-gray-400 font-normal mt-0.5 leading-tight">Max BT: ${label}${statsHtml}<br><span class="${usedColor} text-[10px]">(${usedPercent.toFixed(1)}% Used)</span></div>`;
     };
 
     updateRiskHeader('real-trades-dd-header', peakRealDDMoney, ['maxDrawdownInDollars', 'drawdown_money', 'maxDD'], ['maxDrawdown', 'maxDDPct'], true);
@@ -3695,6 +4152,8 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
         }).replace(/,/g, ' ');
 
         let totalPortfolioBalance = 0;
+        let allPortfolioRealTrades = [];
+        let allPortfolioBacktestTrades = [];
 
         const rows = loopSource.map((stratIdx, localIdx) => {
             // 1. Resolve Strategy
@@ -3715,6 +4174,9 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
             // 2. Get Real Trades
             const realTrades = getRealTradesForStrategy(stratIdx, p);
             console.log(`[RiskModal]   Real Trades: ${realTrades.length}`);
+
+            // Accumulate for Portfolio Stats
+            allPortfolioRealTrades = allPortfolioRealTrades.concat(realTrades);
 
             // 3. Calc Real Peaks
             let maxRealDD = 0;
@@ -3792,9 +4254,18 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
             let stagDaysMean = 0;
             let stagTradesMean = 0;
 
+            // Frequency Curves
+            let ddCurve = [];
+            let stagDaysCurve = [];
+            let stagTradesCurve = [];
+
             if (p.indices && p.indices[localIdx] !== undefined) {
                 const rawData = state.rawStrategiesData[p.indices[localIdx]];
                 if (rawData) {
+                    // Accumulate for Portfolio Stats
+                    const stratBacktestTrades = [...rawData];
+                    allPortfolioBacktestTrades = allPortfolioBacktestTrades.concat(stratBacktestTrades);
+
                     // Manual Calculation to avoid dependency on global config
                     let peak = 0;
                     let currentEq = 0;
@@ -3802,10 +4273,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                     let maxStagDays = 0;
                     let maxStagTrades = 0;
 
-                    // Frequency Curves
-                    let ddCurve = [];
-                    let stagDaysCurve = [];
-                    let stagTradesCurve = [];
+
 
                     // Stagnation Tracking
                     let peakTime = 0;
@@ -3941,6 +4409,41 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
 
                             yieldDisp = `<span class="${yieldColor}" title="Yield: Magnitud del Real vs Maximo Historico">${yieldVal.toFixed(1)}%</span>`;
 
+                            // Calculate Max BT Frequency & Mean
+                            let btFreqVal = 0;
+                            let btMeanVal = 0;
+                            let showBtStats = false;
+
+                            if (metricType === 'drawdown') {
+                                // Freq of Max DD in history (how often did we hit the max?)
+                                if (ddCurve && ddCurve.length) {
+                                    const incidents = ddCurve.filter(d => d >= num).length; // num is btVal
+                                    btFreqVal = (incidents / ddCurve.length) * 100;
+                                    btMeanVal = ddMean; // Already calculated
+                                    showBtStats = true;
+                                }
+                            } else if (metricType === 'stagnation') {
+                                if (stagDaysCurve && stagDaysCurve.length) {
+                                    const incidents = stagDaysCurve.filter(d => d >= num).length;
+                                    btFreqVal = (incidents / stagDaysCurve.length) * 100;
+                                    btMeanVal = stagDaysMean;
+                                    showBtStats = true;
+                                }
+                            } else if (metricType === 'stagnation_trades') {
+                                if (stagTradesCurve && stagTradesCurve.length) {
+                                    const incidents = stagTradesCurve.filter(d => d >= num).length;
+                                    btFreqVal = (incidents / stagTradesCurve.length) * 100;
+                                    btMeanVal = stagTradesMean;
+                                    showBtStats = true;
+                                }
+                            }
+
+                            if (showBtStats) {
+                                const mDisp = metricType === 'drawdown' ? `$${btMeanVal.toFixed(0)}` : btMeanVal.toFixed(1);
+                                const extraInfo = `<span class="text-gray-600 ml-1" title="Max BT Stats:\n[Avg: ${mDisp}]: Media Histórica\n[Freq: ${btFreqVal.toFixed(1)}%]: % de veces que se alcanzó este Máximo">[Avg: ${mDisp}] (Freq: ${btFreqVal.toFixed(1)}%)</span>`;
+                                btDisp += extraInfo;
+                            }
+
                             // Add Frequency
                             let freqVal = 0;
                             let meanVal = 0;
@@ -4029,5 +4532,435 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
             <td></td>
         </tr>`;
 
+        // --- PORTFOLIO AGGREGATE STATS CALCULATION ---
+
+        // 1. Calculate Real Stats
+        let portMaxDD = 0;
+        let portMaxStagD = 0;
+        let portMaxStagT = 0;
+        let hasRealPort = false;
+
+        if (allPortfolioRealTrades.length > 0) {
+            hasRealPort = true;
+            const sortedPort = [...allPortfolioRealTrades].sort((a, b) => new Date(a.closeTime || a.closeDate) - new Date(b.closeTime || b.closeDate));
+            let portRunBal = 0;
+            let portMaxRunBal = -Infinity;
+            let portMaxBalDate = null;
+            let portMaxBalIndex = -1;
+
+            const cleanNum = (val) => {
+                if (typeof val === 'number') return val;
+                if (!val) return 0;
+                return parseFloat(String(val).replace(/[^0-9.-]/g, '')) || 0;
+            };
+
+            sortedPort.forEach((t, i) => {
+                const net = cleanNum(t.profit) + cleanNum(t.commission) + cleanNum(t.swap);
+                portRunBal += net;
+                const cDate = new Date(t.closeTime || t.closeDate);
+
+                if (portRunBal >= portMaxRunBal) {
+                    portMaxRunBal = portRunBal;
+                    portMaxBalDate = cDate;
+                    portMaxBalIndex = i;
+                } else {
+                    const dd = Math.abs(portRunBal - portMaxRunBal);
+                    if (dd > portMaxDD) portMaxDD = dd;
+
+                    if (portMaxBalDate) {
+                        const sd = Math.ceil(Math.abs(cDate - portMaxBalDate) / (1000 * 60 * 60 * 24));
+                        if (sd > portMaxStagD) portMaxStagD = sd;
+                    }
+                    if (portMaxBalIndex !== -1) {
+                        const st = i - portMaxBalIndex;
+                        if (st > portMaxStagT) portMaxStagT = st;
+                    }
+                }
+            });
+        }
+
+        // 2. Simulate Portfolio Backtest for Curves/Distribution
+        let portBT_DDCurve = [];
+        let portBT_StagDaysCurve = [];
+        let portBT_StagTradesCurve = [];
+
+        let portBT_MeanDD = 0;
+        let portBT_MeanStagD = 0;
+        let portBT_MeanStagT = 0;
+
+        let portBT_FreqDD = 0;
+        let portBT_FreqStagD = 0;
+        let portBT_FreqStagT = 0;
+
+        let portBT_DD = null;
+        let portBT_StagD = null;
+        let portBT_StagT = null;
+
+        if (p.analysis) {
+            portBT_DD = p.analysis.maxDrawdownInDollars;
+            portBT_StagD = p.analysis.maxStagnationDays;
+            portBT_StagT = p.analysis.maxStagnationTrades;
+        }
+
+        if (allPortfolioBacktestTrades.length > 0) {
+            console.log(`[RiskModal] Simulating Portfolio Backtest with ${allPortfolioBacktestTrades.length} trades...`);
+
+            // Sort
+            const sortedBT = [...allPortfolioBacktestTrades].sort((a, b) => new Date(a.exitTime || a.closeTime) - new Date(b.exitTime || b.closeTime));
+
+            let peak = 0;
+            let currentEq = 0;
+            let peakTime = 0;
+            if (sortedBT.length > 0) peakTime = new Date(sortedBT[0].exitTime || sortedBT[0].closeTime).getTime();
+            let peakIndex = 0;
+            const oneDay = 1000 * 60 * 60 * 24;
+            let maxBT_DD = 0;
+
+            sortedBT.forEach((t, i) => {
+                // PnL in BT trades usually 'pnl' or 'profit'
+                currentEq += (t.pnl || t.profit || 0);
+                const tExit = new Date(t.exitTime || t.closeTime).getTime();
+
+                if (currentEq > peak) {
+                    peak = currentEq;
+                    peakTime = tExit;
+                    peakIndex = i;
+
+                    portBT_DDCurve.push(0);
+                    portBT_StagDaysCurve.push(0);
+                    portBT_StagTradesCurve.push(0);
+                } else {
+                    const dd = peak - currentEq;
+                    if (dd > maxBT_DD) maxBT_DD = dd;
+                    portBT_DDCurve.push(dd);
+
+                    let dur = 0;
+                    if (tExit > peakTime) dur = (tExit - peakTime) / oneDay;
+                    portBT_StagDaysCurve.push(dur);
+
+                    const trDur = i - peakIndex;
+                    portBT_StagTradesCurve.push(trDur);
+                }
+            });
+
+            // If p.analysis was missing, use simulated max
+            if (portBT_DD === null) portBT_DD = maxBT_DD;
+
+            // Calc Means
+            const calcMean = (arr) => {
+                let sum = 0, count = 0;
+                for (const v of arr) { if (v > 0) { sum += v; count++; } }
+                return count > 0 ? sum / count : 0;
+            };
+
+            portBT_MeanDD = calcMean(portBT_DDCurve);
+            portBT_MeanStagD = calcMean(portBT_StagDaysCurve);
+            portBT_MeanStagT = calcMean(portBT_StagTradesCurve);
+
+            // Calc Frequencies (if Real exists)
+            if (hasRealPort) {
+                if (portMaxDD > 0) {
+                    const incidents = portBT_DDCurve.filter(d => d >= portMaxDD).length;
+                    portBT_FreqDD = (incidents / portBT_DDCurve.length) * 100;
+                }
+                if (portMaxStagD > 0) {
+                    const incidents = portBT_StagDaysCurve.filter(d => d >= portMaxStagD).length;
+                    portBT_FreqStagD = (incidents / portBT_StagDaysCurve.length) * 100;
+                }
+                if (portMaxStagT > 0) {
+                    const incidents = portBT_StagTradesCurve.filter(d => d >= portMaxStagT).length;
+                    portBT_FreqStagT = (incidents / portBT_StagTradesCurve.length) * 100;
+                }
+            }
+        }
+
+
+        // Reuse renderCell logic but we need access to renderCell inside the timer scope?
+        // renderCell is defined inside the map loop scope which is closed.
+        // We need to duplicate or extract renderCell. 
+        // Since extracting is risky for existing code without bigger refactor, let's duplicate the lightweight render logic for this row.
+
+        const renderPortCell = (realVal, btVal, type, freqVal = 0, meanVal = 0) => {
+            let btDisp = '-';
+            let yieldDisp = '-';
+            let freqDisp = '';
+
+            if (btVal !== undefined && btVal !== null) {
+                btDisp = type === 'money' ? `$${fmt(btVal, 0)}` : fmt(btVal, 0);
+
+                const ratio = realVal / Math.abs(btVal);
+                const yieldVal = ratio * 100;
+
+                let yieldColor = 'text-blue-300';
+                if (yieldVal > 100) yieldColor = 'text-red-500 font-bold';
+                else if (yieldVal > 80) yieldColor = 'text-yellow-400';
+
+                yieldDisp = `<span class="${yieldColor}" title="Yield: Magnitud del Real vs Maximo Historico">${yieldVal.toFixed(1)}%</span>`;
+            }
+
+            if (hasRealPort && allPortfolioBacktestTrades.length > 0) {
+                let freqColor = 'text-emerald-400';
+                if (freqVal < 5) freqColor = 'text-red-500 font-bold';
+                else if (freqVal < 20) freqColor = 'text-yellow-400';
+
+                const meanDisp = type === 'money' ? `$${meanVal.toFixed(0)}` : meanVal.toFixed(1);
+                freqDisp = `<div class="text-[10px] ${freqColor} mt-0.5 cursor-help" title="Frecuencia Portfolio: % de la historia en que el valor fue >= al actual.">Freq: ${freqVal.toFixed(1)}% [Avg: ${meanDisp}]</div>`;
+            }
+
+            const realDisp = type === 'money' ? `$${fmt(realVal, 0)}` : fmt(realVal, 0);
+
+            return `
+                    <div class="leading-tight">
+                        <div class="font-bold text-gray-200">${realDisp}</div>
+                        <div class="text-[10px] text-gray-500 mt-0.5">
+                            Max BT: <span class="text-gray-400">${btDisp}</span>
+                        </div>
+                        <div class="text-[10px] mt-0.5 flex items-center justify-center gap-2">
+                             ${yieldDisp}
+                        </div>
+                         ${freqDisp}
+                    </div>
+                `;
+        };
+
+        const portRow = `
+            <tr class="bg-gray-800/80 border-t border-gray-700 hover:bg-gray-700/50 transition-colors">
+                <td class="p-4 font-bold text-purple-300 flex flex-col">
+                    <span>⚡ PORTFOLIO STATS</span>
+                    <span class="text-[10px] text-gray-500 font-normal">Aggregated Real Performance</span>
+                </td>
+                <td class="p-4 text-center bg-gray-900/50 border-x border-gray-700/50">
+                    ${renderPortCell(portMaxDD, portBT_DD, 'money', portBT_FreqDD, portBT_MeanDD)}
+                </td>
+                <td class="p-4 text-center">
+                    ${renderPortCell(portMaxStagD, portBT_StagD, 'number', portBT_FreqStagD, portBT_MeanStagD)}
+                </td>
+                <td class="p-4 text-center bg-gray-900/50 border-x border-gray-700/50">
+                    ${renderPortCell(portMaxStagT, portBT_StagT, 'number', portBT_FreqStagT, portBT_MeanStagT)}
+                </td>
+                <td class="p-4 text-right">
+                   <!-- Placeholder or duplicate balance -->
+                </td>
+                 <td class="p-4 text-right"></td>
+            </tr>`;
+
+        // Append to tbody (only if we have something to show, either real or backtest)
+        if (hasRealPort || allPortfolioBacktestTrades.length > 0) {
+            tbody.innerHTML += portRow;
+        }
+
     }, 50); // Small timeout to allow spinner to show
 };
+
+
+// --- Event Listener for overlay toggles (Appended via Agent) ---
+document.addEventListener('portfolioSelectionChanged', () => {
+    console.log('[UI] 🔔 Event: portfolioSelectionChanged. Refreshing Chart...');
+    const chart = state.chartInstances['portfolioEquityChart'];
+
+    // If existing chart, try to reconstruct from datasets to preserve analysis data without re-fetching
+    if (chart && chart.data && chart.data.datasets.length > 0) {
+        const analyses = [];
+        const seenIndices = new Set();
+
+        chart.data.datasets.forEach(d => {
+            if (d.savedIndex !== undefined && !seenIndices.has(d.savedIndex)) {
+                seenIndices.add(d.savedIndex);
+                // Reconstruct the 'result' object expected by render
+                const p = state.savedPortfolios[d.savedIndex];
+                if (p) {
+                    analyses.push({
+                        name: p.name,
+                        savedIndex: d.savedIndex,
+                        analysis: d.analysis, // Reuse cached analysis (Backtest)
+                        realMetrics: p.realMetrics, // Use latest Real Metrics
+                        showBacktestOverlay: p.showBacktestOverlay, // Use latest toggle state
+                        strategyNames: p.strategyNames || p.strategies, // Ensure mapping keys exist
+                        color: d.borderColor // Preserve color
+                    });
+                }
+            }
+        });
+
+        if (analyses.length > 0) {
+            renderPortfolioComparisonCharts(analyses);
+        }
+    }
+});
+
+/**
+ * Toggles the backtest overlay visibility for a specific strategy (Logic similar to Saved Portfolios).
+ * Used by the "Eye" button in the Strategies Table.
+ */
+window.toggleStrategyOverlay = (strategyName, buttonElement) => {
+    console.log(`[UI] toggleStrategyOverlay called for: '${strategyName}'`);
+
+    // 1. Find the strategy in the global results (Fuzzy Match for .csv)
+    let strategy = window.analysisResults.find(s => {
+        if (s.name === strategyName) return true;
+        if (s.name === strategyName + '.csv') return true;
+        if (s.name.replace('.csv', '') === strategyName) return true;
+        return false;
+    });
+
+    // Helper to check if hydration is needed
+    const needsHydration = !strategy || !strategy.realMetrics || !strategy.realMetrics._tradesById;
+
+    if (needsHydration) {
+        console.log(`[UI] Strategy '${strategyName}' needs hydration/selection. Delegating to FocusMode.`);
+
+        // Dynamic import to avoid circular dependency issues if any
+        import('./modules/focusMode.js').then(module => {
+            const focusMode = module.focusMode || module.default; // Handle export types
+            if (focusMode && typeof focusMode.enable === 'function') {
+                // FocusMode.enable expects (item, type, rowElement, options)
+                const result = focusMode.enable(
+                    { name: strategyName }, // item
+                    'strategy',              // type
+                    null,                    // rowElement (null allows fuzzy find inside)
+                    { forceSelect: true, toggleOverlay: true }    // options: force keep selected & toggle overlay
+                );
+
+                // Accurate UI Update from FocusMode Result
+                if (result && buttonElement) {
+                    const isVisible = result.showBacktestOverlay !== false;
+                    buttonElement.innerHTML = isVisible ? '👁️' : '🚫';
+                    buttonElement.title = isVisible ? 'Ocultar Backtest (Overlay)' : 'Mostrar Backtest (Overlay)';
+
+                    // Reset classes
+                    buttonElement.className = "ml-2 transition-all duration-200 transform hover:scale-110";
+
+                    if (isVisible) {
+                        buttonElement.classList.add('text-blue-500', 'opacity-100');
+                    } else {
+                        buttonElement.classList.add('text-gray-600', 'opacity-50');
+                    }
+
+                    // Sync Panel Eye
+                    if (window.updateFocusPanelEye) {
+                        window.updateFocusPanelEye(isVisible);
+                    }
+                }
+            } else {
+                console.error('[UI] Could not load FocusMode module.');
+            }
+        });
+        return;
+    }
+
+    // 2. If Strategy IS found and has metrics (isActive), just toggle locally
+    // Toggle the flag (Default true)
+    strategy.showBacktestOverlay = (strategy.showBacktestOverlay === false) ? true : false;
+    const isVisible = strategy.showBacktestOverlay;
+
+    console.log(`[UI] Toggled Overlay for '${strategyName}' to ${isVisible}`);
+
+    // Immediate UI Feedback
+    if (buttonElement) {
+        buttonElement.innerHTML = isVisible ? '👁️' : '🚫';
+        buttonElement.title = isVisible ? 'Ocultar Backtest (Overlay)' : 'Mostrar Backtest (Overlay)';
+
+        // Remove old classes to be safe
+        buttonElement.className = "ml-2 transition-all duration-200 transform hover:scale-110";
+
+        if (isVisible) {
+            buttonElement.classList.add('text-blue-500', 'opacity-100');
+        } else {
+            buttonElement.classList.add('text-gray-600', 'opacity-50');
+        }
+    }
+
+    // Sync Panel Eye
+    if (window.updateFocusPanelEye) {
+        window.updateFocusPanelEye(isVisible);
+    }
+
+    // Trigger Global Update
+    const event = new CustomEvent('portfolioSelectionChanged');
+    document.dispatchEvent(event);
+
+    // Force re-render of strategies table
+    import('./modules/strategiesTable.js').then(({ renderStrategiesTable }) => {
+        if (renderStrategiesTable) renderStrategiesTable();
+    });
+};
+
+/* ==========================================================================
+   FOCUSED STRATEGY NAVIGATION (Panel Controls)
+   ========================================================================== */
+const initFocusedStrategyNavigation = () => {
+    const prevBtn = document.getElementById('focus-prev-btn');
+    const nextBtn = document.getElementById('focus-next-btn');
+    const toggleBtn = document.getElementById('focus-toggle-eye-btn');
+
+    if (!prevBtn || !nextBtn || !toggleBtn) return;
+
+    // Helper: Get currently focused strategy index in the visible list
+    const getFocusedContext = () => {
+        return import('./modules/focusMode.js').then(m => {
+            const fm = m.focusMode || m.default;
+            if (!fm || !fm.focusedItems || fm.focusedItems.size === 0) return null;
+
+            const focusedStrategy = fm.focusedItems.values().next().value; // Get first one
+            const strategies = window.currentTableStrategies || [];
+
+            if (strategies.length === 0) return null;
+
+            // Find index
+            const idx = strategies.findIndex(s => s.name === focusedStrategy.name); // Simple name match
+            return { idx, strategies, focusedStrategy, fm };
+        });
+    };
+
+    const navigate = (direction) => {
+        getFocusedContext().then(ctx => {
+            if (!ctx) return;
+            const { idx, strategies, fm } = ctx;
+            if (idx === -1) return;
+
+            let newIdx = idx + direction;
+            if (newIdx < 0) newIdx = 0; // Clamp (or could cycle)
+            if (newIdx >= strategies.length) newIdx = strategies.length - 1;
+
+            if (newIdx !== idx) {
+                const target = strategies[newIdx];
+                // Enable new one
+                fm.enable(target, 'strategy', null, { forceSelect: true }).then(result => {
+                    // Check if it's visible to update eye
+                    if (result) updateEyeIcon(result.showBacktestOverlay !== false);
+                });
+            }
+        });
+    };
+
+    const updateEyeIcon = (isVisible) => {
+        toggleBtn.innerHTML = isVisible ? '👁️' : '🚫';
+        toggleBtn.title = isVisible ? 'Ocultar Backtest (Overlay)' : 'Mostrar Backtest (Overlay)';
+        toggleBtn.classList.toggle('text-blue-400', isVisible);
+        toggleBtn.classList.toggle('text-gray-500', !isVisible);
+        toggleBtn.classList.toggle('opacity-50', !isVisible);
+    };
+
+    // Listeners
+    prevBtn.addEventListener('click', () => navigate(-1));
+    nextBtn.addEventListener('click', () => navigate(1));
+
+    toggleBtn.addEventListener('click', () => {
+        getFocusedContext().then(ctx => {
+            if (!ctx) return;
+            const { focusedStrategy } = ctx;
+            // We pass toggleBtn as the second arg so it gets the visual update effects if we wanted animations,
+            // but strictly toggleStrategyOverlay updates the element passed to it.
+            // However, toggleStrategyOverlay handles the ROW button usually.
+            // If we pass toggleBtn here, it will animate THIS button.
+            window.toggleStrategyOverlay(focusedStrategy.name, toggleBtn);
+        });
+    });
+
+    // Expose for external sync
+    window.updateFocusPanelEye = updateEyeIcon;
+};
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', initFocusedStrategyNavigation);
+

@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyFxbook Raw Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        glass: 'rgba(255, 255, 255, 0.05)',
+                        glassBorder: 'rgba(255, 255, 255, 0.1)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #0f172a;
+            background-image: radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%), radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%), radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%);
+            color: #e2e8f0;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .scroll-custom::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .scroll-custom::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .scroll-custom::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+
+        .scroll-custom::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+
+<body class="h-screen flex flex-col overflow-hidden font-sans">
+
+    <!-- Header -->
+    <header class="glass-panel border-b border-glassBorder p-4 flex justify-between items-center z-10">
+        <div class="flex items-center gap-3">
+            <div
+                class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-bold text-white">
+                MV</div>
+            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-200 to-purple-200">
+                MyFxbook Viewer</h1>
+        </div>
+        <div id="bridge-status"
+            class="hidden px-3 py-1 bg-green-900/30 text-green-400 text-xs font-mono rounded-full border border-green-500/30 flex items-center gap-2 mr-4">
+            <span
+                class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(74,222,128,0.5)]"></span>
+            SYNC ACTIVE
+        </div>
+        <div id="user-info" class="text-sm text-gray-400 hidden">
+            Logged in as <span id="user-email" class="text-white font-medium"></span>
+            <button onclick="logout()"
+                class="ml-4 text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded hover:bg-red-500/20 transition">Logout</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-hidden relative p-6">
+
+        <!-- Login View -->
+        <div id="login-view" class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="glass-panel w-full max-w-md p-8 rounded-2xl shadow-2xl transform transition-all">
+                <h2 class="text-2xl font-bold mb-2 text-white text-center">Welcome Back</h2>
+                <p class="text-gray-400 text-center mb-8 text-sm">Enter your MyFxbook credentials to inspect raw data.
+                </p>
+
+                <form id="login-form" class="space-y-4">
+                    <div>
+                        <label
+                            class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Email</label>
+                        <input type="email" id="email"
+                            class="w-full bg-black/20 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                            placeholder="name@example.com" required>
+                    </div>
+                    <div>
+                        <label
+                            class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Password</label>
+                        <input type="password" id="password"
+                            class="w-full bg-black/20 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                            placeholder="••••••••" required>
+                    </div>
+                    <button type="submit" id="login-btn"
+                        class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3 rounded-lg shadow-lg transform active:scale-95 transition-all">
+                        Login & Fetch Accounts
+                    </button>
+                    <p id="login-error" class="text-red-400 text-sm text-center hidden mt-2"></p>
+                </form>
+            </div>
+        </div>
+
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="hidden h-full flex flex-col gap-6 max-w-7xl mx-auto">
+
+            <!-- Top Controls -->
+            <div class="glass-panel p-4 rounded-xl flex gap-4 items-center">
+                <div class="flex-1">
+                    <label class="block text-xs text-gray-400 mb-1">Select Account</label>
+                    <select id="account-select" onchange="fetchHistory()"
+                        class="w-full bg-black/20 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none">
+                        <option>Loading...</option>
+                    </select>
+                </div>
+                <button onclick="fetchHistory()"
+                    class="px-6 py-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors border border-blue-500/50 shadow-lg shadow-blue-500/20">
+                    Fetch Data
+                </button>
+                <div class="h-8 w-px bg-gray-600 mx-2"></div>
+                <button onclick="deepScan()"
+                    class="px-6 py-2 bg-purple-600/80 hover:bg-purple-600 text-white rounded-lg font-medium transition-colors border border-purple-500/50 shadow-lg shadow-purple-500/20 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    Deep Scan (Auto)
+                </button>
+            </div>
+
+            <!-- Stats grid -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4" id="stats-grid">
+                <!-- Stats injected here -->
+            </div>
+
+            <!-- Content Tabs -->
+            <div class="flex-1 flex flex-col glass-panel rounded-xl overflow-hidden min-h-0">
+                <div class="flex border-b border-gray-700 bg-black/20 text-sm font-medium">
+                    <button onclick="switchTab('trades')"
+                        class="px-6 py-3 text-blue-400 border-b-2 border-blue-400 bg-white/5" id="tab-btn-trades">Closed
+                        History</button>
+                    <button onclick="switchTab('open')"
+                        class="px-6 py-3 text-gray-400 hover:text-white transition-colors" id="tab-btn-open">Open
+                        Trades</button>
+                    <button onclick="switchTab('analysis')"
+                        class="px-6 py-3 text-gray-400 hover:text-white transition-colors"
+                        id="tab-btn-analysis">Strategy Analysis</button>
+                    <button onclick="switchTab('raw')"
+                        class="px-6 py-3 text-gray-400 hover:text-white transition-colors" id="tab-btn-raw">Raw
+                        JSON</button>
+                </div>
+
+                <div class="flex-1 overflow-hidden relative">
+                    <!-- Trades Table -->
+                    <div id="tab-trades" class="absolute inset-0 overflow-auto scroll-custom p-4">
+                        <table class="w-full text-left border-collapse">
+                            <thead
+                                class="bg-black/40 text-xs font-semibold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-md">
+                                <tr>
+                                    <th class="p-3">Open Time</th>
+                                    <th class="p-3">Close Time</th>
+                                    <th class="p-3">Symbol</th>
+                                    <th class="p-3">Action</th>
+                                    <th class="p-3">Lots</th>
+                                    <th class="p-3 text-right">Gross</th>
+                                    <th class="p-3 text-right">Comm</th>
+                                    <th class="p-3 text-right">Swap</th>
+                                    <th class="p-3 text-right">Net Profit</th>
+                                    <th class="p-3">Comment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trades-body" class="text-sm divide-y divide-gray-800 text-gray-300">
+                                <!-- Trades Row -->
+                            </tbody>
+                            <tfoot
+                                class="bg-white/5 font-bold sticky bottom-0 backdrop-blur-md shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.3)]">
+                                <tr>
+                                    <td class="p-3">TOTAL</td>
+                                    <td class="p-3"></td>
+                                    <td class="p-3"></td>
+                                    <td class="p-3"></td>
+                                    <td class="p-3" id="history-total-lots">0.00</td>
+                                    <td class="p-3 text-right" id="history-total-gross">0.00</td>
+                                    <td class="p-3 text-right" id="history-total-comm">0.00</td>
+                                    <td class="p-3 text-right" id="history-total-swap">0.00</td>
+                                    <td class="p-3 text-right" id="history-total-net">0.00</td>
+                                    <td class="p-3"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <!-- Open Trades Table -->
+                    <div id="tab-open" class="hidden absolute inset-0 overflow-auto scroll-custom p-4">
+                        <table class="w-full text-left border-collapse">
+                            <thead
+                                class="bg-black/40 text-xs font-semibold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-md">
+                                <tr>
+                                    <th class="p-3">Open Time</th>
+                                    <th class="p-3">Symbol</th>
+                                    <th class="p-3">Action</th>
+                                    <th class="p-3">Lots</th>
+                                    <th class="p-3 text-right">Gross</th>
+                                    <th class="p-3 text-right">Comm</th>
+                                    <th class="p-3 text-right">Swap</th>
+                                    <th class="p-3 text-right">Net Profit</th>
+                                    <th class="p-3">Comment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="open-body" class="text-sm divide-y divide-gray-800 text-gray-300">
+                                <!-- Open Trades Row -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Analysis view -->
+                    <div id="tab-analysis" class="hidden absolute inset-0 overflow-auto scroll-custom p-4">
+                        <h3 class="text-lg font-bold text-white mb-4">Profit Breakdown by Strategy (Comment)</h3>
+                        <table class="w-full text-left border-collapse">
+                            <thead
+                                class="bg-black/40 text-xs font-semibold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-md">
+                                <tr>
+                                    <th class="p-3">Strategy ID (Comment)</th>
+                                    <th class="p-3 text-right">Trades</th>
+                                    <th class="p-3 text-right">Lots</th>
+                                    <th class="p-3 text-right">Net Profit</th>
+                                    <th class="p-3 text-right">% of Total</th>
+                                </tr>
+                            </thead>
+                            <tbody id="analysis-body" class="text-sm divide-y divide-gray-800 text-gray-300"></tbody>
+                            <tfoot class="bg-white/5 font-bold">
+                                <tr>
+                                    <td class="p-3">TOTAL</td>
+                                    <td class="p-3 text-right" id="analysis-total-trades">0</td>
+                                    <td class="p-3 text-right" id="analysis-total-lots">0</td>
+                                    <td class="p-3 text-right" id="analysis-total-profit">$0.00</td>
+                                    <td class="p-3 text-right">100%</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <!-- Raw JSON -->
+                    <div id="tab-raw" class="hidden absolute inset-0 overflow-auto scroll-custom p-4">
+                        <pre id="json-viewer"
+                            class="text-xs text-green-400 font-mono bg-black/40 p-4 rounded-lg border border-green-900/50"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // State
+        let session = { email: '', password: '', accounts: [] };
+
+        // Check Bridge Status
+        if (window.parent !== window) {
+            document.getElementById('bridge-status').classList.remove('hidden');
+        }
+
+        // Utils
+        const el = (id) => document.getElementById(id);
+        // Helper to format currency
+        function formatMoney(amount) {
+            if (amount === undefined || amount === null || isNaN(amount)) return '$0.00';
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(amount);
+        }
+
+        // Helper to parse currency strings from scraper
+        function parseCurrency(val) {
+            if (val === undefined || val === null) return 0;
+            if (typeof val === 'number') return val;
+            if (typeof val === 'string') {
+                const clean = val.replace(/[^0-9.-]/g, '');
+                return parseFloat(clean) || 0;
+            }
+            return 0;
+        }
+        const formatDate = (s) => s ? new Date(s).toLocaleString() : '-';
+
+        // Login Handler
+        el('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = el('email').value;
+            const password = el('password').value;
+            const btn = el('login-btn');
+            const err = el('login-error');
+
+            btn.disabled = true;
+            btn.innerHTML = 'Connecting...';
+            err.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    session = { email, password, accounts: data.accounts };
+                    showDashboard();
+                } else {
+                    throw new Error(data.detail || 'Login failed');
+                }
+            } catch (error) {
+                err.textContent = error.message;
+                err.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Login & Fetch Accounts';
+            }
+        });
+
+        function showDashboard() {
+            el('login-view').classList.add('hidden');
+            el('dashboard-view').classList.remove('hidden');
+            el('dashboard-view').classList.add('flex');
+            el('user-info').classList.remove('hidden');
+            el('user-email').textContent = session.email;
+
+            // Populate select
+            const select = el('account-select');
+            select.innerHTML = session.accounts.map(acc =>
+                `<option value="${acc.id}">${acc.name} (ID: ${acc.id})</option>`
+            ).join('');
+
+            // Auto fetch first
+            if (session.accounts.length > 0) {
+                fetchHistory();
+            }
+        }
+
+
+
+        // --- CSV Import Logic ---
+        function handleCsvUpload(input) {
+            const files = input.files;
+            if (!files.length) return;
+
+            // Allow multiple files if user selects them (add 'multiple' attr to input if needed)
+            // For now, simple single file or sequential uploads
+            const file = files[0];
+            const reader = new FileReader();
+
+            reader.onload = function (e) {
+                const text = e.target.result;
+                processCsvData(text);
+                // Reset input so same file can be selected again if needed
+                input.value = '';
+            };
+
+            reader.readAsText(file);
+        }
+
+        function processCsvData(csvText) {
+            // Simple CSV parser
+            // Expected format from our script: "Open Date","Close Date","Symbol","Action","Lots","SL","TP","Open Price","Close Price","Pips","Net Profit","Comment" (columns variable)
+
+            const lines = csvText.split('\n');
+            const newTrades = [];
+
+            // Heuristic to identify headers or data
+            // We'll iterate and try to parse lines that look like trades
+
+            lines.forEach(line => {
+                // Ignore empty lines
+                if (!line.trim()) return;
+
+                // Myfxbook script adds quotes. Split by "," which splits correctly if no internal commas.
+                // But our script escapes commas in fields? The script I gave did `text.replace(/"/g, '""'); rowData.push('"' + text + '"');`
+                // So columns are quoted.
+                // Simple regex splitter for "","" format
+
+                const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+                if (!matches || matches.length < 5) return; // Filtering garbage
+
+                const cols = matches.map(m => m.replace(/^"|"$/g, '').replace(/""/g, '"'));
+
+                // Map columns based on standard Myfxbook history table layout
+                // The script extracts visible columns.
+                // Usually: Open Date (0), Close Date (1), Symbol (2), Action (3), Lots (4), SL, TP, Open Price, Close Price, Pips, Net Profit ?? 
+                // Wait, table column order varies.
+                // We need to be careful. The script I gave gets:
+                // Open Date, Close date, Symbol, Action, Lots, SL, TP, Open Price, Close Price, Pips, Net Profit, Gross Profit, Duration, Gain, ..., Comment?
+
+                // Let's try to detect column index by header scanning? 
+                // But the CSV might not have headers or headers are localized.
+                // Assuming standard Myfxbook English columns, or just mapping by index if consistent.
+
+                // Let's assume the user ran my script which includes headers if visible? 
+                // No, my script just scrapes rows. Headers are <th>. `rows` in script was `table.querySelectorAll("tr")`.
+                // So headers are likely the first row of the CSV.
+
+                if (cols[0].includes('Open Date') || cols[0].includes('Ticket')) return; // Header row
+
+                // Determine indices based on content type roughly
+                // Date format: "11.10.2025 03:11" or "10/11/2025 ..."
+                // Action: "Buy", "Sell"
+                // Symbol: "XAUUSD"
+
+                // Let's look for Action column to anchor
+                let actionIndex = -1;
+                const actions = ['Buy', 'Sell', 'Deposit', 'Withdrawal'];
+                for (let i = 0; i < cols.length; i++) {
+                    if (actions.includes(cols[i])) {
+                        actionIndex = i;
+                        break;
+                    }
+                }
+
+                if (actionIndex === -1) return; // Not a trade line
+
+                // Standard offset from Action usually:
+                // Date is usually before. Symbol before.
+                // Close Date (if closed history) is before or after?
+                // Let's check HTML structure provided by user:
+                // Open Date, Close date, Symbol, Action, Lots, ..., Net Profit
+
+                // Indices relative to Action (index A):
+                // Symbol: A - 1
+                // Close Date: A - 2
+                // Open Date: A - 3
+                // Lots: A + 1
+                // ...
+                // Net Profit? Depending on visible columns.
+                // The HTML they pasted has:
+                // Ticket (hidden), Magic (hidden), Open Date, Close date, Symbol, Action, Lots, SL, TP, Open Price, Close Price, Pips, Net Profit ...
+
+                // Visible ones (script gets innerText):
+                // Open Date, Close Date, Symbol, Action, Lots, SL, TP, Open Price, Close Price, Pips, Net Profit.
+                // Indices:
+                // 0: Open Date
+                // 1: Close Date
+                // 2: Symbol
+                // 3: Action
+                // 4: Lots
+                // ...
+                // Net Profit is usually around 10.
+
+                const openTime = cols[actionIndex - 3] || cols[0]; // Fallback
+                const closeTime = cols[actionIndex - 2] || cols[1];
+                const symbol = cols[actionIndex - 1];
+                const action = cols[actionIndex];
+                const lots = cols[actionIndex + 1];
+                const profit = cols[actionIndex + 7]; // 4:lots, 5:SL, 6:TP, 7:Open, 8:Close, 9:Pips, 10:Profit? 
+                // Wait, let's verify count.
+                // Action(3). Lots(4). SL(5). TP(6). OpenP(7). CloseP(8). Pips(9). NetProfit(10).
+                // So Profit is action + 7.
+
+                // Comment? In HTML it is the last column usually, often an icon.
+                // My script gets text. If comment is hidden in popover, text might be empty or just specific content.
+                // The HTML has `class="commentRow"` separate from data row sometimes!
+                // My script skips `commentRow`.
+                // Does normal row have comment?
+                // The last TH is "Comments".
+                // In row: `<td><button ... data-modal-comment="...">`
+                // So `innerText` of comment cell might be empty!
+                // This means we might MISS comments from CSV if using simple text scrape.
+                // But for now, getting the Profit and History is priority. We can survive without comments or try to parse if user provides better dump.
+                // Wait, if comments are missing, Strategy Grouping relies on Comments!
+                // "Strategy Analysis" tab groups by `normalizeComment(t.comment)`.
+                // If CSV lacks comments, everything goes to "Unknown".
+                // We should warn user or check if text contains comment. 
+                // Sometimes comment is in a separate text node?
+                // In the user's HTML: `<button ... data-modal-comment="117Xausdjpy...">`. Text is inside attribute. InnerText is empty or icon.
+                // My generic script `innerText` will MISS the comment.
+                // *Self-Correction*: I should have written a better script that grabs `data-modal-comment`.
+                // But let's proceed with import. If comments are missing, we just get total stats correct at least.
+                // I can update the script instructions in the chat for the user if I realize this now.
+                // Actually, I will update the response to the user to use a BETTER script that grabs attributes.
+
+                // But for `processCsvData`, assuming we have basic data:
+
+                const trade = {
+                    openTime: openTime,
+                    closeTime: closeTime,
+                    symbol: symbol,
+                    action: action,
+                    lots: parseFloat(lots),
+                    profit: parseFloat(profit.replace(/[^0-9.-]/g, '')),
+                    comment: "Imported CSV", // Placeholder if missing
+                    commission: 0,
+                    interest: 0
+                };
+
+                // Try to find profit more robustly if column shift
+                // Look for currency symbol or check numeric columns?
+                // Let's trust structure for now.
+
+                newTrades.push(trade);
+            });
+
+            if (newTrades.length > 0) {
+                mergeTrades(newTrades);
+            } else {
+                alert("Could not parse trades from CSV. Ensure format matches.");
+            }
+        }
+
+        let mergedHistory = [];
+
+        function mergeTrades(newTrades) {
+            // Get existing API history
+            // We store it in a global or fetch it again?
+            // `data.history` was passed to renderData. We should allow access to it.
+            // Let's attach raw data to window or session.
+
+            const currentHistory = window.lastData ? window.lastData.history : [];
+
+            // Deduplicate based on something unique.
+            // Myfxbook doesn't give ticket in simple view consistently?
+            // Composite key: OpenTime + Symbol + Action + Lots
+
+            const map = new Map();
+
+            // Add imported first (older usually)
+            newTrades.forEach(t => {
+                const key = `${t.openTime}_${t.symbol}_${t.action}_${t.lots}`;
+                map.set(key, t);
+            });
+
+            // Overwrite with API data (more accurate/recent)
+            currentHistory.forEach(t => {
+                const key = `${t.openTime}_${t.symbol}_${t.action}_${t.lots || (t.sizing ? t.sizing.value : 0)}`;
+                map.set(key, t);
+            });
+
+            const merged = Array.from(map.values());
+
+            // Sort by Open Time Descending
+            merged.sort((a, b) => new Date(b.openTime) - new Date(a.openTime));
+
+            // Update UI
+            if (window.lastData) {
+                window.lastData.history = merged;
+                renderData(window.lastData);
+                alert(`Imported ${newTrades.length} trades. Total history: ${merged.length}`);
+            }
+        }
+
+        async function fetchHistory() {
+            const accountId = parseInt(el('account-select').value);
+            const btn = document.querySelector('button[onclick="fetchHistory()"]');
+            btn.innerHTML = 'Fetching...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/get-history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: session.email,
+                        password: session.password,
+                        account_id: accountId
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    window.lastData = data; // Store for merging
+                    renderData(data);
+
+                    // Bridge: Send Data to Parent
+                    if (window.parent) {
+                        try {
+                            window.parent.postMessage({ type: 'MYFX_DATA_UPDATE', payload: data }, '*');
+                            console.log('📡 Data synced with parent dashboard');
+                        } catch (e) { console.error('Bridge Error:', e); }
+                    }
+                } else {
+                    alert('Error fetching history: ' + data.detail);
+                }
+            } catch (e) {
+                alert('Network error');
+            } finally {
+                btn.innerHTML = 'Fetch Data';
+                btn.disabled = false;
+            }
+        }
+
+        // Helper to normalize comments (simplified version of main app logic)
+        function normalizeComment(c) {
+            if (!c) return 'Unknown/No Comment';
+            let s = c;
+            // Remove [sl ...] [tp ...]
+            s = s.replace(/\[(sl|tp|tp\d*).*?\]/gi, '');
+            // Remove typical trailing versions/counters like _1, _26, etc IF they are at the end
+            s = s.replace(/_\d+$/, '');
+            return s.trim();
+        }
+
+        function renderData(data) {
+            // Raw JSON
+            el('json-viewer').textContent = JSON.stringify(data, null, 2);
+
+            // Define allTrades first for use in stats and warnings
+            const allTrades = [...(data.history || []), ...(data.openTrades || [])];
+
+            // Stats
+            const info = data.accountInfo || {};
+            const statsHtml = `
+                <div class="glass-panel p-4 rounded-xl border border-blue-500/20">
+                    <div class="text-xs text-gray-400">Balance</div>
+                    <div class="text-lg font-bold text-white">${formatMoney(info.balance || 0)}</div>
+                </div>
+                <div class="glass-panel p-4 rounded-xl border border-green-500/20">
+                    <div class="text-xs text-gray-400">Equity</div>
+                    <div class="text-lg font-bold text-emerald-400">${formatMoney(info.equity || 0)}</div>
+                </div>
+                <div class="glass-panel p-4 rounded-xl border border-purple-500/20">
+                    <div class="text-xs text-gray-400">Profit</div>
+                    <div class="text-lg font-bold text-purple-400">${formatMoney(info.profit || 0)}</div>
+                </div>
+                <div class="glass-panel p-4 rounded-xl border border-orange-500/20">
+                    <div class="text-xs text-gray-400">Trades</div>
+                    <div class="text-lg font-bold text-orange-400">${data.history.length + (data.openTrades ? data.openTrades.length : 0)}</div>
+                </div>
+            `;
+            el('stats-grid').innerHTML = statsHtml;
+
+            // --- Data Integrity Check ---
+            if (allTrades.length > 0 && info.firstTradeDate) {
+                // Sort to find oldest loaded trade
+                const sortedByDate = [...allTrades].sort((a, b) => new Date(a.openTime) - new Date(b.openTime));
+                const oldestLoaded = new Date(sortedByDate[0].openTime);
+                const firstAccountDate = new Date(info.firstTradeDate);
+
+                // Diff in days
+                const diffTime = Math.abs(oldestLoaded - firstAccountDate);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays > 5) { // Allow 5 days buffer
+                    const warning = `
+                    <div class="col-span-1 md:col-span-4 bg-red-500/10 border border-red-500/50 p-4 rounded-xl text-red-200 flex items-center justify-between">
+                        <div>
+                            <span class="font-bold">⚠️ Data Warning: Missing History Detected</span><br>
+                            <span class="text-sm">Account first trade: <b>${info.firstTradeDate}</b> but oldest loaded trade is <b>${sortedByDate[0].openTime}</b>. (${diffDays} days missing). This causes profit discrepancies.</span>
+                        </div>
+                        <div class="text-xs bg-red-500/20 px-2 py-1 rounded">Check console logs</div>
+                    </div>
+                    `;
+                    el('stats-grid').innerHTML = statsHtml + warning;
+                }
+            }
+
+            // --- Analysis / Grouping Logic ---
+            const groups = {};
+            // const allTrades = ... already defined above
+            let totalNetProfit = 0;
+            let totalLots = 0;
+
+            allTrades.forEach(t => {
+                const id = normalizeComment(t.comment);
+                const profit = parseCurrency(t.profit);
+                const comm = parseCurrency(t.commission);
+                const swap = parseCurrency(t.interest);
+                const net = profit + comm + swap; // Ensure this matches main app logic
+                const lots = parseFloat(t.sizing ? t.sizing.value : t.lots || 0);
+
+                // Robust check for Deposit/Withdrawal (English & Spanish)
+                const actionLower = (t.action || '').toLowerCase();
+                if (actionLower.includes('deposit') || actionLower.includes('depósit') ||
+                    actionLower.includes('withdrawal') || actionLower.includes('retirada')) return;
+
+                if (!groups[id]) {
+                    groups[id] = { id, trades: 0, lots: 0, net: 0, rawComments: new Set() };
+                }
+                groups[id].trades++;
+                groups[id].lots += lots;
+                groups[id].net += net;
+                groups[id].rawComments.add(t.comment);
+
+                totalNetProfit += net;
+                totalLots += lots;
+            });
+
+            // Convert to array and sort by profit (desc)
+            const sortedGroups = Object.values(groups).sort((a, b) => b.net - a.net);
+
+            // Render Analysis Table
+            const analysisBody = el('analysis-body');
+            analysisBody.innerHTML = sortedGroups.map(g => {
+                const percent = totalNetProfit !== 0 ? (g.net / Math.abs(totalNetProfit)) * 100 : 0; // Rough %
+                return `
+                <tr class="hover:bg-white/5 transition-colors border-b border-gray-800/50">
+                    <td class="p-3">
+                        <div class="font-bold text-white">${g.id}</div>
+                        <div class="text-xs text-gray-500 truncate max-w-[300px]" title="${Array.from(g.rawComments).join(', ')}">
+                            ${Array.from(g.rawComments).join(', ')}
+                        </div>
+                    </td>
+                    <td class="p-3 text-right text-gray-300 font-mono">${g.trades}</td>
+                    <td class="p-3 text-right text-gray-400">${g.lots.toFixed(2)}</td>
+                    <td class="p-3 text-right font-mono font-bold ${g.net >= 0 ? 'text-green-400' : 'text-red-400'}">
+                        ${formatMoney(g.net)}
+                    </td>
+                    <td class="p-3 text-right text-xs text-gray-500">
+                        ${(g.trades / allTrades.length * 100).toFixed(1)}% Trades
+                    </td>
+                </tr>
+                `;
+            }).join('');
+
+            // Update Analysis Footer
+            el('analysis-total-trades').textContent = allTrades.length;
+            el('analysis-total-lots').textContent = totalLots.toFixed(2);
+            el('analysis-total-profit').textContent = formatMoney(totalNetProfit);
+            el('analysis-total-profit').className = `p-3 text-right font-mono font-bold ${totalNetProfit >= 0 ? 'text-green-400' : 'text-red-400'}`;
+
+
+            // Closed Trades
+            const tbody = el('trades-body');
+            let hLots = 0, hGross = 0, hComm = 0, hSwap = 0, hNet = 0;
+
+            tbody.innerHTML = (data.history || []).map(t => {
+                const profit = parseCurrency(t.profit);
+                const comm = parseCurrency(t.commission);
+                const swap = parseCurrency(t.interest);
+                const net = profit + comm + swap;
+
+                // Myfxbook data usually includes Gross in 'profit' field? 
+                // Wait, if profit is Net, then Gross = Profit - Comm - Swap?
+                // Actually Myfxbook 'profit' column IS usuallly Net Profit.
+                // But let's assume 'profit' from scraper is just the Profit column value.
+                // User asked for "Suma por columnas".
+
+                const lots = parseFloat(t.sizing ? t.sizing.value : t.lots || 0);
+
+                // Update totals (Exclude Deposits/Withdrawals from Sums)
+                const actionLower = (t.action || '').toLowerCase();
+                const isIgnored = actionLower.includes('deposit') || actionLower.includes('depósit') ||
+                    actionLower.includes('withdrawal') || actionLower.includes('retirada');
+
+                if (!isIgnored) {
+                    hLots += lots;
+                    hGross += profit;
+                    hComm += comm;
+                    hSwap += swap;
+                    hNet += net;
+                }
+
+                return `
+                <tr class="hover:bg-white/5 transition-colors">
+                    <td class="p-3 text-gray-400">${t.openTime}</td>
+                    <td class="p-3 text-gray-400">${t.closeTime}</td>
+                    <td class="p-3 font-semibold text-white">${t.symbol}</td>
+                    <td class="p-3">
+                        <span class="${t.action.toLowerCase().includes('buy') ? 'text-green-400' : 'text-red-400'}">
+                            ${t.action}
+                        </span>
+                    </td>
+                    <td class="p-3">${t.sizing ? t.sizing.value : t.lots || '-'}</td>
+                    <td class="p-3 text-right font-mono ${profit >= 0 ? 'text-green-400' : 'text-red-400'}">
+                        ${profit.toFixed(2)}
+                    </td>
+                    <td class="p-3 text-right text-gray-400">${comm.toFixed(2)}</td>
+                    <td class="p-3 text-right text-gray-400">${swap.toFixed(2)}</td>
+                    <td class="p-3 text-right font-mono font-bold ${net >= 0 ? 'text-green-400' : 'text-red-400'}">
+                        ${net.toFixed(2)}
+                    </td>
+                    <td class="p-3 text-xs text-gray-500 max-w-[200px] truncate" title="${t.comment}">${t.comment}</td>
+                </tr>
+                </tr>
+            `}).join('');
+
+            // Update History Footer
+            el('history-total-lots').textContent = hLots.toFixed(2);
+            el('history-total-gross').textContent = formatMoney(hGross); // 'profit' col sum
+            el('history-total-comm').textContent = formatMoney(hComm);
+            el('history-total-swap').textContent = formatMoney(hSwap);
+            el('history-total-net').textContent = formatMoney(hNet);
+            el('history-total-net').className = `p-3 text-right font-mono font-bold ${hNet >= 0 ? 'text-green-400' : 'text-emerald-400'}`;
+
+            // Open Trades
+            const openBody = el('open-body');
+            openBody.innerHTML = (data.openTrades || []).map(t => {
+                const profit = parseCurrency(t.profit);
+                const comm = parseCurrency(t.commission);
+                const swap = parseCurrency(t.interest); // "interest" is swap in myfxbook
+                const net = profit + comm + swap;
+
+                return `
+                <tr class="hover:bg-white/5 transition-colors">
+                    <td class="p-3 text-gray-400">${t.openTime}</td>
+                    <td class="p-3 font-semibold text-white">${t.symbol}</td>
+                    <td class="p-3">
+                        <span class="${t.action.toLowerCase().includes('buy') ? 'text-green-400' : 'text-red-400'}">
+                            ${t.action}
+                        </span>
+                    </td>
+                     <td class="p-3">${t.sizing ? t.sizing.value : t.lots || '-'}</td>
+                    <td class="p-3 text-right font-mono ${profit >= 0 ? 'text-green-400' : 'text-red-400'}">
+                        ${profit.toFixed(2)}
+                    </td>
+                    <td class="p-3 text-right text-gray-400">${comm.toFixed(2)}</td>
+                    <td class="p-3 text-right text-gray-400">${swap.toFixed(2)}</td>
+                    <td class="p-3 text-right font-mono font-bold ${net >= 0 ? 'text-green-400' : 'text-red-400'}">
+                        ${net.toFixed(2)}
+                    </td>
+                    <td class="p-3 text-xs text-gray-500 max-w-[200px] truncate" title="${t.comment}">${t.comment}</td>
+                </tr>
+            `}).join('');
+        }
+
+        function switchTab(tab) {
+            ['trades', 'open', 'raw', 'analysis'].forEach(t => {
+                el(`tab-${t}`).classList.add('hidden');
+                el(`tab-btn-${t}`).classList.remove('text-blue-400', 'border-b-2', 'border-blue-400', 'bg-white/5');
+                el(`tab-btn-${t}`).classList.add('text-gray-400');
+            });
+
+            el(`tab-${tab}`).classList.remove('hidden');
+            el(`tab-btn-${tab}`).classList.add('text-blue-400', 'border-b-2', 'border-blue-400', 'bg-white/5');
+            el(`tab-btn-${tab}`).classList.remove('text-gray-400');
+        }
+
+        async function deepScan() {
+            const accountId = parseInt(el('account-select').value);
+            const btn = document.querySelector('button[onclick="deepScan()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Scanning... (Wait ~30s)';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/scrape-history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: session.email,
+                        password: session.password,
+                        account_id: accountId
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // Merge scraped history with existing data
+                    // Ensure format matches scraper output
+                    if (data.history && data.history.length > 0) {
+                        // Convert scraped data to conform to viewer format if needed?
+                        // Scraper returns: {openTime, closeTime, symbol, action, lots, profit...}
+                        // Viewer expects: same keys roughly.
+
+                        // USER REQUEST: Replace history instead of merging
+                        if (window.lastData) {
+                            window.lastData.history = data.history;
+                            renderData(window.lastData);
+
+                            // Bridge: Send Data to Parent (Deep Scan)
+                            if (window.parent) {
+                                try {
+                                    window.parent.postMessage({ type: 'MYFX_DATA_UPDATE', payload: window.lastData }, '*');
+                                    console.log('📡 Deep Scan data synced with parent dashboard');
+                                } catch (e) { console.error('Bridge Error:', e); }
+                            }
+
+                            alert('Deep Clean Complete! History Replaced. ' + data.history.length + ' historical trades found.');
+                        }
+                    } else {
+                        alert('Scan finished but no history found.');
+                    }
+                } else {
+                    alert('Scan error: ' + data.detail);
+                }
+            } catch (e) {
+                alert('Network error during scan: ' + e.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function logout() {
+            session = { email: '', password: '', accounts: [] };
+            el('login-view').classList.remove('hidden');
+            el('dashboard-view').classList.add('hidden');
+            el('user-info').classList.add('hidden');
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,14 @@
+2026/01/17-23:33:52.071 10999 Reusing MANIFEST /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/myfx_playground/myfx_auth/Default/IndexedDB/https_www.myfxbook.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/01/17-23:33:52.071 10999 Recovering log #498
+2026/01/17-23:33:52.072 10999 Reusing old log /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/myfx_playground/myfx_auth/Default/IndexedDB/https_www.myfxbook.com_0.indexeddb.leveldb/000498.log 
+2026/01/17-23:33:52.072 10999 Delete type=2 #496
+2026/01/17-23:33:53.205 1099b Level-0 table #503: started
+2026/01/17-23:33:53.210 1099b Level-0 table #503: 1247 bytes OK
+2026/01/17-23:33:53.222 1099b Delete type=0 #498
+2026/01/17-23:33:53.222 10998 Manual compaction at level-0 from '\x00\x81\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x82\x00\x00\x00' @ 0 : 0; will stop at '\x00\x81\x00\x00\x05' @ 4012 : 1
+2026/01/17-23:33:53.222 10998 Compacting 1@0 + 1@1 files
+2026/01/17-23:33:53.228 10998 Generated table #504@0: 97 keys, 2118 bytes
+2026/01/17-23:33:53.229 10998 Compacted 1@0 + 1@1 files => 2118 bytes
+2026/01/17-23:33:53.236 10998 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/01/17-23:33:53.236 10998 Delete type=2 #503
+2026/01/17-23:33:53.236 10998 Manual compaction at level-0 from '\x00\x81\x00\x00\x05' @ 4012 : 1 .. '\x00\x82\x00\x00\x00' @ 0 : 0; will stop at (end)

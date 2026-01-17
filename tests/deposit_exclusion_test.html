@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Deposit Exclusion Regression Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        .test-case {
+            border: 1px solid #333;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #252525;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .pass {
+            color: #4ade80;
+            font-weight: bold;
+        }
+
+        .fail {
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        h1 {
+            color: #60a5fa;
+        }
+
+        .summary {
+            margin-top: 20px;
+            font-size: 1.2em;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Regression Test: Deposit/Withdrawal Exclusion</h1>
+    <p>Verifies that the logic correctly identifies and excludes Deposit/Withdrawal actions in English and Spanish.</p>
+
+    <div id="results"></div>
+    <div id="summary" class="summary"></div>
+
+    <script>
+        // --- LOGIC UNDER TEST (Mirrors index.html) ---
+        function shouldExclude(action) {
+            const actionLower = (action || '').toLowerCase();
+            return actionLower.includes('deposit') ||
+                actionLower.includes('depósit') ||
+                actionLower.includes('withdrawal') ||
+                actionLower.includes('retirada');
+        }
+
+        // --- TEST RUNNER ---
+        const tests = [
+            { input: 'Deposit', expected: true, desc: 'English "Deposit"' },
+            { input: 'Withdrawal', expected: true, desc: 'English "Withdrawal"' },
+            { input: 'Depósito', expected: true, desc: 'Spanish "Depósito"' },
+            { input: 'Retirada', expected: true, desc: 'Spanish "Retirada"' },
+            { input: 'First deposit', expected: true, desc: 'Phrase "First deposit"' },
+            { input: 'DEPOSIT', expected: true, desc: 'Uppercase "DEPOSIT"' },
+            { input: 'Buy', expected: false, desc: 'Action "Buy" (Should NOT exclude)' },
+            { input: 'Sell', expected: false, desc: 'Action "Sell" (Should NOT exclude)' },
+            { input: 'Unknown', expected: false, desc: 'Action "Unknown" (Should NOT exclude)' },
+            { input: null, expected: false, desc: 'Null input (Should handle safely)' }
+        ];
+
+        let passed = 0;
+        const container = document.getElementById('results');
+
+        tests.forEach(t => {
+            const result = shouldExclude(t.input);
+            const isPass = result === t.expected;
+            if (isPass) passed++;
+
+            const div = document.createElement('div');
+            div.className = 'test-case';
+            div.innerHTML = `
+                <div>
+                    <strong>${t.desc}:</strong> Input "${t.input}" <br>
+                    <small style="color:#888">Expected: ${t.expected ? 'Exclude' : 'Include'} | Got: ${result ? 'Exclude' : 'Include'}</small>
+                </div>
+                <span class="${isPass ? 'pass' : 'fail'}">${isPass ? 'PASS' : 'FAIL'}</span>
+            `;
+            container.appendChild(div);
+        });
+
+        const summary = document.getElementById('summary');
+        summary.innerHTML = `Total Tests: ${tests.length} | Passed: <span style="color:${passed === tests.length ? '#4ade80' : '#ef4444'}">${passed}</span>`;
+    </script>
+</body>
+
+</html>

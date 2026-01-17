@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Scraper Regression Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+        }
+
+        .test-case {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+
+        .pass {
+            color: green;
+            font-weight: bold;
+        }
+
+        .fail {
+            color: red;
+            font-weight: bold;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 5px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 4px;
+            font-size: 12px;
+        }
+
+        th {
+            background: #f0f0f0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Scraper Parser Logic Regression Test</h1>
+
+    <div id="results"></div>
+
+    <!-- MOCK DATA: ENGLISH -->
+    <div id="mock-en" style="display:none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Open Date</th>
+                    <th>Close Date</th>
+                    <th>Symbol</th>
+                    <th>Action</th>
+                    <th>Lots</th>
+                    <th>Price</th>
+                    <th>Profit</th>
+                    <th>Pips</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- MOCK DATA: SPANISH (Actual Headers from Log) -->
+    <div id="mock-es" style="display:none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Fecha de apertura</th>
+                    <th>Fecha de cierre</th>
+                    <th>Símbolo</th>
+                    <th>Acción</th>
+                    <th>Lotes</th>
+                    <th>Precio de apertura</th>
+                    <th>Beneficio neto</th>
+                    <th>Pips</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        // --- 1. THE EXACT PARSING LOGIC FROM SCRAPER.PY ---
+        function parseTableIndex(tableElement) {
+            if (!tableElement) return null;
+
+            // Map headers - CASE INSENSITIVE MATCHING
+            const headers = Array.from(tableElement.querySelectorAll('thead th')).map(th => th.innerText.trim());
+            const getIdx = (patterns) => headers.findIndex(h => patterns.some(p => h.toLowerCase().includes(p.toLowerCase())));
+
+            const idx = {
+                openDate: getIdx(['Open Date', 'Open Time', 'Fecha de apertura']),
+                closeDate: getIdx(['Close Date', 'Close Time', 'Fecha de cierre', 'Close date']),
+                symbol: getIdx(['Symbol', 'Símbolo']),
+                action: getIdx(['Action', 'Type', 'Acción', 'Tipo']),
+                lots: getIdx(['Lots', 'Amount', 'Size', 'Volume', 'Lotes', 'Volumen']),
+                priceOpen: getIdx(['Open Price', 'Precio de apertura']),
+                priceClose: getIdx(['Close Price', 'Precio de cierre']),
+                pips: getIdx(['Pips']),
+                profit: getIdx(['Net Profit', 'Profit', 'Beneficio neto', 'Ganancia']), // 'Net Profit' first for specificity
+                comment: -1
+            };
+
+            return { idx, headers };
+        }
+
+        // --- 2. TEST RUNNER ---
+        function runTests() {
+            const resultsDiv = document.getElementById('results');
+
+            // TEST 1: ENGLISH
+            const enTable = document.querySelector('#mock-en table');
+            const resEn = parseTableIndex(enTable);
+            assert(resultsDiv, "English Table Parsing",
+                resEn.idx.profit !== -1 && resEn.idx.closeDate !== -1,
+                `Found Indices: Profit=${resEn.idx.profit}, CloseDate=${resEn.idx.closeDate}`);
+
+            // TEST 2: SPANISH
+            const esTable = document.querySelector('#mock-es table');
+            const resEs = parseTableIndex(esTable);
+            assert(resultsDiv, "Spanish Table Parsing",
+                resEs.idx.profit !== -1 && resEs.idx.closeDate !== -1,
+                `Found Indices: Profit=${resEs.idx.profit}, CloseDate=${resEs.idx.closeDate}`);
+        }
+
+        function assert(container, name, condition, details) {
+            const div = document.createElement('div');
+            div.className = 'test-case';
+            div.innerHTML = `
+                <div><strong>${name}:</strong> <span class="${condition ? 'pass' : 'fail'}">${condition ? 'PASS' : 'FAIL'}</span></div>
+                <div style="font-size:0.9em; color:#555;">${details}</div>
+            `;
+            container.appendChild(div);
+        }
+
+        runTests();
+    </script>
+</body>
+
+</html>

@@ -5,7 +5,7 @@ import { CustomizableTable } from './tableEngine.js';
 import { openSearchConfigModal } from './searchConfig.js';
 import { analyzeCustomPortfolio } from './portfolioBuilder.js?v=2';
 import { showToast } from './notifications.js';
-import { calculateSQMetrics } from './sqAnalysis_v2.js?v=10';
+import { calculateSQMetrics } from './sqAnalysis_v2.js?v=11';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -628,6 +628,9 @@ export const renderStrategiesTable = () => {
         countBadge.classList.remove('hidden');
     }
 
+    // EXPOSE FOR NAVIGATION CONTROLS
+    window.currentTableStrategies = strategies;
+
     if (strategies.length === 0) {
         // FAILSAFE: If filtered to 0 because of 'linked only' but we have no portfolios, AUTO RESET immediately.
         if (state.linkedStrategiesFilter === 'only' && (!state.savedPortfolios || state.savedPortfolios.length === 0)) {
@@ -766,10 +769,29 @@ export const renderStrategiesTable = () => {
                 // FEATURE: View Trades Button (Reality Check OR Backtest Mode)
                 if (state.activeViewMode === 'reality-check' || state.activeViewMode === 'backtest') {
                     // Logic: If we have an index (0+), use it. If not (-1), use the Strategy Name string.
-                    // IMPORTANT: We escape the name to prevent JS string break if it contains single quotes.
-                    // Simple hygiene: replace ' with \'
-                    const safeName = strategy.name.replace(/'/g, "\\'");
-                    const targetRef = (originalIndex !== -1 && originalIndex !== undefined) ? originalIndex : `'${safeName}'`;
+                    // ROBUST ESCAPING:
+                    // 1. If using index, it's a number. Safe.
+                    // 2. If using name, we must quote it as a JS string argument inside the HTML attribute.
+                    //    We use JSON.stringify to get a valid JS string literal (e.g. "Name"), 
+                    //    then escape double quotes for HTML attribute safety (&quot;) or use single quotes for attribute.
+
+                    let targetRef;
+                    if (originalIndex !== -1 && originalIndex !== undefined) {
+                        targetRef = originalIndex;
+                    } else {
+                        // It's a string argument. JSON.stringify gives ( "Name" )
+                        // We need to pass it to openRealTradesModal( "Name", ... ) inside onclick='...'.
+                        // onclick='func("Name")' -> OK.
+                        // If name contains ", JSON gives "Na\"me". onclick='func("Na\"me")' -> OK.
+                        // If name contains ', JSON gives "Na'me". onclick='func("Na'me")' -> OK.
+                        // We just need to Replace double quotes with &quot; if we use double quotes for attribute?
+                        // Actually, simpler: escape single quotes for JS string if wrapping in single quotes.
+                        // BUT user names can be messy.
+                        // Best way: encodeURIComponent? No, readability.
+                        // Let's use the replace method but careful about the outer quote.
+                        const safeNameJS = strategy.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        targetRef = `'${safeNameJS}'`;
+                    }
 
                     const pIdxParam = strategy.sourcePortfolioIndex !== undefined ? strategy.sourcePortfolioIndex : 'null';
 
@@ -778,11 +800,35 @@ export const renderStrategiesTable = () => {
                     const title = state.activeViewMode === 'backtest' ? 'View Backtest Trades' : 'View Real Trades';
 
                     // Always show if in reality check (as we filtered out 0-trade strategies)
-                    // We know it has trades because we filtered list earlier.
                     html += `
                         <button onclick="event.stopPropagation(); window.openRealTradesModal(${targetRef}, '${type}', ${pIdxParam})" 
                             class="ml-2 text-gray-400 hover:text-white transition-colors" title="${title}">
                             🔍
+                        </button>
+                    `;
+
+
+                    // Backtest Overlay Toggle (Reality Check Only)
+                    if (state.activeViewMode === 'reality-check') {
+                        const isOverlayOn = strategy.showBacktestOverlay !== false; // Default true
+                        // Use same safe name logic logic
+                        const safeNameJS = strategy.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        html += `
+                            <button onclick="event.stopPropagation(); window.toggleStrategyOverlay('${safeNameJS}', this)"
+                                class="ml-2 transition-all duration-200 transform hover:scale-110 ${isOverlayOn ? 'text-blue-500 opacity-100' : 'text-gray-600 opacity-50'}" 
+                                title="${isOverlayOn ? 'Ocultar Backtest (Overlay)' : 'Mostrar Backtest (Overlay)'}">
+                                ${isOverlayOn ? '👁️' : '🚫'}
+                            </button>
+                        `;
+                    }
+
+                    // Quarantine Button
+                    // Use same safe name logic
+                    const safeNameJS = strategy.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    html += `
+                        <button onclick="event.stopPropagation(); window.addStrategyToQuarantine('${safeNameJS}')" 
+                            class="ml-2 text-red-500 hover:text-red-400 transition-colors" title="Mover a Cuarentena">
+                            ☣️
                         </button>
                     `;
                 }

@@ -289,9 +289,10 @@
                         <button id="tab-sq-stats"
                             class="text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors">SQ
                             Overview</button>
-                        <button id="tab-real-vs-sq"
-                            class="text-sm font-semibold text-gray-400 hover:text-white pb-1 transition-colors">Comp.
-                            Real vs SQ</button>
+                        <button onclick="window.showAnalysisBreakdown()"
+                            class="text-sm font-bold text-amber-500 hover:text-amber-300 pb-1 transition-colors flex items-center gap-1 ml-4 border-b-2 border-transparent hover:border-amber-500/50">
+                            💥 Breakdown
+                        </button>
                     </div>
                     <div id="chart-actions-group" class="flex items-center text-xs">
                         <!-- Sync All Button (Visible only in Reality Check) -->
@@ -300,22 +301,29 @@
                             title="Sincronizar todas las cuentas de Myfxbook">
                             <span>🔄</span> Sync All
                         </button>
-                        <!-- Stagnation Controls (Visible only in Reality Check) -->
-                        <div id="stagnation-controls"
-                            class="hidden mr-4 flex items-center bg-gray-800 rounded-lg p-1 border border-gray-700">
+                        <!-- Focused Strategy Navigation -->
+                        <div id="focused-strategy-navigation"
+                            class="mr-4 flex items-center bg-gray-800 rounded-lg p-1 border border-gray-700">
                             <span
-                                class="text-gray-400 mr-2 text-[10px] uppercase font-bold tracking-wider pl-1">Stagnation:</span>
-                            <div class="flex bg-gray-700 rounded p-0.5">
-                                <label
-                                    class="cursor-pointer flex items-center px-2 py-0.5 rounded transition-colors hover:bg-gray-600 has-[:checked]:bg-blue-600 has-[:checked]:text-white text-gray-300">
-                                    <input type="radio" name="stagnation-mode" value="days" class="hidden" checked>
-                                    <span class="flex items-center gap-1">⏳ Days</span>
-                                </label>
-                                <label
-                                    class="cursor-pointer flex items-center px-2 py-0.5 rounded transition-colors hover:bg-gray-600 has-[:checked]:bg-blue-600 has-[:checked]:text-white text-gray-300">
-                                    <input type="radio" name="stagnation-mode" value="trades" class="hidden">
-                                    <span class="flex items-center gap-1">🔢 Trades</span>
-                                </label>
+                                class="text-gray-400 mr-2 text-[10px] uppercase font-bold tracking-wider pl-1">FOCUS:</span>
+                            <div class="flex items-center gap-1">
+                                <!-- Previous Strategy -->
+                                <button id="focus-prev-btn" title="Previous Strategy"
+                                    class="w-6 h-6 flex items-center justify-center rounded bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white transition-colors">
+                                    ▲
+                                </button>
+
+                                <!-- Toggle Overlay (Matches the row eye) -->
+                                <button id="focus-toggle-eye-btn" title="Toggle Overlay"
+                                    class="w-6 h-6 flex items-center justify-center rounded bg-gray-700 hover:bg-gray-600 text-gray-500 hover:text-white transition-colors">
+                                    👁️
+                                </button>
+
+                                <!-- Next Strategy -->
+                                <button id="focus-next-btn" title="Next Strategy"
+                                    class="w-6 h-6 flex items-center justify-center rounded bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white transition-colors">
+                                    ▼
+                                </button>
                             </div>
                         </div>
 

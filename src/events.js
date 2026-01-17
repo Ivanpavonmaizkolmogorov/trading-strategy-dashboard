@@ -118,15 +118,55 @@ export function initializeEventListeners() {
 
     dom.tradesFileInput.addEventListener('change', (e) => {
         const newFiles = Array.from(e.target.files);
+        let addedCount = 0;
+        let updatedCount = 0;
+
         newFiles.forEach(newFile => {
-            if (!state.loadedStrategyFiles.some(existingFile => existingFile.name === newFile.name)) {
-                // Asignar ID único a la estrategia
+            const existingIndex = state.loadedStrategyFiles.findIndex(f => f.name === newFile.name);
+
+            if (existingIndex !== -1) {
+                // UPDATE: Strategy exists, replace file but KEEP ID
+                const oldId = state.loadedStrategyFiles[existingIndex].strategyId;
+                newFile.strategyId = oldId;
+                // Preserve other metadata if needed? Usually just ID.
+                // Replace the entry (placeholder or old file) with the new File object
+                state.loadedStrategyFiles[existingIndex] = newFile;
+
+                // Clear cached data for this index to force re-parsing
+                if (state.rawStrategiesData && state.rawStrategiesData[existingIndex]) {
+                    state.rawStrategiesData[existingIndex] = null;
+                }
+                updatedCount++;
+            } else {
+                // ADD: New strategy
                 newFile.strategyId = generateStrategyId(newFile.name);
                 state.loadedStrategyFiles.push(newFile);
+                addedCount++;
             }
         });
+
         updateTradesFilesList();
+
+        // Feedback to user
+        let message = '';
+        if (addedCount > 0) message += `${addedCount} añadidas. `;
+        if (updatedCount > 0) message += `${updatedCount} actualizadas (ID mantenido).`;
+
+        console.log(`[Upload] Added: ${addedCount}, Updated: ${updatedCount}`);
+
+        if (message) {
+            showToast(message, 'success');
+        } else if (newFiles.length > 0) {
+            showToast('Archivos procesados.', 'info');
+        }
+
         e.target.value = ''; // Permite volver a seleccionar el mismo archivo
+
+        // AUTO-ANALYSIS: Automatically run analysis if valid files exist
+        if (state.loadedStrategyFiles.length > 0) {
+            console.log('[Upload] Auto-starting analysis...');
+            runAnalysis();
+        }
     });
 
 

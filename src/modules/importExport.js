@@ -27,6 +27,7 @@ export const exportAnalysis = () => {
         activeViews: state.activeViews,
         databankPortfolios: state.databankPortfolios,
         magicNumberMap: state.magicNumberMap, // <-- Persist Magic Mappings
+        quarantinedStrategyNames: Array.from(state.quarantinedStrategyNames), // <-- Persist Quarantine List
     };
 
     const stateString = JSON.stringify(appState);
@@ -86,6 +87,12 @@ const mergeState = async (importedState) => {
         console.log('[ImportExport] Merged Magic Mappings.');
     }
 
+    // 5. Merge Quarantine List
+    if (importedState.quarantinedStrategyNames && Array.isArray(importedState.quarantinedStrategyNames)) {
+        importedState.quarantinedStrategyNames.forEach(name => state.quarantinedStrategyNames.add(name));
+        console.log('[ImportExport] Merged Quarantine List.');
+    }
+
     if (newPortfoliosAdded > 0) {
         alert(`${newPortfoliosAdded} portafolios nuevos han sido fusionados con tu sesión.`);
         // Re-analizar todo para que los nuevos portafolios se muestren correctamente.
@@ -93,6 +100,11 @@ const mergeState = async (importedState) => {
     } else {
         alert("No se encontraron portafolios nuevos para fusionar. Todos los portafolios del archivo ya existían en tu sesión.");
     }
+
+    // Refresh Quarantine UI (Merged)
+    import('./quarantine.js').then(({ renderQuarantineList }) => {
+        renderQuarantineList();
+    });
 };
 
 /**
@@ -151,6 +163,7 @@ const restoreState = async (importedState) => {
     state.activeViews = importedState.activeViews || state.activeViews;
     state.databankPortfolios = importedState.databankPortfolios || [];
     state.magicNumberMap = importedState.magicNumberMap || {}; // Restore Magic Mappings
+    state.quarantinedStrategyNames = new Set(importedState.quarantinedStrategyNames || []); // Restore Quarantine List
 
     updateTradesFilesList();
 
@@ -174,6 +187,11 @@ const restoreState = async (importedState) => {
         }
         showToast(`DataBank cargado: ${state.databankPortfolios.length} portafolios`, 'success');
     }
+
+    // Refresh Quarantine UI
+    import('./quarantine.js').then(({ renderQuarantineList }) => {
+        renderQuarantineList();
+    });
 
     // Auto-close Config Modal
     const configModal = document.getElementById('config-modal');

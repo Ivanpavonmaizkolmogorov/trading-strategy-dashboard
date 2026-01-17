@@ -1,6 +1,7 @@
 // Myfxbook Account Management UI
 import { state } from '../state.js';
 import { dom } from '../dom.js';
+import { calculateSQMetrics } from './sqAnalysis_v2.js?v=11';
 
 let currentCredentials = null;
 let myfxbookModal = null;
@@ -665,14 +666,63 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
             // PROCESS DATA using extracted function
             const result = processTradeHistory(data.history, data.openTrades);
 
+            // Calculate Full SQ Metrics for Portfolio (Real Data)
+            let fullRealStats = {};
+            if (result.allTrades && result.allTrades.length > 0) {
+                // Normalize for Engine (Ported from ui.js / strategiesTable.js)
+                const parseDate = (d) => {
+                    if (!d) return null;
+                    const clean = typeof d === 'string' ? d.replace(/\./g, '/') : d; // 01.09.2023 -> 01/09/2023
+                    const dateObj = new Date(clean);
+                    return isNaN(dateObj.getTime()) ? null : dateObj;
+                };
+
+                const normalizedForEngine = result.allTrades.map(t => {
+                    // PnL usually string in JSON, ensure float. Includes swap/comm? 
+                    // processTradeHistory already parsed some floats? No, it uses parseCurrency helper locally.
+                    // We need to re-parse or rely on raw strings if parseCurrency is internal?
+                    // result.allTrades has raw strings mostly unless modified.
+                    // Actually, processTradeHistory returns `allTradesCombined` which are raw objects from API.
+
+                    const p = parseFloat(t.profit) || 0;
+                    const s = parseFloat(t.swap) || 0;
+                    const c = parseFloat(t.commission) || 0;
+                    const pnl = p + s + c;
+
+                    const parsedClose = parseDate(t.closeTime || t.closeDate); // API: closeTime
+                    const parsedOpen = parseDate(t.openTime || t.openDate || t.OpenTime); // API: openTime
+
+                    // Effective Exit for Sequencing (Open Trades use OpenTime)
+                    const effectiveExit = parsedClose || parsedOpen;
+
+                    return {
+                        ...t,
+                        pnl: pnl,
+                        closeTime: parsedClose,
+                        openTime: parsedOpen,
+                        exitTime: effectiveExit,
+                        // Ensure required fields for engine
+                    };
+                }).filter(t => t.exitTime && !isNaN(t.pnl)).sort((a, b) => a.exitTime - b.exitTime);
+
+                fullRealStats = calculateSQMetrics(normalizedForEngine) || {};
+                console.log(`[Myfxbook] Calculated full metrics for portfolio. Trades: ${normalizedForEngine.length}, Total Profit: ${fullRealStats.totalProfit}`);
+                console.log('[Myfxbook] Full Stats Keys:', Object.keys(fullRealStats));
+            } else {
+                console.warn('[Myfxbook] No trades found for full metric calculation.');
+            }
+
             // Assign to Portfolio
             portfolio.realMetrics = {
                 ...(portfolio.realMetrics || {}),
+                ...fullRealStats, // Spread calculated stats (Sharpe, Profit, etc)
                 magicStats: result.magicStats,
                 _tradesById: result.tradesById, // Store for lookup
                 maxConsecutiveLosses: result.metrics.maxConsecutiveLosses, // Fallback/Overwrite
                 daily: data.daily || portfolio.realMetrics?.daily // Preserve/Update Daily if available (API specific)
             };
+
+            console.log('[Myfxbook] Updated portfolio.realMetrics:', portfolio.realMetrics);
 
             // Recalculate Breakdown
             recalculateStrategyBreakdown(portfolio);
@@ -682,7 +732,11 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
             // Optional: Save to LocalStorage (Minified!)
             import('../state.js').then(mod => mod.saveSavedPortfolios());
 
-            import('../ui.js').then(mod => mod.renderManagedPortfolios());
+            import('../state.js').then(mod => mod.saveSavedPortfolios());
+
+            import('../ui.js').then(mod => {
+                if (mod.displaySavedPortfoliosList) mod.displaySavedPortfoliosList();
+            });
             import('./notifications.js').then(mod => mod.showToast('Portfolio data synced successfully', 'success'));
 
             return true;
