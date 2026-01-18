@@ -1376,35 +1376,55 @@ async def myfxbook_get_history(request: MyfxbookHistoryRequest):
     Login and fetch full history (closed) AND open trades for a specific account.
     """
     try:
-        print(f"[Myfxbook Endpoint] Fetching history + open trades for account: {request.account_id}")
+        print(f"\n{'='*60}")
+        print(f"[Myfxbook SYNC] Starting sync for account: {request.account_id}")
+        print(f"[Myfxbook SYNC] Email: {request.email}")
+        print(f"{'='*60}")
+        
+        print(f"[Myfxbook SYNC] Step 1: Creating client...")
         client = MyfxbookClient()
+        
+        print(f"[Myfxbook SYNC] Step 2: Logging in...")
         session = client.login(request.email, request.password)
+        print(f"[Myfxbook SYNC] Step 2: ✅ Login successful. Session: {session[:15]}...")
         
         # 1. Get Closed History
+        print(f"[Myfxbook SYNC] Step 3: Fetching closed history...")
         history = client.get_history(request.account_id)
+        print(f"[Myfxbook SYNC] Step 3: ✅ Got {len(history)} closed trades")
         
         # 2. Get Open Trades (New!)
+        print(f"[Myfxbook SYNC] Step 4: Fetching open trades...")
         open_trades = []
         try:
             open_trades = client.get_open_trades(request.account_id)
+            print(f"[Myfxbook SYNC] Step 4: ✅ Got {len(open_trades)} open trades")
         except Exception as e:
-            print(f"[Myfxbook Endpoint] ⚠️ Failed to fetch open trades: {e}")
-            # Continue without open trades is better than failing completely
+            print(f"[Myfxbook SYNC] Step 4: ⚠️ Failed to fetch open trades: {e}")
         
-        # Calculate basic metrics on the backend (using only closed history for now)
+        # Calculate basic metrics
+        print(f"[Myfxbook SYNC] Step 5: Calculating metrics...")
         losses_data = client.calculate_consecutive_losses(history)
         dd_data = client.calculate_max_drawdown(history)
+        print(f"[Myfxbook SYNC] Step 5: ✅ Max losses: {losses_data.get('maxConsecutiveLosses', 'N/A')}")
         
-        # Fetch current account status (for Current DD)
+        # Fetch current account status
+        print(f"[Myfxbook SYNC] Step 6: Fetching account info...")
         account_info = client.get_account_info(request.account_id)
+        print(f"[Myfxbook SYNC] Step 6: ✅ Account info retrieved")
         
+        print(f"[Myfxbook SYNC] Step 7: Logging out...")
         client.logout()
+        print(f"[Myfxbook SYNC] Step 7: ✅ Logout successful")
+        
+        print(f"[Myfxbook SYNC] ✅ SYNC COMPLETE - {len(history)} closed, {len(open_trades)} open")
+        print(f"{'='*60}\n")
         
         return {
             "success": True,
             "accountId": request.account_id,
             "history": history,
-            "openTrades": open_trades, # Include open trades in response
+            "openTrades": open_trades,
             "count": len(history),
             "openCount": len(open_trades),
             "metrics": {
@@ -1414,8 +1434,10 @@ async def myfxbook_get_history(request: MyfxbookHistoryRequest):
             "accountInfo": account_info
         }
     except MyfxbookAPIError as e:
+        print(f"[Myfxbook SYNC] ❌ API ERROR: {e}")
         return JSONResponse(status_code=400, content={"success": False, "detail": str(e)})
     except Exception as e:
+        print(f"[Myfxbook SYNC] ❌ EXCEPTION: {type(e).__name__}: {e}")
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"success": False, "detail": str(e)})
 

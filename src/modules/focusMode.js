@@ -1,8 +1,75 @@
 import { state } from '../state.js';
 import { dom } from '../dom.js';
-import { renderEquityChart, renderScatterChart, renderLorenzChart, renderChartsForTab, renderPortfolioComparisonCharts, renderRealityCheckTab } from '../ui.js';
+import { renderEquityChart, renderScatterChart, renderLorenzChart, renderChartsForTab, renderPortfolioComparisonCharts, renderRealityCheckTab, getRealTradesByName } from '../ui.js';
 import { STRATEGY_COLORS } from '../config.js';
 import { renderSQAnalysis } from './sqAnalysis_v2.js?v=11';
+
+/**
+ * Helper: Search for trades in state.deepScanData by magic number(s)
+ * Supports both legacy format (just magicNumber) and new format (accountId::magicNumber)
+ * @param {string|string[]} magics - One or more magic numbers to search for
+ * @returns {Object} { found: boolean, trades: Array, tradesById: Object, sourceName: string }
+ */
+function findTradesInDeepScanData(magics) {
+    const magicList = Array.isArray(magics) ? magics : [magics];
+    let allTrades = [];
+    let tradesById = {};
+    let sourceName = '';
+
+    if (!state.deepScanData) return { found: false, trades: [], tradesById: {}, sourceName: '' };
+
+    magicList.forEach(magic => {
+        const key = String(magic).trim();
+
+        // Check if this is a uniqueId format (accountId::magicNumber)
+        if (key.includes('::')) {
+            const [targetAccountId, magicNumber] = key.split('::');
+            // Only search in the specific account
+            const accountData = state.deepScanData[targetAccountId];
+            if (accountData && accountData.tradesById && accountData.tradesById[magicNumber]) {
+                const trades = accountData.tradesById[magicNumber];
+                allTrades = allTrades.concat(trades);
+
+                if (!tradesById[magicNumber]) {
+                    tradesById[magicNumber] = trades;
+                } else {
+                    tradesById[magicNumber] = tradesById[magicNumber].concat(trades);
+                }
+
+                if (!sourceName) {
+                    sourceName = accountData.sourceName || `Account ${targetAccountId}`;
+                }
+            }
+        } else {
+            // Legacy format: search in all accounts (backwards compatibility)
+            Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
+                if (!accountData.tradesById) return;
+
+                if (accountData.tradesById[key]) {
+                    const trades = accountData.tradesById[key];
+                    allTrades = allTrades.concat(trades);
+
+                    if (!tradesById[key]) {
+                        tradesById[key] = trades;
+                    } else {
+                        tradesById[key] = tradesById[key].concat(trades);
+                    }
+
+                    if (!sourceName) {
+                        sourceName = accountData.sourceName || `Account ${accountId}`;
+                    }
+                }
+            });
+        }
+    });
+
+    return {
+        found: allTrades.length > 0,
+        trades: allTrades,
+        tradesById: tradesById,
+        sourceName: sourceName
+    };
+}
 
 export const focusMode = {
     active: false,
@@ -382,7 +449,14 @@ export const focusMode = {
 
             // REALITY CHECK FOR STRATEGIES: Attach Real Metrics if available
             let realMetrics = null;
-            if (item.type === 'strategy' && state.magicNumberMap) {
+
+            // PRIORITY 1: Use pre-calculated realMetrics from the strategy item itself (from strategiesTable Late Binding)
+            if (item.type === 'strategy' && item.realMetrics && item.realMetrics._aggregatedTrades) {
+                console.log(`[FocusMode] ♻️ Using pre-calculated realMetrics from strategy: ${item.name} (${item.realMetrics._aggregatedTrades.length} trades)`);
+                realMetrics = item.realMetrics;
+            }
+            // PRIORITY 2: Fall back to lookup via magicNumberMap
+            else if (item.type === 'strategy' && state.magicNumberMap) {
                 // Resolve Strategy ID
                 let strategyId = item.id;
                 // Try to find ID from loaded files if item has originalIndex
@@ -519,18 +593,91 @@ export const focusMode = {
                             console.warn(`[FocusMode] ⚠️ Portfolio found but no trades for magics: ${magics.join(', ')}`);
                         }
                     } else {
-                        console.warn(`[FocusMode] ❌ No portfolio found containing trades for Magics: ${magics.join(', ')}`);
-                        // Debug: Log available portfolios and their magic numbers if possible
-                        state.savedPortfolios.forEach(p => {
-                            if (p.realMetrics && p.realMetrics._tradesById) {
-                                console.log(`[FocusMode] Portfolio ${p.name} has magics: ${Object.keys(p.realMetrics._tradesById).join(', ')}`);
-                            } else {
-                                console.log(`[FocusMode] Portfolio ${p.name} has NO real metrics.`);
+                        // FALLBACK: Search in deepScanData (Multi-Account persistence)
+                        console.log(`[FocusMode] 🔍 No portfolio found, searching in deepScanData...`);
+                        const deepScanResult = findTradesInDeepScanData(magics);
+
+                        if (deepScanResult.found) {
+                            console.log(`[FocusMode] ✅ Found ${deepScanResult.trades.length} trades in deepScanData (${deepScanResult.sourceName})`);
+
+                            const strategyTrades = deepScanResult.trades;
+                            const tradesById = deepScanResult.tradesById;
+
+                            // Calculate stats
+                            const profit = strategyTrades.reduce((sum, t) => sum + (t.profit || 0) + (t.swap || 0) + (t.commission || 0), 0);
+
+                            // Calculate drawdown
+                            strategyTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+                            let currentEq = 0;
+                            let maxEq = 0;
+                            let maxDD = 0;
+
+                            strategyTrades.forEach(t => {
+                                const p = (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
+                                currentEq += p;
+                                if (currentEq > maxEq) maxEq = currentEq;
+                                const dd = maxEq - currentEq;
+                                if (dd > maxDD) maxDD = dd;
+                            });
+
+                            realMetrics = {
+                                _tradesById: tradesById,
+                                profit: profit,
+                                drawdown: maxDD,
+                                trades: strategyTrades.length,
+                                profitFactor: 0,
+                                sharpe: 0,
+                                lastSync: new Date().toISOString()
+                            };
+                            console.log(`[FocusMode] ✅ Real Metrics from deepScanData for ${item.name}: Profit=${profit.toFixed(2)}, DD=${maxDD.toFixed(2)}, Trades=${strategyTrades.length}`);
+                        } else {
+                            console.warn(`[FocusMode] ❌ No trades found in portfolios OR deepScanData for Magics: ${magics.join(', ')}`);
+                            // Debug: Log available IDs in deepScanData
+                            if (state.deepScanData) {
+                                Object.entries(state.deepScanData).forEach(([accId, data]) => {
+                                    if (data.tradesById) {
+                                        console.log(`[FocusMode] deepScanData[${accId}] has IDs: ${Object.keys(data.tradesById).slice(0, 10).join(', ')}...`);
+                                    }
+                                });
                             }
-                        });
+                        }
                     }
                 } else {
                     console.warn(`[FocusMode] ❌ No Magic Number mapped for ${item.name}`);
+
+                    // FALLBACK: Use getRealTradesByName to find trades (same logic as portfolios)
+                    if (state.activeViewMode === 'reality-check') {
+                        console.log(`[FocusMode] 🔄 Attempting getRealTradesByName fallback for ${item.name}`);
+                        const realTrades = getRealTradesByName(item.name);
+                        if (realTrades && realTrades.length > 0) {
+                            console.log(`[FocusMode] ✅ Found ${realTrades.length} real trades via getRealTradesByName`);
+
+                            // Calculate metrics from trades
+                            const profit = realTrades.reduce((sum, t) => sum + (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0), 0);
+
+                            // Calculate drawdown
+                            let currentEq = 0;
+                            let maxEq = 0;
+                            let maxDD = 0;
+                            realTrades.forEach(t => {
+                                const p = (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0);
+                                currentEq += p;
+                                if (currentEq > maxEq) maxEq = currentEq;
+                                const dd = maxEq - currentEq;
+                                if (dd > maxDD) maxDD = dd;
+                            });
+
+                            realMetrics = {
+                                _aggregatedTrades: realTrades,
+                                isAggregated: true,
+                                profit: profit,
+                                drawdown: maxDD,
+                                trades: realTrades.length,
+                                totalRealTrades: realTrades.length,
+                                totalRealProfit: profit
+                            };
+                        }
+                    }
                 }
             } else if (item.type === 'saved' && item.realMetrics) {
                 realMetrics = item.realMetrics;

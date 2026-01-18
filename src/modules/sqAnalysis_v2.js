@@ -3638,6 +3638,7 @@ window.showPnLChart = (initialStrategy = 'all') => {
     let orphanReal = window.latestSQAnalysisData.orphanReal || [];
     let orphanBT = window.latestSQAnalysisData.orphanBT || [];
     let activeTooltipListener = null; // Manage listener lifecycle
+    let tooltipEnabled = true; // Toggle with click
 
     // Initialize global threshold if not exists
     if (typeof window.pnlChartThreshold === 'undefined') {
@@ -3656,6 +3657,7 @@ window.showPnLChart = (initialStrategy = 'all') => {
                     <label class="text-gray-400 text-xs" title="Divergence threshold: difference in PnL change">⚠️ Threshold:</label>
                     <input type="number" id="pnl-div-threshold" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500 w-20 text-center" value="${window.pnlChartThreshold}" min="1" step="10" inputmode="numeric">
                 </div>
+                <button id="pnl-quarantine-btn" class="text-red-400 hover:text-red-300 hover:bg-red-900/30 px-2 py-1 rounded text-xs border border-red-900/50 transition-colors" title="Enviar estrategia a Cuarentena">☣️ Cuarentena</button>
                 <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-white ml-auto">✕</button>
             </div>
             <div class="overflow-y-auto p-6 custom-scrollbar flex-1">
@@ -3972,6 +3974,11 @@ window.showPnLChart = (initialStrategy = 'all') => {
         ctx.fillStyle = '#9ca3af'; // Gray
         ctx.fillText(`Total Div: ${totalDiv} (Avg: $${avgTotal}, Net: $${netSumDiv.toFixed(2)})`, leftX, padding.top + 120);
 
+        // No SL indicator (Net / 100)
+        const noSLValue = netSumDiv / 100;
+        ctx.fillStyle = noSLValue >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
+        ctx.fillText(`No SL: ${noSLValue.toFixed(2)}`, leftX, padding.top + 140);
+
         // Update stats
         const statsDiv = document.getElementById('pnl-chart-stats');
         if (statsDiv) {
@@ -3987,261 +3994,99 @@ window.showPnLChart = (initialStrategy = 'all') => {
         }
 
         activeTooltipListener = (e) => {
+            if (!tooltipEnabled) return; // Skip if disabled
+
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
+            // Find or create tooltip element
+            let tooltip = document.getElementById('pnl-chart-tooltip');
+            if (!tooltip) {
+                tooltip = document.createElement('div');
+                tooltip.id = 'pnl-chart-tooltip';
+                tooltip.className = 'fixed z-[200] bg-gray-900/95 border border-gray-600 rounded-lg shadow-xl p-3 text-xs font-mono pointer-events-none transition-opacity duration-150';
+                tooltip.style.maxWidth = '260px';
+                document.body.appendChild(tooltip);
+            }
+
             // Find closest point
             let closestPoint = null;
-            let minDistance = 15; // Max distance to trigger tooltip
+            let minDistance = 20; // Max distance to trigger tooltip
+            let closestX = 0;
+            let closestY = 0;
 
             chartData.forEach((d, i) => {
                 const x = scaleX(i);
-                const yBT = scaleY(d.cumBT);
                 const yReal = scaleY(d.cumReal);
 
                 // Check distance to Real point (primary)
                 const distReal = Math.sqrt(Math.pow(mouseX - x, 2) + Math.pow(mouseY - yReal, 2));
                 if (distReal < minDistance) {
                     minDistance = distReal;
-                    closestPoint = { ...d, index: i, isReal: true };
-                }
-
-                // Check distance to BT point
-                const distBT = Math.sqrt(Math.pow(mouseX - x, 2) + Math.pow(mouseY - yBT, 2));
-                if (distBT < minDistance) {
-                    minDistance = distBT;
-                    closestPoint = { ...d, index: i, isReal: false };
+                    closestPoint = { ...d, index: i };
+                    closestX = x;
+                    closestY = yReal;
                 }
             });
 
-            // Clear previous tooltip area and redraw (simplified approach)
             if (closestPoint) {
-                // Redraw to clear old tooltip
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Position tooltip near cursor but not overlapping
+                const tooltipLeft = e.clientX + 15;
+                const tooltipTop = e.clientY - 100;
 
-                // Redraw grid
-                ctx.fillStyle = '#1f2937';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.strokeStyle = '#374151';
-                ctx.lineWidth = 1;
-                for (let i = 0; i <= 8; i++) {
-                    const y = padding.top + (i / 8) * chartHeight;
-                    ctx.beginPath();
-                    ctx.moveTo(padding.left, y);
-                    ctx.lineTo(padding.left + chartWidth, y);
-                    ctx.stroke();
-                }
+                tooltip.style.left = tooltipLeft + 'px';
+                tooltip.style.top = Math.max(10, tooltipTop) + 'px';
+                tooltip.style.opacity = '1';
 
-                // Redraw Y labels
-                ctx.fillStyle = '#9ca3af';
-                ctx.font = '11px monospace';
-                ctx.textAlign = 'right';
-                for (let i = 0; i <= 8; i++) {
-                    const value = yMin + (i / 8) * (yMax - yMin);
-                    const y = padding.top + chartHeight - (i / 8) * chartHeight;
-                    ctx.fillText('$' + value.toFixed(0), padding.left - 10, y + 4);
-                }
+                // Build tooltip content
+                const stratName = (closestPoint.displaySymbol || 'Strategy').substring(0, 25);
+                const dateStr = closestPoint.time.toISOString().slice(0, 10);
+                const timeStr = closestPoint.time.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
-                // Redraw zero line
-                if (yMin < 0 && yMax > 0) {
-                    const zeroY = scaleY(0);
-                    ctx.strokeStyle = '#6b7280';
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([5, 5]);
-                    ctx.beginPath();
-                    ctx.moveTo(padding.left, zeroY);
-                    ctx.lineTo(padding.left + chartWidth, zeroY);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
-
-                // Redraw lines
-                const drawLine = (data, color, lineWidth = 2) => {
-                    if (data.length === 0) return;
-                    ctx.strokeStyle = color;
-                    ctx.lineWidth = lineWidth;
-                    ctx.beginPath();
-                    data.forEach((d, i) => {
-                        const x = scaleX(i);
-                        const y = scaleY(d);
-                        if (i === 0) ctx.moveTo(x, y);
-                        else ctx.lineTo(x, y);
-                    });
-                    ctx.stroke();
-                };
-                drawLine(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.7)', 3);
-                drawLine(chartData.map(d => d.cumReal), 'rgba(16, 185, 129, 1)', 3);
-
-                // Redraw all points (simplified)
-                drawPoints(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.9)');
-                chartData.forEach((d, i) => {
-                    const x = scaleX(i);
-                    const y = scaleY(d.cumReal);
-                    let pointColor = 'rgba(16, 185, 129, 1)';
-                    if (i > 0) {
-                        const prevBT = chartData[i - 1].cumBT;
-                        const prevReal = chartData[i - 1].cumReal;
-                        const btChange = d.cumBT - prevBT;
-                        const realChange = d.cumReal - prevReal;
-                        const btMoving = Math.abs(btChange) > 0.01;
-                        const realMoving = Math.abs(realChange) > 0.01;
-                        const changeDiff = Math.abs(btChange - realChange);
-                        let isDivergent = false;
-                        if (changeDiff >= divThreshold) {
-                            isDivergent = true;
-                        }
-                        if (isDivergent) {
-                            pointColor = (realChange > btChange) ? 'rgba(251, 191, 36, 1)' : 'rgba(239, 68, 68, 1)';
-                        }
-                    }
-                    ctx.fillStyle = pointColor;
-                    ctx.beginPath();
-                    ctx.arc(x, y, 3, 0, 2 * Math.PI);
-                    ctx.fill();
-                });
-
-                // Redraw X labels, title, and stats (keeping them visible)
-                ctx.fillStyle = '#9ca3af';
-                ctx.font = '10px sans-serif';
-                ctx.textAlign = 'center';
-                const labelStep = Math.max(1, Math.floor(chartData.length / 10));
-                chartData.forEach((d, i) => {
-                    if (i % labelStep === 0 || i === chartData.length - 1) {
-                        const x = scaleX(i);
-                        ctx.fillText(d.time.toISOString().slice(0, 10), x, canvas.height - padding.bottom + 20);
-                    }
-                });
-                ctx.fillStyle = '#f3f4f6';
-                ctx.font = 'bold 14px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('Cumulative PnL Over Time', canvas.width / 2, 20);
-
-                // Redraw left stats
-                ctx.font = '12px monospace';
-                ctx.textAlign = 'left';
-                ctx.fillStyle = 'rgba(59, 130, 246, 1)';
-                ctx.fillText('BT: $' + finalBT.toFixed(2), leftX, padding.top + 20);
-                ctx.fillStyle = 'rgba(16, 185, 129, 1)';
-                ctx.fillText('Real: $' + finalReal.toFixed(2), leftX, padding.top + 40);
-                ctx.fillStyle = totalDiff >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
-                ctx.fillText('Diff: $' + totalDiff.toFixed(2), leftX, padding.top + 60);
-                ctx.fillStyle = 'rgba(251, 191, 36, 1)';
-                ctx.fillText(`🟠 Div+: ${positiveDiv} (Avg: $${avgPos})`, leftX, padding.top + 80);
-                ctx.fillStyle = 'rgba(239, 68, 68, 1)';
-                ctx.fillText(`🔴 Div-: ${negativeDiv} (Avg: $${avgNeg})`, leftX, padding.top + 100);
-                ctx.fillStyle = '#9ca3af';
-                ctx.fillText(`Total Div: ${totalDiv} (Avg: $${avgTotal})`, leftX, padding.top + 120);
-
-                // Draw tooltip
                 const btVal = closestPoint.btPnL;
                 const realVal = closestPoint.realPnL;
                 const diff = realVal - btVal;
+                const diffColor = diff >= 0 ? 'text-emerald-400' : 'text-red-400';
 
-                // DIV DEBUG LOGS
-                if (closestPoint.index > 0) {
-                    const idx = closestPoint.index;
-                    const prevBT = chartData[idx - 1].cumBT;
-                    const prevReal = chartData[idx - 1].cumReal;
-                    const btChange = closestPoint.cumBT - prevBT;
-                    const realChange = closestPoint.cumReal - prevReal;
-                    const changeDiff = Math.abs(btChange - realChange);
-                    const isDiv = changeDiff >= divThreshold;
-
-                    if (isDiv) {
-                        const divType = (realChange > btChange) ? 'POSITIVE (Amber)' : 'NEGATIVE (Red)';
-                        console.log(`[Tooltip Debug] Idx: ${idx} | Time: ${closestPoint.time.toISOString().slice(0, 16)}`);
-                        console.log(`   - BT Change: ${btChange.toFixed(2)} | Real Change: ${realChange.toFixed(2)}`);
-                        console.log(`   - Diff: ${changeDiff.toFixed(2)} (Threshold: ${divThreshold})`);
-                        console.log(`   - Divergence? ${isDiv} | Type: ${divType}`);
-                    }
-                }
-
-                // New values for tooltip
-                const strategyName = closestPoint.displaySymbol || 'Unknown Strategy';
-
-                // Format date with time (HH:mm)
-                const dateObj = closestPoint.time;
-                const dateStr = dateObj.toISOString().slice(0, 10);
-                const timeStr = dateObj.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
-                const dateTimeStr = `${dateStr} ${timeStr}`;
-
-                const cumBT = closestPoint.cumBT;
-                const cumReal = closestPoint.cumReal;
-
-                const tooltipW = 230;
-                const tooltipX = mouseX - (tooltipW / 2); // Centered horizontally
-                const tooltipY = mouseY - 180; // Shifted further up
-                const tooltipH = 160;
-
-                // Tooltip background
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
-                ctx.fillRect(tooltipX, tooltipY, tooltipW, tooltipH);
-                ctx.strokeStyle = '#6b7280';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(tooltipX, tooltipY, tooltipW, tooltipH);
-
-                // Tooltip text
-                ctx.textAlign = 'left';
-                let currentY = tooltipY + 16;
-                const lineHeight = 16;
-                const startX = tooltipX + 10;
-
-                // Strategy Name
-                ctx.font = 'bold 12px sans-serif';
-                ctx.fillStyle = '#f3f4f6';
-                // Truncate if too long
-                let displayName = strategyName;
-                if (displayName.length > 28) displayName = displayName.substring(0, 25) + '...';
-                ctx.fillText(displayName, startX, currentY);
-                currentY += lineHeight + 4; // Extra spacing
-
-                // Trade Date & Time
-                ctx.font = '11px monospace';
-                ctx.fillStyle = '#9ca3af';
-                ctx.fillText('Time: ' + dateTimeStr, startX, currentY);
-                currentY += lineHeight;
-
-                // Separator
-                ctx.fillStyle = '#4b5563';
-                ctx.fillRect(startX, currentY - 6, tooltipW - 20, 1);
-                currentY += 4;
-
-                // Values
-                ctx.font = '11px monospace';
-
-                // Trade PnL (Net Profit)
-                ctx.fillStyle = 'rgba(59, 130, 246, 1)';
-                ctx.fillText(`PnL BT  : $${btVal.toFixed(2)}`, startX, currentY);
-                currentY += lineHeight;
-
-                ctx.fillStyle = 'rgba(16, 185, 129, 1)';
-                ctx.fillText(`PnL Real: $${realVal.toFixed(2)}`, startX, currentY);
-                currentY += lineHeight;
-
-                // Trade PnL Difference
-                ctx.fillStyle = diff >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
-                ctx.fillText(`Trd Diff: $${diff.toFixed(2)}`, startX, currentY);
-                currentY += lineHeight;
-
-                // Cumulative PnL Separator
-                ctx.fillStyle = '#4b5563';
-                ctx.fillRect(startX, currentY - 6, tooltipW - 80, 1);
-                currentY += 4;
-
-                // Cumulative (Y-axis)
-                ctx.fillStyle = 'rgba(59, 130, 246, 1)';
-                ctx.fillText(`Cum BT  : $${cumBT.toFixed(2)}`, startX, currentY);
-                currentY += lineHeight;
-
-                ctx.fillStyle = 'rgba(16, 185, 129, 1)';
-                ctx.fillText(`Cum Real: $${cumReal.toFixed(2)}`, startX, currentY);
-                currentY += lineHeight;
-
-
+                tooltip.innerHTML = `
+                    <div class="text-gray-200 font-bold mb-1 truncate" title="${closestPoint.displaySymbol}">${stratName}</div>
+                    <div class="text-gray-500 mb-2">${dateStr} ${timeStr}</div>
+                    <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+                        <span class="text-gray-400">PnL BT:</span>
+                        <span class="text-blue-400">$${btVal.toFixed(2)}</span>
+                        <span class="text-gray-400">PnL Real:</span>
+                        <span class="text-emerald-400">$${realVal.toFixed(2)}</span>
+                        <span class="text-gray-400">Diff:</span>
+                        <span class="${diffColor}">$${diff.toFixed(2)}</span>
+                    </div>
+                    <div class="border-t border-gray-700 mt-2 pt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                        <span class="text-gray-400">Cum BT:</span>
+                        <span class="text-blue-400">$${closestPoint.cumBT.toFixed(2)}</span>
+                        <span class="text-gray-400">Cum Real:</span>
+                        <span class="text-emerald-400">$${closestPoint.cumReal.toFixed(2)}</span>
+                    </div>
+                `;
+            } else {
+                // Hide tooltip when not near any point
+                tooltip.style.opacity = '0';
             }
         };
         canvas.addEventListener('mousemove', activeTooltipListener);
+
+        // Hide tooltip when leaving canvas
+        canvas.addEventListener('mouseleave', () => {
+            const tooltip = document.getElementById('pnl-chart-tooltip');
+            if (tooltip) tooltip.style.opacity = '0';
+        });
+
+        // Click to toggle tooltip visibility
+        canvas.onclick = () => {
+            tooltipEnabled = !tooltipEnabled;
+            console.log('[PnL Chart] Tooltip', tooltipEnabled ? 'ENABLED' : 'DISABLED');
+            const tooltip = document.getElementById('pnl-chart-tooltip');
+            if (tooltip && !tooltipEnabled) tooltip.style.opacity = '0';
+        };
     };
 
     // Initial render
@@ -4331,7 +4176,72 @@ window.showPnLChart = (initialStrategy = 'all') => {
             container.appendChild(clone);
         }
 
+        // Wire up Quarantine Button (Toggle: Add/Remove)
+        const quarantineBtn = document.getElementById('pnl-quarantine-btn');
+        const updateQuarantineButtonState = () => {
+            if (!quarantineBtn) return;
+            const clone = document.getElementById('pnl-chart-strategy-select-clone');
+            if (clone && clone.value !== 'all') {
+                const stratName = clone.options[clone.selectedIndex]?.text || clone.value;
+                const isQuarantined = window.state?.quarantinedStrategyNames?.has(stratName);
+
+                if (isQuarantined) {
+                    quarantineBtn.innerHTML = '✅ Rehabilitar';
+                    quarantineBtn.className = 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/30 px-2 py-1 rounded text-xs border border-emerald-900/50 transition-colors';
+                    quarantineBtn.title = 'Quitar estrategia de Cuarentena';
+                } else {
+                    quarantineBtn.innerHTML = '☣️ Cuarentena';
+                    quarantineBtn.className = 'text-red-400 hover:text-red-300 hover:bg-red-900/30 px-2 py-1 rounded text-xs border border-red-900/50 transition-colors';
+                    quarantineBtn.title = 'Enviar estrategia a Cuarentena';
+                }
+            }
+        };
+
+        // Update button state initially and when selector changes
+        updateQuarantineButtonState();
+        const cloneForListener = document.getElementById('pnl-chart-strategy-select-clone');
+        if (cloneForListener) {
+            cloneForListener.addEventListener('change', updateQuarantineButtonState);
+        }
+
+        if (quarantineBtn) {
+            quarantineBtn.onclick = () => {
+                const clone = document.getElementById('pnl-chart-strategy-select-clone');
+                if (clone && clone.value !== 'all') {
+                    const stratName = clone.options[clone.selectedIndex]?.text || clone.value;
+                    const isQuarantined = window.state?.quarantinedStrategyNames?.has(stratName);
+
+                    if (isQuarantined) {
+                        // Remove from quarantine
+                        if (window.removeStrategyFromQuarantine) {
+                            window.removeStrategyFromQuarantine(stratName);
+                            updateQuarantineButtonState();
+                        }
+                    } else {
+                        // Add to quarantine
+                        if (window.addStrategyToQuarantine) {
+                            window.addStrategyToQuarantine(stratName);
+                            updateQuarantineButtonState();
+                        }
+                    }
+                } else {
+                    alert('Selecciona una estrategia específica (no "All") para gestionar cuarentena.');
+                }
+            };
+        }
+
         renderChart(matches, orphanReal, orphanBT, window.pnlChartThreshold);
+
+        // Add Threshold Input listener
+        const thresholdInput = document.getElementById('pnl-div-threshold');
+        if (thresholdInput) {
+            thresholdInput.addEventListener('input', (e) => {
+                const newThreshold = parseFloat(e.target.value) || 80;
+                window.pnlChartThreshold = newThreshold; // Save globally
+                console.log('[PnL Chart] Threshold changed to:', newThreshold);
+                renderChart(matches, orphanReal, orphanBT, newThreshold);
+            });
+        }
     }, 100);
 
     // Listen for Global Updates (from Main App) to Refresh Chart

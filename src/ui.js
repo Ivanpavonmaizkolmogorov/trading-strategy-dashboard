@@ -689,7 +689,7 @@ export const renderLorenzChart = (canvasId, analysis, color) => {
 /**
  * Muestra la lista de portafolios guardados.
  */
-const getRealTradesByName = (stratName) => {
+export const getRealTradesByName = (stratName) => {
     if (!stratName) return [];
 
     // Normalization Helpers
@@ -702,16 +702,23 @@ const getRealTradesByName = (stratName) => {
     const cleanName = strictNormalize(stratName);
     const fuzzyName = stripImproved(cleanName);
 
-    // Resolve ID
+    // Resolve ID & Robust File Map Key
     let strategyId = stratName;
+    let resolvedFileName = null; // Key for map lookup (likely with .csv)
+
     // Try finding file match (Exact or Fuzzy)
     const file = state.loadedStrategyFiles.find(f => {
-        const fNorm = normalize(f.name);
-        return fNorm === normalizedName || stripImproved(strictNormalize(f.name)) === fuzzyName;
+        // Strict Match
+        if (f.name === stratName) return true;
+        // Loose Match (Base Name equal)
+        const fBase = f.name.replace(/\.csv$/i, '').trim();
+        const sBase = stratName.replace(/\.csv$/i, '').trim();
+        return fBase === sBase;
     });
 
-    if (file && file.strategyId) {
-        strategyId = file.strategyId;
+    if (file) {
+        if (file.strategyId) strategyId = file.strategyId;
+        resolvedFileName = file.name;
     }
 
     // Lookups
@@ -719,14 +726,14 @@ const getRealTradesByName = (stratName) => {
     const mapByName = state.magicNumberMap[stratName];
     const mapByCleanName = state.magicNumberMap[cleanName];
     const mapByNormName = state.magicNumberMap[normalizedName];
+
+    // Resolved File Lookup (Critical for Portfolio Names vs File Extensions)
+    const mapByResolvedFile = resolvedFileName ? state.magicNumberMap[resolvedFileName] : null;
+
     // New Fuzzy Map Check
     const mapByFuzzy = state.magicNumberMap[fuzzyName]; // Check base name in map
 
-    // Also check if any map key *contains* our fuzzy base name (Reverse lookup? Too expensive?)
-    // Or if map has keys that match the fuzzy name when *they* are stripped?
-    // For now, let's trust direct Base Name mapping or File-ID resolution via Fuzzy.
-
-    let magicRaw = mapById || mapByNormName || mapByName || mapByCleanName || mapByFuzzy;
+    let magicRaw = mapById || mapByResolvedFile || mapByNormName || mapByName || mapByCleanName || mapByFuzzy;
 
     // DEBUG: If we found via fuzzy, log it
     // if (!mapById && !mapByName && mapByFuzzy) console.log(`[UI DEBUG] Fuzzy Match found for '${stratName}' -> '${fuzzyName}'`);
@@ -739,17 +746,74 @@ const getRealTradesByName = (stratName) => {
     else magics = [String(magicRaw)];
 
     let allRealTrades = [];
+
+    // 1. Search in Saved Portfolios (Legacy / Explicit Links)
     state.savedPortfolios.forEach(p => {
         if (p.realMetrics && p.realMetrics._tradesById) {
             magics.forEach(m => {
                 const key = m.trim();
-                // Some magic keys in p.realMetrics might differ slightly? Usually they match magicRaw.
                 if (p.realMetrics._tradesById[key]) {
                     allRealTrades = allRealTrades.concat(p.realMetrics._tradesById[key]);
                 }
             });
         }
     });
+
+    // 2. Search in Deep Scan Data (Global Cache - Multi-Account Support)
+    // This allows "Hybrid" portfolios to pick up real trades even if they aren't explicitly linked to an account,
+    // as long as the strategies themselves are mapped.
+    if (state.deepScanData) {
+        Object.values(state.deepScanData).forEach(accountData => {
+            const tradesMap = accountData.tradesById || accountData._tradesById;
+            if (!tradesMap) return;
+
+            magics.forEach(m => {
+                const magicStr = String(m).trim();
+                // Check direct magic match
+                if (tradesMap[magicStr]) {
+                    allRealTrades = allRealTrades.concat(tradesMap[magicStr]);
+                }
+                // Check Compound Key (AccountId::Magic) if needed? 
+                // Usually map has raw magics, deepScan has raw magics as keys? 
+                // It seems deepScan keys are raw magics mostly.
+            });
+        });
+    }
+
+    // 3. FALLBACK: If no trades found via magicNumberMap, search deepScanData by comment/name
+    // This mirrors the logic used in calculatePortfolioRealMetrics for aggregate lookups
+    if (allRealTrades.length === 0 && state.deepScanData) {
+        console.log(`[getRealTradesByName] 🔄 Fallback: Searching deepScanData by comment/name for: ${stratName}`);
+
+        Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
+            const tradesMap = accountData.tradesById || accountData._tradesById;
+            if (!tradesMap) return;
+
+            Object.entries(tradesMap).forEach(([key, trades]) => {
+                // Check if any trade in this group has a matching comment
+                const matchingTrades = trades.filter(t => {
+                    const comment = (t.comment || t.Comment || '').toString();
+                    const normalizedComment = normalize(comment);
+
+                    // Check various match patterns
+                    if (normalizedComment === normalizedName) return true;
+                    if (strictNormalize(comment) === cleanName) return true;
+                    if (stripImproved(strictNormalize(comment)) === fuzzyName) return true;
+
+                    // Also check if comment contains the strategy name
+                    if (normalizedComment.includes(normalizedName) || normalizedName.includes(normalizedComment)) return true;
+
+                    return false;
+                });
+
+                if (matchingTrades.length > 0) {
+                    console.log(`[getRealTradesByName] ✅ Found ${matchingTrades.length} trades via comment match in account ${accountId}`);
+                    allRealTrades = allRealTrades.concat(matchingTrades);
+                }
+            });
+        });
+    }
+
     return allRealTrades;
 };
 
@@ -760,6 +824,8 @@ const calculatePortfolioRealMetrics = (portfolio) => {
 
     console.log(`[UI] 🧮 Calculating Real Metrics for Portfolio: ${portfolio.name}`);
     let allRealTrades = [];
+    // Initialize a map to store trades by strategy name for Lupa lookup
+    let reconstructedTradesById = {};
     const sourceData = portfolio.realMetrics && portfolio.realMetrics._tradesById ? portfolio.realMetrics._tradesById : {};
 
     // Fallback: If portfolio has no trades, maybe we can look in a MASTER portfolio?
@@ -779,25 +845,90 @@ const calculatePortfolioRealMetrics = (portfolio) => {
         const normalize = s => s.replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
 
         strategyNames.forEach(stratName => {
-            // Resolve Strategy ID/Magic
+            // Robust Strategy ID/File Resolution
             let strategyId = stratName;
+            let resolvedFileName = null;
+            const cleanName = stratName.replace(/\.csv$/i, '').trim();
             const normalizedStratName = normalize(stratName);
-            const file = state.loadedStrategyFiles.find(f => normalize(f.name) === normalizedStratName);
-            if (file && file.strategyId) strategyId = file.strategyId;
+
+            // Try finding file match (Robust)
+            const file = state.loadedStrategyFiles.find(f => {
+                if (f.name === stratName) return true;
+                if (f.name.replace(/\.csv$/i, '').trim() === cleanName) return true;
+                return normalize(f.name) === normalizedStratName;
+            });
+
+            if (file) {
+                if (file.strategyId) strategyId = file.strategyId;
+                resolvedFileName = file.name;
+            } else {
+                console.warn(`[UI DEBUG] ⚠️ File not found for strategy '${stratName}' in loadedStrategyFiles.`);
+            }
 
             // Lookup Magic Numbers
             const mapById = state.magicNumberMap[strategyId];
             const mapByName = state.magicNumberMap[stratName];
             const mapByNormName = state.magicNumberMap[normalizedStratName];
-            let magicRaw = mapById || mapByNormName || mapByName;
+            const mapByCleanName = state.magicNumberMap[cleanName]; // Added CleanName
+            const mapByResolvedFile = resolvedFileName ? state.magicNumberMap[resolvedFileName] : null;
+
+            let magicRaw = mapById || mapByResolvedFile || mapByCleanName || mapByNormName || mapByName;
+            let currentStratTrades = [];
+
+            if (!magicRaw) {
+                console.log(`[UI DEBUG] ❌ No Magic Map for '${stratName}'. Tried: ID=${strategyId}, File=${resolvedFileName}, Clean=${cleanName}`);
+            } else {
+                // console.log(`[UI DEBUG] ✅ Magic Map Found for '${stratName}':`, magicRaw);
+            }
 
             if (magicRaw) {
                 let magics = Array.isArray(magicRaw) ? magicRaw : String(magicRaw).split(',').map(m => m.trim()).filter(Boolean);
                 magics.forEach(m => {
-                    if (sourceData[m]) {
-                        allRealTrades = allRealTrades.concat(sourceData[m]);
+                    const magicStr = String(m).trim();
+                    // 1. Check Local Portfolio Data (Explicit Link)
+                    if (sourceData[magicStr]) {
+                        currentStratTrades = currentStratTrades.concat(sourceData[magicStr]);
+                    }
+                    // 2. Check Global Deep Scan Data (Hybrid/Implicit Link)
+                    else if (state.deepScanData) {
+                        Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
+                            const tradesMap = accountData.tradesById || accountData._tradesById;
+                            if (!tradesMap) return;
+
+                            // Parse Compound Key (e.g., "AccountID::MagicNumber")
+                            let lookupKey = magicStr;
+                            if (magicStr.includes('::')) {
+                                const [linkedAcctId, realMagic] = magicStr.split('::');
+                                if (String(linkedAcctId) !== String(accountId)) return;
+                                lookupKey = realMagic;
+                            }
+
+                            // Accumulate matches
+                            if (tradesMap[lookupKey]) {
+                                currentStratTrades = currentStratTrades.concat(tradesMap[lookupKey]);
+                            } else if (tradesMap[magicStr]) {
+                                currentStratTrades = currentStratTrades.concat(tradesMap[magicStr]);
+                            } else {
+                                const lowerLookup = lookupKey.toLowerCase();
+                                const match = Object.keys(tradesMap).find(k => k.toLowerCase() === lowerLookup);
+                                if (match) {
+                                    currentStratTrades = currentStratTrades.concat(tradesMap[match]);
+                                }
+                            }
+                        });
                     }
                 });
+            }
+
+            // Accumulate found trades into Global List and Index
+            if (currentStratTrades.length > 0) {
+                allRealTrades = allRealTrades.concat(currentStratTrades);
+
+                // Store in index for Lupa (Implicit Match by Name) using multiple key variations
+                reconstructedTradesById[stratName] = currentStratTrades;
+                if (normalizedStratName !== stratName) reconstructedTradesById[normalizedStratName] = currentStratTrades;
+                if (cleanName !== stratName) reconstructedTradesById[cleanName] = currentStratTrades;
+                if (resolvedFileName) reconstructedTradesById[resolvedFileName] = currentStratTrades;
             }
         });
     }
@@ -826,6 +957,10 @@ const calculatePortfolioRealMetrics = (portfolio) => {
 
         console.log(`[UI] 🧮 Aggregated ${normalizedForEngine.length} trades for ${portfolio.name}`);
         const result = calculateSQMetrics(normalizedForEngine);
+        // Attach the trades to the result for equity curve generation
+        result._aggregatedTrades = normalizedForEngine;
+        // CRITICAL: Attach the reconstructed index so Lupa can lookup individual strategies
+        result._tradesById = { ...sourceData, ...reconstructedTradesById }; // Merge old and new
         // Cache it?
         portfolio.calculatedRealMetrics = result;
         return result;
@@ -851,61 +986,24 @@ export const displaySavedPortfoliosList = () => {
 
             // 2. Aggregated Real Trades (Hybrid/Virtual Portfolio)
             if (!hasTrades) {
-                let aggregatedTrades = [];
-                let strategyNames = [];
+                // Use the shared helper ensuring consistent robust lookup
+                const aggregatedMetrics = calculatePortfolioRealMetrics(p);
 
-                if (p.strategyNames && p.strategyNames.length > 0) strategyNames = p.strategyNames;
-                else if (p.strategies && p.strategies.length > 0) strategyNames = p.strategies.map(s => s.name || s);
-                else if (p.indices && window.analysisResults) strategyNames = p.indices.map(i => window.analysisResults[i]?.name).filter(Boolean);
-
-                strategyNames.forEach(name => {
-                    const stratTrades = getRealTradesByName(name);
-                    if (stratTrades.length > 0) {
-                        aggregatedTrades = aggregatedTrades.concat(stratTrades);
-                    }
-                });
-
-                if (aggregatedTrades.length > 0) {
+                if (aggregatedMetrics && aggregatedMetrics.totalProfit !== undefined) {
                     hasTrades = true;
-                    console.log(`[UI] Virtual Portfolio '${p.name}' hydrated with ${aggregatedTrades.length} aggregated trades.`);
-
-                    // ON-THE-FLY METRICS CALCULATION
-                    const normalizeForEngine = (trades) => {
-                        const parseDate = (d) => {
-                            if (!d) return null;
-                            const clean = typeof d === 'string' ? d.replace(/\./g, '/') : d;
-                            const dateObj = new Date(clean);
-                            return isNaN(dateObj.getTime()) ? null : dateObj;
-                        };
-                        return trades.map(t => {
-                            const pnl = (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0);
-                            const parsedClose = parseDate(t.closeTime || t.closeDate);
-                            return {
-                                ...t,
-                                pnl: pnl,
-                                closeTime: parsedClose,
-                                exitTime: parsedClose,
-                                openTime: null
-                            };
-                        }).filter(t => t.exitTime).sort((a, b) => a.exitTime - b.exitTime);
+                    // Ensure the portfolio object itself is updated with these metrics for the table to render
+                    p.realMetrics = {
+                        ...p.realMetrics,
+                        ...aggregatedMetrics,
+                        maxDrawdown: aggregatedMetrics.maxDD,
+                        maxDrawdownInDollars: aggregatedMetrics.maxDD, // Using maxDD as the dollar value
+                        totalRealProfit: aggregatedMetrics.totalProfit,
+                        totalRealTrades: aggregatedMetrics.totalTrades,
+                        isAggregated: true
                     };
-
-                    const engineTrades = normalizeForEngine(aggregatedTrades);
-                    const metrics = calculateSQMetrics(engineTrades);
-
-                    if (metrics) {
-                        p.realMetrics = {
-                            ...p.realMetrics,
-                            ...metrics,
-                            maxDrawdown: metrics.maxDD,
-                            maxDrawdownInDollars: metrics.maxDDMoney, // or similar mapping
-                            totalRealProfit: metrics.netProfit, // Note: using netProfit from engine
-                            totalRealTrades: engineTrades.length,
-                            isAggregated: true
-                        };
-                    }
+                    console.log(`[UI] Virtual Portfolio '${p.name}' hydrated via calculatePortfolioRealMetrics. Trades: ${p.realMetrics.totalRealTrades}, _aggregatedTrades: ${p.realMetrics._aggregatedTrades?.length || 0}`);
                 } else {
-                    console.log(`[UI DEBUG] Portfolio '${p.name}' rejected. Sources: Names=${p.strategyNames?.length}, StratObjs=${p.strategies?.length}, Indices=${p.indices?.length}. Resolved Names:`, strategyNames);
+                    console.log(`[UI DEBUG] Portfolio '${p.name}' rejected. calculatePortfolioRealMetrics returned empty.`);
                 }
             }
             return hasTrades;
@@ -1542,7 +1640,7 @@ function autoFitSavedPortfoliosColumn(th, colId) {
     const tableConfig = getSavedPortfoliosTableConfig();
     if (!tableConfig.columnWidths) tableConfig.columnWidths = {};
     tableConfig.columnWidths[colId] = newWidth;
-    localStorage.setItem('savedPortfoliosTableConfig', JSON.stringify(tableConfig));
+    // localStorage.setItem('savedPortfoliosTableConfig', JSON.stringify(tableConfig)); // DISABLED
 }
 
 /**
@@ -1583,7 +1681,7 @@ function stopSavedPortfoliosResize() {
         const config = getSavedPortfoliosTableConfig();
         if (!config.columnWidths) config.columnWidths = {};
         config.columnWidths[colId] = newWidth;
-        localStorage.setItem('savedPortfoliosTableConfig', JSON.stringify(config));
+        // localStorage.setItem('savedPortfoliosTableConfig', JSON.stringify(config)); // DISABLED
 
         savedPortfoliosResizeData = null;
     }
@@ -1819,11 +1917,16 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     // REALITY CHECK: Filter out portfolios without real metrics if in reality-check mode
     if (state.activeViewMode === 'reality-check') {
         const originalCount = allAnalyses.length;
-        allAnalyses = allAnalyses.filter(r =>
-            r.realMetrics &&
-            r.realMetrics._tradesById &&
-            Object.keys(r.realMetrics._tradesById).length > 0
-        );
+        allAnalyses = allAnalyses.filter(r => {
+            if (!r.realMetrics) return false;
+            // Check for direct trades (linked portfolios)
+            if (r.realMetrics._tradesById && Object.keys(r.realMetrics._tradesById).length > 0) return true;
+            // Check for aggregated trades (virtual portfolios)
+            if (r.realMetrics.isAggregated && r.realMetrics.totalRealTrades > 0) return true;
+            // Check for _aggregatedTrades array (strategies)
+            if (r.realMetrics._aggregatedTrades && r.realMetrics._aggregatedTrades.length > 0) return true;
+            return false;
+        });
 
         if (allAnalyses.length === 0 && originalCount > 0) {
             console.warn('[UI] Reality Check: All items filtered out due to missing real metrics.');
@@ -1925,16 +2028,30 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
         // AUTO-ZOOM & ISOLATION: In Reality Check mode
         if (state.activeViewMode === 'reality-check') {
-            const hasRealData = result.realMetrics && result.realMetrics._tradesById;
+            // Check for real data from either direct linking (_tradesById) or aggregation (_aggregatedTrades)
+            const hasDirectTrades = result.realMetrics && result.realMetrics._tradesById;
+            const hasAggregatedTrades = result.realMetrics && result.realMetrics.isAggregated && result.realMetrics._aggregatedTrades;
+            const hasRealData = hasDirectTrades || hasAggregatedTrades;
             const showOverlay = result.showBacktestOverlay !== false; // Default TRUE by double-negation (undefined != false -> true)
 
-            console.log(`[ANTIGRAVITY] 🔍 Reality Check Logic for ${result.name}:`, { showOverlay, hasRealData, trades: result.realMetrics?._tradesById ? Object.keys(result.realMetrics._tradesById).length : 0 });
+            const tradeCount = hasDirectTrades
+                ? Object.keys(result.realMetrics._tradesById).length
+                : (hasAggregatedTrades ? result.realMetrics._aggregatedTrades.length : 0);
+
+            console.log(`[ANTIGRAVITY] 🔍 Reality Check Logic for ${result.name}:`, { showOverlay, hasRealData, hasDirectTrades, hasAggregatedTrades, trades: tradeCount });
 
             if (showOverlay && hasRealData) {
                 let minRealDate = Infinity;
-                if (result.realMetrics._tradesById) {
+
+                // Get min date from either source
+                if (hasDirectTrades) {
                     Object.values(result.realMetrics._tradesById).flat().forEach(t => {
                         const d = new Date(t.closeTime || t.closeDate).getTime();
+                        if (d < minRealDate) minRealDate = d;
+                    });
+                } else if (hasAggregatedTrades) {
+                    result.realMetrics._aggregatedTrades.forEach(t => {
+                        const d = t.exitTime ? t.exitTime.getTime() : new Date(t.closeTime || t.closeDate).getTime();
                         if (d < minRealDate) minRealDate = d;
                     });
                 }
@@ -1963,6 +2080,28 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                             return t >= minRealDate;
                         });
                         console.log(`[ANTIGRAVITY]    - Trimmed from ${originalLen} to ${finalData.length} points.`);
+                    } else if (hasAggregatedTrades && result.realMetrics._aggregatedTrades.length > 0) {
+                        // NO BACKTEST DATA: Generate equity curve from real trades
+                        console.log(`[ANTIGRAVITY] 📈 Generating equity curve from ${result.realMetrics._aggregatedTrades.length} real trades (no backtest available)`);
+
+                        // Sort trades by exit time
+                        const sortedTrades = [...result.realMetrics._aggregatedTrades].sort((a, b) => {
+                            const timeA = a.exitTime ? a.exitTime.getTime() : new Date(a.closeTime || a.closeDate).getTime();
+                            const timeB = b.exitTime ? b.exitTime.getTime() : new Date(b.closeTime || b.closeDate).getTime();
+                            return timeA - timeB;
+                        });
+
+                        // Build equity curve from trades
+                        let runningBalance = initialBalance;
+                        finalData = sortedTrades.map(trade => {
+                            const pnl = parseFloat(trade.pnl) || 0;
+                            runningBalance += pnl;
+                            const exitTime = trade.exitTime ? trade.exitTime : new Date(trade.closeTime || trade.closeDate);
+                            const dateStr = exitTime instanceof Date ? exitTime.toISOString().split('T')[0] : new Date(exitTime).toISOString().split('T')[0];
+                            return { x: dateStr, y: runningBalance };
+                        });
+
+                        console.log(`[ANTIGRAVITY]    - Generated ${finalData.length} points from real trades. Final Balance: ${runningBalance.toFixed(2)}`);
                     }
                 } else {
                     console.warn('[ANTIGRAVITY] minRealDate is Infinity despite hasRealData=true. Inspect _tradesById structure.');
@@ -2137,11 +2276,24 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                             if (result.realMetrics._tradesById[m]) {
                                 allRealTrades = allRealTrades.concat(result.realMetrics._tradesById[m]);
                             } else {
-                                console.warn(`[UI]   ⚠️ Magic '${m}' mapped but not found in _tradesById. Avail keys:`, Object.keys(result.realMetrics._tradesById));
+                                console.warn(`[UI]   ⚠️ Magic '${m}' mapped but not found in _tradesById.`);
                             }
                         });
                     } else {
-                        console.warn(`[UI]   ❌ No mapping found for strategy '${stratName}'`);
+                        // FALLBACK: Try Implicit Match via Strategy Name (supported by Virtual Portfolios)
+                        const cleanName = stratName.replace(/\.csv$/i, '').trim();
+                        if (result.realMetrics._tradesById[stratName]) {
+                            console.log(`[UI]   🎯 Implicit Name Match: '${stratName}'`);
+                            allRealTrades = allRealTrades.concat(result.realMetrics._tradesById[stratName]);
+                        } else if (result.realMetrics._tradesById[normalizedStratName]) {
+                            console.log(`[UI]   🎯 Implicit Norm Match: '${normalizedStratName}'`);
+                            allRealTrades = allRealTrades.concat(result.realMetrics._tradesById[normalizedStratName]);
+                        } else if (result.realMetrics._tradesById[cleanName]) {
+                            console.log(`[UI]   🎯 Implicit Clean Match: '${cleanName}'`);
+                            allRealTrades = allRealTrades.concat(result.realMetrics._tradesById[cleanName]);
+                        } else {
+                            console.warn(`[UI]   ❌ No mapping OR implicit match found for '${stratName}'`);
+                        }
                     }
                 });
             }
@@ -2266,7 +2418,247 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         if (hud) hud.style.display = 'none';
     }
 
-    // 2. Define Crosshair Plugin
+    // 2a. Define Hard Stop Plugin (Reality Check Mode Only)
+    // This is a DYNAMIC hard stop that trails the highwater mark of the equity curve
+    // The line shows: Current Highwater - Max DD from Backtest
+    // Example: If start=0, maxDD=20, highwater=10 → hard stop = 10-20 = -10
+    const hardStopPlugin = {
+        id: 'hardStopPlugin',
+        afterDatasetsDraw: (chart) => {
+            if (state.activeViewMode !== 'reality-check') return;
+
+            // Only run on Equity chart, not Drawdown chart
+            const canvasId = chart.canvas?.id || '';
+            if (canvasId.includes('Drawdown') || canvasId.includes('drawdown')) return;
+
+            const ctx = chart.ctx;
+            const yAxis = chart.scales.y;
+            const xAxis = chart.scales.x;
+            if (!yAxis || !xAxis) return;
+
+            // Get chart area boundaries
+            const { left, right, top, bottom } = chart.chartArea;
+
+            let labelYOffset = 0; // For staggering multiple labels
+
+            // 1. Group datasets by "Base Name" to handle priority
+            const strategyGroups = {};
+
+            chart.data.datasets.forEach(dataset => {
+                const label = dataset.label || '';
+                // Skip auxiliary datasets (if any known ones exist, e.g. "Drawdown")
+                if (label === 'Drawdown') return;
+
+                const isReal = label.includes('(Real)');
+                const baseName = label.replace(' (Real)', '').trim();
+
+                if (!strategyGroups[baseName]) {
+                    strategyGroups[baseName] = { real: null, main: null };
+                }
+
+                if (isReal) {
+                    strategyGroups[baseName].real = dataset;
+                } else {
+                    strategyGroups[baseName].main = dataset;
+                }
+            });
+
+            // 2. Iterate each strategy and draw the line for the best available dataset
+            Object.keys(strategyGroups).forEach(baseName => {
+                const group = strategyGroups[baseName];
+                // Priority: Real > Main
+                // In Reality Check mode, if we have a separate Real line, we track that.
+                // If we replaced the Main line with Real data (no separate Real line), we track Main.
+                // If we only have Backtest (Main) and no Real, we track Main (hypothetical).
+                const targetDataset = group.real || group.main;
+
+                if (!targetDataset) return;
+
+                const datasetName = baseName;
+                const data = targetDataset.data;
+
+                if (!data || data.length === 0) return;
+
+                // Find the maxDD for this strategy from multiple sources
+                let maxDD = 0;
+
+                // Source 1: From dataset.analysis (backtest metrics)
+                // Note: The 'real' dataset might NOT have the analysis attached directly if created ad-hoc.
+                // So check both targetDataset and group.main (which usually holds the metadata)
+                // Helper to extract DD with strict priority to Money values
+                const extractMaxDD = (obj) => {
+                    if (!obj) return 0;
+                    const m = obj.metrics || obj;
+                    // Strict Money Keys
+                    const moneyDD = m['maxDrawdown$'] ||
+                        m.maxDrawdownInMoney ||
+                        m['Max Drawdown $'] ||
+                        m.maxDrawdownInDollars;
+
+                    if (moneyDD) return parseFloat(moneyDD);
+
+                    // Ambiguous Keys (Check if they look like percentage vs money)
+                    // If equity is ~10000, and DD is 12 (0.12%), it's likely %. 
+                    // But we can't be sure without more context. Treat as fallback.
+                    return parseFloat(m.maxDrawdown || m.maxDD || 0);
+                };
+
+                // Source 1: From dataset.analysis (Real or Linked Backtest)
+                const sourceForAnalysis = group.main || targetDataset;
+                let maxDD1 = extractMaxDD(sourceForAnalysis.analysis);
+                if (sourceForAnalysis.realMetrics) {
+                    const realDD = extractMaxDD(sourceForAnalysis.realMetrics);
+                    maxDD1 = Math.max(maxDD1, realDD);
+                }
+
+                // Source 2: From Global Backtest Cache (window.analysisResults) - To start with Historical DD
+                let maxDD2 = 0;
+                if (window.analysisResults) {
+                    // Helper to check name match
+                    const isMatch = (name) => {
+                        if (!name) return false;
+                        const n = name.replace('.csv', '');
+                        const target = datasetName.replace('.csv', '');
+                        return n === target || n === datasetName;
+                    };
+
+                    const cached = window.analysisResults.find(a => isMatch(a.name));
+                    if (cached) maxDD2 = extractMaxDD(cached.analysis);
+                }
+
+                // Use the LARGEST Drawdown found (Historical vs Real vs Current)
+                // This ensures we use the 'Worst Case' for the hard stop.
+                maxDD = Math.max(maxDD1, maxDD2);
+
+                if (state.activeViewMode === 'reality-check') {
+                    console.log(`[HardStopPlugin] 🔍 MaxDD lookup for ${datasetName}:`, {
+                        fromDataset: maxDD1,
+                        fromCache: maxDD2,
+                        final: maxDD
+                    });
+                }
+
+                if (state.activeViewMode === 'reality-check') {
+                    console.log(`[HardStopPlugin] ✅ Final MaxDD used for ${datasetName}: ${maxDD}`);
+                }
+
+                if (!maxDD || maxDD <= 0) return;
+
+                // Get the FIRST point (starting point)
+                let firstY = 0;
+                if (data.length > 0) {
+                    const p0 = data[0];
+                    firstY = typeof p0 === 'number' ? p0 : (p0 && typeof p0.y !== 'undefined' ? p0.y : 0);
+                }
+
+                // Prepare for loop to get X coordinates use scales
+                const metaIndex = chart.data.datasets.indexOf(targetDataset);
+                const meta = chart.getDatasetMeta(metaIndex);
+                if (!meta || !meta.data || meta.data.length === 0) return;
+
+                // Current equity for color calculation
+                const lastIdx = data.length - 1;
+                const lastPt = data[lastIdx];
+                const currentY = typeof lastPt === 'number' ? lastPt : (lastPt && typeof lastPt.y !== 'undefined' ? lastPt.y : 0);
+
+                // 1. Calculate FINAL Highwater/Stop for the Label and Color
+                let finalHighwater = -Infinity;
+                data.forEach(p => {
+                    const v = typeof p === 'number' ? p : p.y;
+                    const prof = v - firstY; // Calculate relative to start
+                    if (prof > finalHighwater) finalHighwater = prof;
+                });
+                if (finalHighwater === -Infinity) finalHighwater = 0;
+
+                const finalStopLevel = firstY + (finalHighwater - maxDD);
+                const distanceToStop = currentY - finalStopLevel;
+                const percentToStop = maxDD > 0 ? (distanceToStop / maxDD) * 100 : 100;
+
+                // Chart Boundaries - DEFINED EARLY FOR LOGGING
+                const yMin = yAxis.min;
+                const yMax = yAxis.max;
+                const chartAreaBottom = chart.chartArea.bottom;
+                const chartAreaTop = chart.chartArea.top;
+
+                /* 
+                 * NOTE: If MaxDD > Current Profit, the Stop Level will be negative 
+                 * and potentially off-screen (below yMin). This is mathematically correct behavior.
+                 */
+
+
+                // Use dataset color for the line base
+                const baseColor = targetDataset.borderColor || '#ef4444';
+
+                // 2. Draw the DYNAMIC hard stop line
+                ctx.save();
+                ctx.beginPath();
+
+                // Color based on CURRENT danger level
+                ctx.strokeStyle = percentToStop < 50 ? '#ef4444' : (percentToStop < 100 ? '#f59e0b' : baseColor);
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([6, 3]);
+
+                let runningHighwater = -Infinity;
+                let started = false;
+
+                // Loop through points
+                for (let i = 0; i < data.length; i++) {
+                    const point = data[i];
+                    const val = typeof point === 'number' ? point : point.y;
+                    const profit = val - firstY;
+
+                    if (profit > runningHighwater) runningHighwater = profit;
+                    if (runningHighwater === -Infinity) runningHighwater = 0;
+
+                    const currentStopLevel = firstY + (runningHighwater - maxDD);
+
+                    // Pixel Coordinates
+                    const x = meta.data[i]?.x;
+                    if (x === undefined) continue;
+
+                    // Standard projection - NO CLAMPING (allows line to be off-screen if safe)
+                    let yPixel = yAxis.getPixelForValue(currentStopLevel);
+
+                    if (!started) {
+                        ctx.moveTo(x, yPixel);
+                        started = true;
+                    } else {
+                        ctx.lineTo(x, yPixel);
+                    }
+                }
+
+                ctx.stroke();
+
+                // 3. Draw label at the END
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.font = 'bold 9px Inter, sans-serif';
+                ctx.textAlign = 'right';
+                // Position label at the final point's Y
+                let finalYPixel;
+                if (finalStopLevel < yMin) finalYPixel = chartAreaBottom - 2;
+                else if (finalStopLevel > yMax) finalYPixel = chartAreaTop;
+                else finalYPixel = yAxis.getPixelForValue(finalStopLevel);
+
+                ctx.textBaseline = 'bottom';
+
+                const textY = (finalStopLevel < yMin) ? finalYPixel - 2 : finalYPixel - 2;
+
+                const shortName = datasetName.length > 15 ? datasetName.substring(0, 12) + '...' : datasetName;
+                const statusIcon = percentToStop < 50 ? '🚨' : (percentToStop < 100 ? '⚠️' : '🛡️');
+                const relativeStop = finalStopLevel - firstY;
+                const label = `${statusIcon} ${shortName}: ${relativeStop >= 0 ? '+' : ''}$${relativeStop.toFixed(0)}`;
+
+                ctx.fillText(label, right - 5, textY - labelYOffset);
+
+                labelYOffset += 12; // Stagger next label
+
+                ctx.restore();
+            });
+
+        }
+    };
+
+    // 2b. Define Crosshair Plugin
     const crosshairPlugin = {
         id: 'crosshairPlugin',
         defaults: {
@@ -2641,11 +3033,63 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         }
     }
 
+    // 3b. Calculate Global Min Y for Hard Stop Visibility
+    let globalMinY = undefined;
+    if (state.activeViewMode === 'reality-check') {
+        let lowestStop = Infinity;
+
+        // Helper to extract DD (replicated from HardStopPlugin)
+        const extractMaxDDForGlobalMin = (obj) => {
+            if (!obj) return 0;
+            const m = obj.metrics || obj;
+            const moneyDD = m['maxDrawdown$'] || m.maxDrawdownInMoney || m['Max Drawdown $'] || m.maxDrawdownInDollars;
+            if (moneyDD) return parseFloat(moneyDD);
+            return parseFloat(m.maxDrawdown || m.maxDD || 0);
+        };
+
+        datasets.forEach(ds => {
+            // Priority: Check dataset's own analysis => Check Global Cache
+            let maxDD = 0;
+
+            // 1. Try local analysis
+            if (ds.analysis) {
+                maxDD = extractMaxDDForGlobalMin(ds.analysis);
+            }
+
+            // 2. Try Global Cache if local failed or looks suspicious (e.g. 0)
+            if ((!maxDD || maxDD === 0) && window.analysisResults) {
+                const normalize = n => n ? n.replace('.csv', '').trim() : '';
+                const targetName = normalize(ds.label).replace(' (Real)', ''); // Strip (Real) suffix
+
+                const cached = window.analysisResults.find(a => normalize(a.name) === targetName);
+                if (cached) {
+                    const cachedDD = extractMaxDDForGlobalMin(cached.analysis);
+                    if (cachedDD > maxDD) maxDD = cachedDD;
+                }
+            }
+
+            // If we have a maxDD, find the starting Point Y
+            if (maxDD > 0 && ds.data.length > 0) {
+                const p0 = ds.data[0];
+                const firstY = typeof p0 === 'number' ? p0 : (p0 && typeof p0.y !== 'undefined' ? p0.y : 0);
+                const stopLevel = firstY - maxDD;
+                if (stopLevel < lowestStop) {
+                    lowestStop = stopLevel;
+                }
+            }
+        });
+
+        if (lowestStop !== Infinity) {
+            // Add a 5% buffer below the stop for aesthetics
+            globalMinY = lowestStop - (Math.abs(lowestStop) * 0.05);
+        }
+    }
+
     // 4. Create Equity Chart
     state.chartInstances[canvasId] = new Chart(ctx, {
         type: 'line',
         data: { datasets },
-        plugins: [crosshairPlugin],
+        plugins: [crosshairPlugin, hardStopPlugin],
         options: {
             ...CHART_OPTIONS,
             maintainAspectRatio: false,
@@ -2666,6 +3110,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     ticks: { color: '#9ca3af', font: { size: 10 } }
                 },
                 y: {
+                    suggestedMin: globalMinY, // Force visibility of Hard Stop
                     grid: { color: 'rgba(75, 85, 99, 0.2)' },
                     ticks: { color: '#9ca3af', font: { size: 10 } }
                 }
@@ -2874,7 +3319,7 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
     const normalize = s => s.replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
     let allRealTrades = [];
 
-    // 1. Resolve Strategy ID/Name
+    // 1. Resolve Strategy ID/Name first to ensure we look up the right thing
     let rawName;
     let file = state.loadedStrategyFiles[index];
 
@@ -2892,11 +3337,32 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
 
     // Priority 2: Fallback to global lists
     if (!rawName) {
-        const strategyOrPortfolio = window.analysisResults[index];
-        if (strategyOrPortfolio && strategyOrPortfolio.name) {
-            rawName = strategyOrPortfolio.name;
-        } else if (file) {
+        if (file) {
             rawName = file.name;
+        } else if (window.analysisResults && window.analysisResults[index] && window.analysisResults[index].name) {
+            rawName = window.analysisResults[index].name;
+        }
+    }
+
+    // 0. SHORT-CIRCUIT: Search `window.analysisResults` for this Name (Robust Cache Lookup)
+    if (window.analysisResults && rawName) {
+        console.log(`[Trade Lookup] 🔍 Searching Cache for '${rawName}'...`);
+        const cachedStrat = window.analysisResults.find(s => {
+            const match = normalize(s.name) === normalize(rawName);
+            // console.log(`   - comparing with '${s.name}' -> ${match}`); // Uncomment for extreme verbosity
+            return match;
+        });
+
+        if (cachedStrat) {
+            console.log(`[Trade Lookup] ✅ Found Cached Strategy: '${cachedStrat.name}'. Has realMetrics?`, !!cachedStrat.realMetrics, 'Trades?', cachedStrat.realMetrics?.trades?.length);
+            if (cachedStrat.realMetrics && cachedStrat.realMetrics.trades && cachedStrat.realMetrics.trades.length > 0) {
+                console.log(`[Trade Lookup] ⚡ FAST PATH: Found ${cachedStrat.realMetrics.trades.length} cached trades for '${rawName}' (Matched: '${cachedStrat.name}')`);
+                return cachedStrat.realMetrics.trades;
+            } else {
+                console.warn(`[Trade Lookup] ⚠️ Cached Strategy '${cachedStrat.name}' found but HAS NO TRADES. keys:`, Object.keys(cachedStrat.realMetrics || {}));
+            }
+        } else {
+            console.warn(`[Trade Lookup] ❌ Strategy '${rawName}' NOT FOUND in window.analysisResults (Size: ${window.analysisResults.length})`);
         }
     }
 
@@ -2932,44 +3398,172 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
     console.log(`[Mapping Debug] Lookups -> ByID: ${mapById}, ByName: ${mapByName}, ByClean: ${mapByCleanName}, ByNorm: ${mapByNormName}`);
 
     // 3. Priority (Strict Short-Circuit)
+    // PRIORITY ORDER: Name > Clean Name > ID
+    // Names are more stable than auto-generated IDs which can change between sessions
     let magicRaw = null;
 
-    // STRICT CHECK: If we have a direct mapping for the Strategy ID or Exact Name, USE IT.
-    // User requested NO FALLBACKS: If there is no user association, we return NO DATA.
-    if (Array.isArray(mapById) && mapById.length > 0) {
-        magicRaw = mapById;
-        console.log(`[Mapping Debug] 🎯 Strict Match used: ID (${sId})`);
-    } else if (Array.isArray(mapByName) && mapByName.length > 0) {
+    if (Array.isArray(mapByName) && mapByName.length > 0) {
         magicRaw = mapByName;
         console.log(`[Mapping Debug] 🎯 Strict Match used: Name (${rawName})`);
+    } else if (Array.isArray(mapByCleanName) && mapByCleanName.length > 0) {
+        magicRaw = mapByCleanName;
+        console.log(`[Mapping Debug] 🎯 Strict Match used: CleanName (${cleanName})`);
+    } else if (Array.isArray(mapById) && mapById.length > 0) {
+        magicRaw = mapById;
+        console.log(`[Mapping Debug] 🎯 Strict Match used: ID (${sId})`);
     } else {
         console.log(`[Mapping Debug] ❌ No Strict Mapping found for '${rawName}'. Returning no data.`);
         magicRaw = null;
     }
 
-    if (magicRaw) {
-        const magics = Array.isArray(magicRaw) ? magicRaw : (typeof magicRaw === 'string' ? magicRaw.split(',') : [String(magicRaw)]);
+    // 3. Robust Trade Retrieval (Handling .csv mismatches and multiple keys)
+    // Supports: Name, CleanName, ID, and Normalized variations
+    const potentialInternalKeys = [
+        rawName,
+        cleanName,
+        sId,
+        normalizedName
+    ];
 
-        // Define scope: Specific portfolio or All saved portfolios check
-        const targets = portfolio ? [portfolio] : state.savedPortfolios;
+    // Remove duplicates
+    const uniqueKeys = [...new Set(potentialInternalKeys)];
+
+    // Target Sources
+    const targets = portfolio ? [portfolio] : state.savedPortfolios;
+
+    // Helper to extract trades from a portfolio
+    const extract = (p, lookupKey) => {
+        if (p.realMetrics && p.realMetrics._tradesById) {
+            // 1. Exact Match
+            if (p.realMetrics._tradesById[lookupKey]) return p.realMetrics._tradesById[lookupKey];
+
+            // 2. Try adding/removing .csv
+            if (lookupKey.endsWith('.csv') && p.realMetrics._tradesById[lookupKey.replace('.csv', '')]) return p.realMetrics._tradesById[lookupKey.replace('.csv', '')];
+            if (!lookupKey.endsWith('.csv') && p.realMetrics._tradesById[lookupKey + '.csv']) return p.realMetrics._tradesById[lookupKey + '.csv'];
+
+            // 3. Try matching normalized keys in the source
+            const sourceKeys = Object.keys(p.realMetrics._tradesById);
+            const normLookup = normalize(lookupKey);
+            const match = sourceKeys.find(k => normalize(k) === normLookup);
+            if (match) return p.realMetrics._tradesById[match];
+        } else {
+            console.warn(`[Trade Lookup] ⚠️ Portfolio '${p.name}' ignored: realMetrics._tradesById missing. (realMetrics: ${!!p.realMetrics})`);
+        }
+        return [];
+    };
+
+
+    if (magicRaw) {
+        // CASE A: We have EXPLICIT MAPPINGS (Magic Numbers or mapped Keys) from magicNumberMap
+        const magics = Array.isArray(magicRaw) ? magicRaw : (typeof magicRaw === 'string' ? magicRaw.split(',') : [String(magicRaw)]);
 
         targets.forEach(p => {
             if (p.realMetrics && p.realMetrics._tradesById) {
-                // console.log(`[Trade Lookup] Checking Portfolio: ${p.name}. Keys: ${Object.keys(p.realMetrics._tradesById).join(', ')}`);
                 magics.forEach(m => {
                     const key = m.trim();
-                    const found = p.realMetrics._tradesById[key];
+                    // Try direct key (Magic/Account::Magic)
+                    let found = p.realMetrics._tradesById[key];
+
+                    // Try loose key (just Magic if Account::Magic missing)
+                    if (!found && key.includes('::')) {
+                        const simpleMagic = key.split('::')[1];
+                        found = p.realMetrics._tradesById[simpleMagic];
+                    }
+
                     if (found) {
-                        // console.log(`[Trade Lookup] Found ${found.length} trades for key '${key}' in '${p.name}'`);
                         allRealTrades = allRealTrades.concat(found);
-                    } else {
-                        // console.log(`[Trade Lookup] Key '${key}' NOT found in '${p.name}'`);
                     }
                 });
-            } else {
-                // console.log(`[Trade Lookup] Portfolio '${p.name}' has no realMetrics or _tradesById`);
             }
         });
+    } else {
+        // CASE B: NO EXPLICIT MAPPING - Try Implicit Name/ID Matching
+
+        // --- NEW FALLBACK: If no portfolio context, search ALL saved portfolios ---
+        if (targets.length === 0 && state.savedPortfolios && state.savedPortfolios.length > 0) {
+            console.log('[Trade Lookup] No portfolio context. Searching ALL saved portfolios for implicit match.');
+            state.savedPortfolios.forEach(p => {
+                if (p.realMetrics) targets.push(p);
+            });
+        }
+
+        console.log(`[Trade Lookup] No explicit map. Trying Implicit Match. Targets: ${targets.length}`);
+        // console.log('   Keys:', uniqueKeys);
+
+        targets.forEach(p => {
+            console.log(`   > Checking Portfolio '${p.name}'...`);
+            uniqueKeys.forEach(k => {
+                const found = extract(p, k);
+                if (found.length > 0) {
+                    console.log(`[Trade Lookup] 🎯 Implicit Match found via key '${k}': ${found.length} trades.`);
+                    allRealTrades = allRealTrades.concat(found);
+                }
+            });
+        });
+    }
+
+    // Deduplicate Trades (by ticket or unique props) to avoid double counting from multiple hits
+    if (allRealTrades.length > 0) {
+        const seenTickets = new Set();
+        allRealTrades = allRealTrades.filter(t => {
+            const id = t.ticket || t.id || (t.openTime + t.symbol + t.type);
+            if (seenTickets.has(id)) return false;
+            seenTickets.add(id);
+            return true;
+        });
+    }
+
+    // FALLBACK: Search in deepScanData (Global Cache) if still empty
+    if (allRealTrades.length === 0 && state.deepScanData) {
+
+        // FALLBACK: Search in deepScanData (Multi-Account persistence)
+        // Supports both legacy format (just magicNumber) and new format (accountId::magicNumber)
+        if (allRealTrades.length === 0 && state.deepScanData) {
+            console.log(`[Trade Lookup] No trades in portfolios, searching deepScanData...`);
+
+            // Determine keys to search: Use 'magics' from Case A if available, else 'uniqueKeys' from Case B
+            const searchKeys = (typeof magics !== 'undefined' && magics) ? magics : uniqueKeys;
+
+            searchKeys.forEach(m => {
+                const key = m.trim();
+
+                // Check if this is a uniqueId format (accountId::magicNumber)
+                if (key.includes('::')) {
+                    const [targetAccountId, magicNumber] = key.split('::');
+                    // Only search in the specific account
+                    const accountData = state.deepScanData[targetAccountId];
+                    if (accountData && accountData.tradesById && accountData.tradesById[magicNumber]) {
+                        const found = accountData.tradesById[magicNumber];
+                        console.log(`[Trade Lookup] Found ${found.length} trades for magic '${magicNumber}' in account ${targetAccountId}`);
+                        allRealTrades = allRealTrades.concat(found);
+                    }
+                } else {
+                    // Legacy format: search in all accounts (backwards compatibility)
+                    Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
+                        const tradesMap = accountData.tradesById || accountData._tradesById;
+                        if (tradesMap) {
+                            // Search strict
+                            if (tradesMap[key]) {
+                                allRealTrades = allRealTrades.concat(tradesMap[key]);
+                            }
+                            // Search fuzzy (Case B usually sends names/cleanNames)
+                            else if (!key.includes('::')) { // Only fuzzy match if not an ID-like key
+                                // 1. Try Clean (.csv removal)
+                                const clean = key.replace(/\.csv$/i, '').trim();
+                                if (tradesMap[clean]) allRealTrades = allRealTrades.concat(tradesMap[clean]);
+
+                                // 2. Try adding .csv
+                                if (tradesMap[clean + '.csv']) allRealTrades = allRealTrades.concat(tradesMap[clean + '.csv']);
+                            }
+                        }
+                    });
+                }
+            });
+
+            if (allRealTrades.length > 0) {
+                console.log(`[Trade Lookup] 🎯 DeepScan Implicit Match found: ${allRealTrades.length} trades.`);
+            }
+        }
     }
 
     return allRealTrades;
@@ -3131,6 +3725,19 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
                                 allRealTrades = allRealTrades.concat(strategyOrPortfolio.realMetrics._tradesById[m]);
                             }
                         });
+                    } else {
+                        // FALLBACK: Implicit Name Lookup for Virtual Portfolios
+                        const cleanName = stratName.replace(/\.csv$/i, '').trim();
+                        if (strategyOrPortfolio.realMetrics && strategyOrPortfolio.realMetrics._tradesById) {
+                            const tradesById = strategyOrPortfolio.realMetrics._tradesById;
+                            if (tradesById[stratName]) {
+                                allRealTrades = allRealTrades.concat(tradesById[stratName]);
+                            } else if (tradesById[normalizedStratName]) {
+                                allRealTrades = allRealTrades.concat(tradesById[normalizedStratName]);
+                            } else if (tradesById[cleanName]) {
+                                allRealTrades = allRealTrades.concat(tradesById[cleanName]);
+                            }
+                        }
                     }
                 });
             }

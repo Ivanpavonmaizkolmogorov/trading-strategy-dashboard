@@ -100,8 +100,35 @@ export function openMagicMapper(portfolio = null) {
             }
         });
 
-        // 2. Sandbox Data (from Bridge)
-        if (state.sandboxData && state.sandboxData.processedStats) {
+        // 2. Deep Scan Data (All Accounts)
+        // Iterate over ALL accounts in deepScanData (multi-account persistence)
+        // IMPORTANT: Keep trades from different accounts SEPARATE even if same magic number
+        if (state.deepScanData && Object.keys(state.deepScanData).length > 0) {
+            Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
+                if (!accountData.processedStats) return;
+
+                const sourceName = accountData.sourceName || `Account ${accountId}`;
+                const accountLabel = accountData.accountInfo?.name || accountId;
+                availableSources.add(sourceName);
+
+                Object.values(accountData.processedStats).forEach(stat => {
+                    const baseId = String(stat.id);
+                    // Create a UNIQUE ID per account to prevent mixing trades
+                    const uniqueId = `${accountId}::${baseId}`;
+
+                    allStats[uniqueId] = {
+                        ...stat,
+                        id: baseId,  // Keep original ID for display
+                        uniqueId: uniqueId,  // Used internally for mapping
+                        accountId: accountId,
+                        accountName: accountLabel,
+                        sources: new Set([sourceName])
+                    };
+                });
+            });
+        }
+        // Fallback: also check sandboxData for backwards compatibility
+        else if (state.sandboxData && state.sandboxData.processedStats) {
             const sandboxName = state.sandboxData.sourceName || 'Sandbox';
             availableSources.add(sandboxName);
 
@@ -180,13 +207,36 @@ function getStrategies() {
         // Global Mode: Aggregate ALL unique strategies known to the system
         const candidates = [];
 
+        // 0. Analysis Results (Clean Slate / Lab Mode)
+        if (window.analysisResults && Array.isArray(window.analysisResults)) {
+            // console.log(`[MagicMapper] Found ${window.analysisResults.length} items in window.analysisResults`);
+            window.analysisResults.forEach((s, idx) => {
+                // S might be the strategy object itself
+                if (s && typeof s === 'object') {
+                    const stratName = s.name || s.strategyId || `Strategy ${idx + 1}`;
+                    candidates.push({ strat: { ...s, name: stratName }, source: 'Analysis Results' });
+                }
+            });
+        }
+
+
         // 1. Loaded Files
         if (state.loadedStrategyFiles) {
-            state.loadedStrategyFiles.forEach(s => candidates.push({ strat: s, source: 'Uploaded Files' }));
+            state.loadedStrategyFiles.forEach(s => {
+                // Ensure 'name' is present (File objects have .name, placeholders may not)
+                const stratWithName = { ...s, name: s.name || s.fileName || 'Unknown' };
+                candidates.push({ strat: stratWithName, source: 'Uploaded Files' });
+            });
         }
-        // 2. Raw Data
+        // 2. Raw Data - Only include valid strategy objects (not arrays of trades)
         if (state.rawStrategiesData) {
-            state.rawStrategiesData.forEach(s => candidates.push({ strat: s, source: 'Raw Data' }));
+            state.rawStrategiesData.forEach(s => {
+                // rawStrategiesData can contain arrays of trades OR strategy objects
+                // Only add if it's an object with a 'name' property (not an array)
+                if (s && typeof s === 'object' && !Array.isArray(s) && s.name) {
+                    candidates.push({ strat: s, source: 'Raw Data' });
+                }
+            });
         }
 
         // 3. Databank
@@ -216,6 +266,14 @@ function getStrategies() {
         const seen = new Map();
         candidates.forEach(item => {
             const s = item.strat;
+            // DEBUG: Log candidates with undefined/null name
+            if (!s || !s.name) {
+                console.warn('[MagicMapper] ⚠️ Candidate with undefined/null strat or name:', {
+                    source: item.source,
+                    strat: s,
+                    stratKeys: s ? Object.keys(s) : 'N/A'
+                });
+            }
             if (s && s.name) {
                 if (!seen.has(s.name)) {
                     // Create a shallow copy to attach metadata without mutating original
@@ -230,6 +288,7 @@ function getStrategies() {
         });
 
         list = Array.from(seen.values());
+        console.log(`[MagicMapper] Global getStrategies: ${candidates.length} candidates -> ${list.length} unique strategies`);
 
     } else {
         // Portfolio Mode: Only strategies in this portfolio
@@ -237,13 +296,20 @@ function getStrategies() {
         // For consistency, we attach a source here too
         const sourceName = `Current: ${currentPortfolio.name || 'Portfolio'}`;
 
+        console.log('[MagicMapper] Portfolio Mode. Indices:', currentPortfolio.indices);
+        console.log('[MagicMapper] loadedStrategyFiles count:', state.loadedStrategyFiles?.length);
+
         list = currentPortfolio.indices.map(idx => {
             const s = state.loadedStrategyFiles[idx];
+            if (!s) {
+                console.warn(`[MagicMapper] ⚠️ Index ${idx} not found in loadedStrategyFiles`);
+            }
             return s ? { ...s, _sources: [sourceName] } : null;
         }).filter(Boolean);
 
         // Fallback: If indices fail (reloaded state?), try matching names if available in portfolio
         if (list.length === 0 && currentPortfolio.strategyNames) {
+            console.log('[MagicMapper] Using strategyNames fallback:', currentPortfolio.strategyNames);
             list = currentPortfolio.strategyNames.map(name => ({ name, _sources: [sourceName] }));
         }
     }
@@ -251,8 +317,15 @@ function getStrategies() {
     // Filter by Search Term
     if (strategySearchTerm) {
         const term = strategySearchTerm.toLowerCase();
-        list = list.filter(s => s.name.toLowerCase().includes(term));
+        list = list.filter(s => s.name && s.name.toLowerCase().includes(term));
     }
+
+    // Final check for undefined names
+    const withoutName = list.filter(s => !s.name);
+    if (withoutName.length > 0) {
+        console.error('[MagicMapper] ❌ Found strategies WITHOUT name after processing:', withoutName);
+    }
+
     return list;
 }
 
@@ -605,6 +678,17 @@ function renderStrategiesList() {
     if (countSpan) countSpan.textContent = filteredStrategies.length;
 
     filteredStrategies.forEach(strategy => {
+        // DEBUG: Log strategies with undefined/null name
+        if (!strategy.name) {
+            console.warn('[MagicMapper] ⚠️ Strategy with undefined name:', {
+                strategy,
+                sources: strategy._sources,
+                strategyId: strategy.strategyId,
+                symbol: strategy.symbol,
+                keys: Object.keys(strategy)
+            });
+        }
+
         const strategyId = strategy.strategyId || strategy.name;
         const mappedIds = tempMapping[strategyId] || [];
         const isSelected = strategyId === selectedStrategyId;
@@ -612,8 +696,38 @@ function renderStrategiesList() {
         const div = document.createElement('div');
         div.className = `p-3 rounded-lg cursor-pointer transition-colors flex flex-col gap-1 border border-transparent ${isSelected ? 'bg-purple-900/50 border-purple-500 shadow-md ring-1 ring-purple-500/20' : 'hover:bg-gray-700/50 text-gray-400 border-gray-800'}`;
 
+        // Safe name display - ALWAYS prefer descriptive name over STRAT_ IDs
+        let displayName = strategy.name;
+
+        // If name looks like an internal ID (STRAT_XXX), try to find the real name
+        if (!displayName || displayName.startsWith('STRAT_')) {
+            // 1. Search in loadedStrategyFiles by strategyId
+            const foundStrat = state.loadedStrategyFiles?.find(s => s.strategyId === (strategy.strategyId || strategy.name));
+            if (foundStrat && foundStrat.name && !foundStrat.name.startsWith('STRAT_')) {
+                displayName = foundStrat.name;
+            }
+
+            // 2. Search in savedPortfolios' strategyNames
+            if (!displayName || displayName.startsWith('STRAT_')) {
+                for (const p of (state.savedPortfolios || [])) {
+                    if (p.strategyIds && p.strategyNames) {
+                        const idx = p.strategyIds.indexOf(strategy.strategyId || strategy.name);
+                        if (idx !== -1 && p.strategyNames[idx]) {
+                            displayName = p.strategyNames[idx];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 3. Fallback to cleaned up name or ID
+            if (!displayName || displayName.startsWith('STRAT_')) {
+                displayName = strategy.name || strategy.strategyId || '[No Name]';
+            }
+        }
+
         div.innerHTML = `
-            <div class="font-medium text-sm leading-tight break-words ${isSelected ? 'text-white' : ''}">${strategy.name}</div>
+            <div class="font-medium text-sm leading-tight break-words ${isSelected ? 'text-white' : ''}">${displayName}</div>
             <div class="flex justify-between items-center mt-1">
                 <span class="text-xs opacity-70">${strategy.symbol || 'Unknown'}</span>
                 ${mappedIds.length > 0 ? `<span class="text-[10px] bg-purple-500 text-white px-2 py-0.5 rounded-full font-bold shadow-sm">${mappedIds.length}</span>` : ''}
@@ -672,8 +786,9 @@ function renderIdsList() {
     // BUT we need to indicate ownership.
 
     allIds.forEach(stat => {
-        const idStr = String(stat.id);
-        const isChecked = currentMapped.includes(idStr);
+        const idStr = String(stat.id);  // Display ID (magic number)
+        const uniqueIdStr = stat.uniqueId || idStr;  // Unique ID for mapping (includes accountId)
+        const isChecked = currentMapped.includes(uniqueIdStr);
         const similarity = calculateMatchScore(stratName, idStr);
         const isRecommended = similarity > 0.8;
 
@@ -681,11 +796,44 @@ function renderIdsList() {
         let ownerId = null;
         let ownerName = null;
         if (!isChecked) {
-            ownerId = Object.keys(tempMapping).find(sId => tempMapping[sId] && tempMapping[sId].includes(idStr));
+            ownerId = Object.keys(tempMapping).find(sId => tempMapping[sId] && tempMapping[sId].includes(uniqueIdStr));
             if (ownerId && ownerId !== selectedStrategyId) {
-                // Find name
-                const ownerStrat = state.loadedStrategyFiles.find(s => (s.strategyId || s.name) === ownerId);
-                ownerName = ownerStrat ? ownerStrat.name : ownerId;
+                // Find descriptive name - search in multiple places
+                // 1. loadedStrategyFiles by strategyId
+                let ownerStrat = state.loadedStrategyFiles.find(s => (s.strategyId || s.name) === ownerId);
+
+                // 2. If not found, search by name (ownerId might be the name itself)
+                if (!ownerStrat) {
+                    ownerStrat = state.loadedStrategyFiles.find(s => s.name === ownerId);
+                }
+
+                // 3. Search in saved portfolios' strategies
+                if (!ownerStrat && state.savedPortfolios) {
+                    for (const p of state.savedPortfolios) {
+                        if (p.strategyNames && p.strategyNames.includes(ownerId)) {
+                            ownerName = ownerId; // It's already the name
+                            break;
+                        }
+                        // Also check strategyIds to find matching name
+                        const idx = p.strategyIds?.indexOf(ownerId);
+                        if (idx !== -1 && p.strategyNames?.[idx]) {
+                            ownerName = p.strategyNames[idx];
+                            break;
+                        }
+                    }
+                }
+
+                // Use found name, or show the ID key directly
+                if (!ownerName) {
+                    if (ownerStrat) {
+                        ownerName = ownerStrat.name;
+                    } else if (ownerId.startsWith('STRAT_')) {
+                        // Strategy NOT found in loaded sessions but link exists in Cache -> Orphaned
+                        ownerName = `Orphaned Link (${ownerId})`;
+                    } else {
+                        ownerName = ownerId;
+                    }
+                }
             }
         }
 
@@ -697,14 +845,20 @@ function renderIdsList() {
             ${isRecommended && !isChecked ? 'ring-1 ring-green-500/40 bg-green-900/5' : ''}
         `;
 
+        // Show account badge if from deepScanData (has accountName)
+        const accountBadge = stat.accountName
+            ? `<span class="text-[9px] bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded border border-blue-800 ml-1" title="Account: ${stat.accountName}">${stat.accountName}</span>`
+            : '';
+
         label.innerHTML = `
             <input type="checkbox" class="form-checkbox h-4 w-4 text-purple-500 rounded border-gray-600 bg-gray-800 focus:ring-purple-500 focus:ring-offset-gray-900 transition-colors z-10" ${isChecked ? 'checked' : ''}>
             
             <div class="flex-1 min-w-0 flex flex-col gap-0.5 z-0">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-mono text-xs font-bold ${isChecked ? 'text-purple-200' : 'text-gray-300'} truncate" title="${stat.exampleRaw || stat.id}">
                         ${stat.id}
                     </span>
+                    ${accountBadge}
                     ${isRecommended ? '<span class="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-800 animate-pulse">MATCH</span>' : ''}
                 </div>
                 
@@ -723,7 +877,7 @@ function renderIdsList() {
                 <!-- Inspect Button -->
                 <button class="p-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white rounded transition-colors shadow-sm border border-gray-600 z-20"
                     title="Inspect Trades"
-                    onclick="event.preventDefault(); window.MagicMapper_inspectTrades('${stat.id}')">
+                    onclick="event.preventDefault(); window.MagicMapper_inspectTrades('${stat.uniqueId || stat.id}')">
                     🔍
                 </button>
             </div>
@@ -732,20 +886,20 @@ function renderIdsList() {
         const checkbox = label.querySelector('input');
         checkbox.onchange = (e) => {
             if (e.target.checked) {
-                // Steal logic: Remove from anyone else
+                // Steal logic: Remove from anyone else (using uniqueIdStr)
                 Object.keys(tempMapping).forEach(sId => {
                     if (sId !== selectedStrategyId && tempMapping[sId]) {
-                        tempMapping[sId] = tempMapping[sId].filter(x => x !== idStr);
+                        tempMapping[sId] = tempMapping[sId].filter(x => x !== uniqueIdStr);
                     }
                 });
 
-                // Add to Current
+                // Add to Current (store uniqueIdStr which includes accountId)
                 if (!tempMapping[selectedStrategyId]) tempMapping[selectedStrategyId] = [];
-                tempMapping[selectedStrategyId].push(idStr);
+                tempMapping[selectedStrategyId].push(uniqueIdStr);
             } else {
                 // Remove
                 if (tempMapping[selectedStrategyId]) {
-                    tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(x => x !== idStr);
+                    tempMapping[selectedStrategyId] = tempMapping[selectedStrategyId].filter(x => x !== uniqueIdStr);
                 }
             }
             // Re-render to update UI (steal status, counts)
@@ -761,26 +915,60 @@ function renderIdsList() {
 window.MagicMapper_inspectTrades = (magicId) => {
     console.log(`[MagicMapper] Inspecting trades for ID: ${magicId}`);
 
+    // Parse uniqueId format (accountId::magicNumber) vs legacy (just magicNumber)
+    let targetAccountId = null;
+    let actualMagicId = magicId;
+
+    if (magicId.includes('::')) {
+        [targetAccountId, actualMagicId] = magicId.split('::');
+        console.log(`[MagicMapper] Parsed uniqueId: account=${targetAccountId}, magic=${actualMagicId}`);
+    }
+
     // Aggregate trades
     let allTrades = [];
 
-    state.linkedAccounts.forEach(acc => {
-        if (acc.metrics && acc.metrics._tradesById && acc.metrics._tradesById[magicId]) {
-            const accountTrades = acc.metrics._tradesById[magicId].map(t => ({
+    // If targeting specific account, only search there
+    if (targetAccountId && state.deepScanData && state.deepScanData[targetAccountId]) {
+        const accountData = state.deepScanData[targetAccountId];
+        if (accountData.tradesById && accountData.tradesById[actualMagicId]) {
+            const accTrades = accountData.tradesById[actualMagicId].map(t => ({
                 ...t,
-                _accountName: acc.name
+                _accountName: t._sourceAccount?.name || accountData.sourceName || `Account ${targetAccountId}`
             }));
-            allTrades = allTrades.concat(accountTrades);
+            allTrades = allTrades.concat(accTrades);
         }
-    });
+    } else {
+        // Legacy mode: search everywhere
+        state.linkedAccounts.forEach(acc => {
+            if (acc.metrics && acc.metrics._tradesById && acc.metrics._tradesById[actualMagicId]) {
+                const accountTrades = acc.metrics._tradesById[actualMagicId].map(t => ({
+                    ...t,
+                    _accountName: acc.name
+                }));
+                allTrades = allTrades.concat(accountTrades);
+            }
+        });
 
-    // Also check Sandbox / Deep Scan Data
-    if (state.sandboxData && state.sandboxData.tradesById && state.sandboxData.tradesById[magicId]) {
-        const sandboxTrades = state.sandboxData.tradesById[magicId].map(t => ({
-            ...t,
-            _accountName: 'Sandbox / Deep Scan'
-        }));
-        allTrades = allTrades.concat(sandboxTrades);
+        // Check ALL Deep Scan Accounts (Multi-Account)
+        if (state.deepScanData && Object.keys(state.deepScanData).length > 0) {
+            Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
+                if (accountData.tradesById && accountData.tradesById[actualMagicId]) {
+                    const accTrades = accountData.tradesById[actualMagicId].map(t => ({
+                        ...t,
+                        _accountName: t._sourceAccount?.name || accountData.sourceName || `Account ${accountId}`
+                    }));
+                    allTrades = allTrades.concat(accTrades);
+                }
+            });
+        }
+        // Fallback: Sandbox Data for backwards compatibility
+        else if (state.sandboxData && state.sandboxData.tradesById && state.sandboxData.tradesById[actualMagicId]) {
+            const sandboxTrades = state.sandboxData.tradesById[actualMagicId].map(t => ({
+                ...t,
+                _accountName: t._sourceAccount?.name || 'Sandbox / Deep Scan'
+            }));
+            allTrades = allTrades.concat(sandboxTrades);
+        }
     }
 
     // Sort desc by date

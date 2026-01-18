@@ -2,14 +2,18 @@ import logging
 import asyncio
 from playwright.async_api import async_playwright
 import os
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
+
 # Force print to flush to ensure logs are visible immediately
 def log(msg):
-    print(msg, flush=True)
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    formatted = f"[{timestamp}] {msg}"
+    print(formatted, flush=True)
     try:
         with open("debug_scraper.txt", "a") as f:
-            f.write(msg + "\n")
+            f.write(formatted + "\n")
     except: pass
 
 class MyfxbookScraper:
@@ -22,9 +26,14 @@ class MyfxbookScraper:
 
     async def scrape_history(self, account_id):
         trades = []
+        log("="*60)
+        log("🔧 SCRAPING SESSION STARTED")
+        log(f"📧 Account ID: {account_id}")
+        log(f"📁 User data dir: {self.user_data_dir}")
+        log("="*60)
         
         async with async_playwright() as p:
-            log(f"Launching browser with persistent context at: {self.user_data_dir}")
+            log("🌐 Playwright initialized. Launching browser...")
             
             browser = await p.chromium.launch_persistent_context(
                 user_data_dir=self.user_data_dir,
@@ -38,14 +47,17 @@ class MyfxbookScraper:
             
             try:
                 target_url = f"{self.base_url}/portfolio/results/{account_id}"
-                log(f"Navigating to target: {target_url}")
+                log(f"🔗 Target URL: {target_url}")
                 
                 # Navigate to the target page first
                 try:
+                    log("⏳ Navigating to target URL...")
                     await page.goto(target_url, timeout=60000)
+                    log(f"📍 Current URL after navigation: {page.url}")
                     await page.wait_for_load_state("domcontentloaded")
+                    log("✅ DOM content loaded")
                 except Exception as e:
-                    log(f"Navigation error (ignoring): {e}")
+                    log(f"⚠️ Navigation error (ignoring): {e}")
 
                 # CHECK FOR LOGIN STATUS
                 # We are logged in ONLY if we see specific elements
@@ -68,10 +80,11 @@ class MyfxbookScraper:
 
                 if not is_logged_in:
                     log("⚠️ Session not active or Page Error. Initiating MANUAL LOGIN sequence...")
+                    log(f"📍 Current URL: {page.url}")
                     
                     # If on an error page, go to login explicitly
                     if "error" in page.url or ("login" not in page.url and "portfolio" not in page.url):
-                         pass
+                         log(f"🔴 Detected error or unexpected URL: {page.url}")
 
                     log("🛑 PAUSED: Waiting for you to log in manually...")
                     log("ACTION REQUIRED: Please log in using the browser window.")
@@ -131,37 +144,71 @@ class MyfxbookScraper:
 
 
                 # 4. History Tab Interaction
-                log("Looking for History tab...")
-                history_tab = await page.query_selector("a[href='#historyCont'], a:has-text('History')")
+                log("="*40)
+                log("📑 STEP: Looking for History tab...")
+                log(f"📍 Current URL: {page.url}")
+                
+                # Try multiple selectors
+                selectors_tried = [
+                    "a[href='#historyCont']",
+                    "a:has-text('History')",
+                    "a:has-text('Historial')",
+                    "#historyCont"
+                ]
+                history_tab = None
+                for sel in selectors_tried:
+                    log(f"   Trying selector: {sel}")
+                    history_tab = await page.query_selector(sel)
+                    if history_tab:
+                        log(f"   ✅ Found with selector: {sel}")
+                        break
+                
                 if history_tab:
                     log("✅ History tab button found.")
                     parent_class = await history_tab.evaluate("el => el.parentElement.className")
+                    log(f"   Parent class: {parent_class}")
                     if "active" not in parent_class:
-                        log("Clicking History tab...")
+                        log("🖱️ Clicking History tab...")
                         await history_tab.click()
                         await asyncio.sleep(5)
+                        log(f"📍 URL after click: {page.url}")
                     else:
                         log("History tab is already active.")
                 else:
-                    log("❌ History tab button NOT found within selectors.")
+                    log("❌ History tab button NOT found with any selector!")
+                    # Dump available links for debug
+                    all_links = await page.evaluate("() => Array.from(document.querySelectorAll('a')).slice(0,20).map(a => ({href: a.href, text: a.innerText.substring(0,50)}))")
+                    log(f"   Available links (first 20): {all_links}")
 
                 # 5. Scrape Loop
+                log("="*40)
+                log("📊 STEP: Starting scrape loop...")
                 page_num = 1
                 previous_page_trades = []
                 while True:
                     if page_num > 50:
-                        log("Reached safety limit of 50 pages. Breaking.")
+                        log("🛑 Reached safety limit of 50 pages. Breaking.")
                         break
 
-                    log(f"Scraping page {page_num}...")
+                    log(f"\n📄 SCRAPING PAGE {page_num}...")
+                    log(f"   📍 Current URL: {page.url}")
+                    
+                    # Check if table exists
+                    log("   ⏳ Waiting for #tradingHistoryTable...")
                     try:
                         await page.wait_for_selector("#tradingHistoryTable", timeout=20000)
-                    except:
-                        log(f"History table timed out on page {page_num}.")
+                        log("   ✅ Table found!")
+                    except Exception as e:
+                        log(f"   ❌ History table timed out on page {page_num}: {e}")
+                        # Check what's on the page
                         try:
+                            page_title = await page.title()
+                            log(f"   Page title: {page_title}")
+                            visible_tables = await page.evaluate("() => Array.from(document.querySelectorAll('table')).map(t => ({id: t.id, class: t.className}))")
+                            log(f"   Visible tables: {visible_tables}")
                             with open(f"debug_table_timeout_{page_num}.html", "w") as f:
                                 f.write(await page.content())
-                            log("Dumped HTML to debug_table_timeout.html")
+                            log("   Dumped HTML to debug_table_timeout.html")
                         except: pass
                         break
 
@@ -284,18 +331,27 @@ class MyfxbookScraper:
                             log(f"DEBUG COL INDICES: {debug_indices}")
 
                     if not page_trades:
-                        log(f"No trades found on page {page_num}. Breaking.")
+                        log(f"   ❌ No trades found on page {page_num}. Breaking.")
+                        # Dump table HTML for debug
+                        try:
+                            table_html = await page.evaluate("() => document.querySelector('#tradingHistoryTable')?.outerHTML?.substring(0, 2000) || 'TABLE NOT FOUND'")
+                            log(f"   Table preview: {table_html[:500]}...")
+                        except: pass
                         break
 
                     # DUPLICATE PAGE DETECTION
                     if page_trades == previous_page_trades:
-                        log(f"Page {page_num} is identical to previous page. Reached end of history.")
+                        log(f"   🔁 Page {page_num} is identical to previous page. Reached end of history.")
                         break
                     
                     previous_page_trades = page_trades
 
                     trades.extend(page_trades)
-                    log(f"Found {len(page_trades)} trades on page {page_num}.")
+                    log(f"   ✅ Found {len(page_trades)} trades on page {page_num}. Total so far: {len(trades)}")
+                    
+                    # Show sample trade for debug
+                    if page_trades and page_num == 1:
+                        log(f"   📝 Sample trade: {page_trades[0]}")
                     # Pagination logic
                     next_text_selectors = ["li.next a", "a:has-text('Next')", "a:has-text('»')"]
                     next_btn = None
@@ -325,13 +381,18 @@ class MyfxbookScraper:
                         log("No 'Next' button found. Reached last page.")
                         break
                 
+                log("="*60)
+                log(f"🏁 SCRAPING COMPLETE! Total trades: {len(trades)}")
+                log("="*60)
                 return {"success": True, "history": trades}
 
             except Exception as e:
-                log(f"Scraping error: {e}")
+                import traceback
+                log(f"❌ SCRAPING ERROR: {e}")
+                log(f"   Traceback: {traceback.format_exc()}")
                 return {"success": False, "error": str(e)}
             finally:
+                log("🔒 Closing browser...")
                 if browser: await browser.close()
-                # if browser: await browser.close() # Keep browser open? No, close it to be clean.
-                log("Closing browser...")
+                log("✅ Browser closed.")
 

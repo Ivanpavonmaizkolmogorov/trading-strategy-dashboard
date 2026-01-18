@@ -22,7 +22,8 @@ export class CustomizableTable {
      */
     init() {
         // Load config from localStorage
-        const savedConfig = localStorage.getItem(this.storageKey);
+        // DISABLED: localStorage usage exterminated.
+        const savedConfig = null; // localStorage.getItem(this.storageKey);
         if (savedConfig) {
             try {
                 this.currentConfig = { ...this.defaultConfig, ...JSON.parse(savedConfig) };
@@ -260,7 +261,8 @@ export class CustomizableTable {
         });
 
         this.currentConfig.visibleColumns = visibleColumns;
-        localStorage.setItem(this.storageKey, JSON.stringify(this.currentConfig));
+        this.currentConfig.visibleColumns = visibleColumns;
+        // localStorage.setItem(this.storageKey, JSON.stringify(this.currentConfig)); // DISABLED
 
         // Trigger callback
         if (this.onConfigChange) {
@@ -273,7 +275,7 @@ export class CustomizableTable {
      */
     resetToDefault() {
         this.currentConfig = { ...this.defaultConfig };
-        localStorage.setItem(this.storageKey, JSON.stringify(this.currentConfig));
+        // localStorage.setItem(this.storageKey, JSON.stringify(this.currentConfig)); // DISABLED
 
         // Trigger callback
         if (this.onConfigChange) {
@@ -292,7 +294,7 @@ export class CustomizableTable {
      */
     updateConfig(newConfig) {
         this.currentConfig = newConfig;
-        localStorage.setItem(this.storageKey, JSON.stringify(this.currentConfig));
+        // localStorage.setItem(this.storageKey, JSON.stringify(this.currentConfig)); // DISABLED
 
         // Trigger callback
         if (this.onConfigChange) {

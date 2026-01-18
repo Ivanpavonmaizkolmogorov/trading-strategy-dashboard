@@ -37,7 +37,7 @@ const DEFAULT_CONFIG = {
 };
 
 // Create table instance
-const strategiesTable = new CustomizableTable({
+export const strategiesTable = new CustomizableTable({
     id: 'strategies',
     storageKey: 'strategiesTableConfig_v10', // Force reset for new columns
     columns: AVAILABLE_COLUMNS,
@@ -176,14 +176,15 @@ export const renderStrategiesTable = () => {
 
     // Load filter from storage if not set yet (init)
     if (!state.linkedStrategiesFilterInitialized) {
-        state.linkedStrategiesFilter = localStorage.getItem('linkedStrategiesFilter') || 'all';
+        // DISABLED: localStorage usage exterminated.
+        state.linkedStrategiesFilter = 'all';
 
         // UX IMPROVEMENT: If we have NO saved portfolios, forcing 'only' (Linked) makes no sense as it hides everything.
         // Force reset to 'all' in this case to ensure users see their imported files.
         if (!state.savedPortfolios || state.savedPortfolios.length === 0) {
             state.linkedStrategiesFilter = 'all';
             // Optional: update storage too so it persists for this session context
-            localStorage.setItem('linkedStrategiesFilter', 'all');
+            // localStorage.setItem('linkedStrategiesFilter', 'all'); // DISABLED
         }
 
         state.linkedStrategiesFilterInitialized = true;
@@ -222,7 +223,7 @@ export const renderStrategiesTable = () => {
                 console.log(`[StrategiesTable] 🔘 Button Clicked. Current: ${state.linkedStrategiesFilter} -> Next: ${nextState}`);
 
                 state.linkedStrategiesFilter = nextState;
-                localStorage.setItem('linkedStrategiesFilter', nextState);
+                // localStorage.setItem('linkedStrategiesFilter', nextState); // DISABLED
 
                 renderStrategiesTable();
             });
@@ -393,9 +394,29 @@ export const renderStrategiesTable = () => {
                             // Ensure key is string
                             const keyStr = String(k).trim();
 
-                            if (p.realMetrics._tradesById[keyStr]) {
-                                trades = trades.concat(p.realMetrics._tradesById[keyStr]);
-                                console.log(`[StrategiesTable] 💰 Found ${p.realMetrics._tradesById[keyStr].length} trades for key '${keyStr}'`);
+                            // LOGIC UPDATE: Support Account-Namespaced Keys (AccountId::Magic)
+                            let foundTrades = null;
+                            let usedKey = keyStr;
+
+                            // 1. Try Compound Key first if linked account exists
+                            if (p.linkedAccountId) {
+                                const compoundKey = `${p.linkedAccountId}::${keyStr}`;
+                                if (p.realMetrics._tradesById[compoundKey]) {
+                                    foundTrades = p.realMetrics._tradesById[compoundKey];
+                                    usedKey = compoundKey;
+                                    // console.log(`[StrategiesTable] 🎯 Found trades via Compound Key: ${compoundKey}`);
+                                }
+                            }
+
+                            // 2. Fallback to Raw Key (Legacy or Direct Map)
+                            if (!foundTrades && p.realMetrics._tradesById[keyStr]) {
+                                foundTrades = p.realMetrics._tradesById[keyStr];
+                                usedKey = keyStr;
+                            }
+
+                            if (foundTrades) {
+                                trades = trades.concat(foundTrades);
+                                console.log(`[StrategiesTable] 💰 Found ${foundTrades.length} trades for key '${usedKey}'`);
                             } else {
                                 // Detailed mismatch log for the first few errors
                                 // console.warn(`[StrategiesTable] ⚠️ Key '${keyStr}' NOT found. Best match?`, availableKeys.find(ak => ak.includes(keyStr.substring(0, 10)) || keyStr.includes(ak.substring(0, 10))));
@@ -446,6 +467,96 @@ export const renderStrategiesTable = () => {
                             // We keep 'closeTime' (for UI) as null so it correctly shows as Open ("-").
                             const effectiveExit = parsedClose || parsedOpen;
 
+                            // --- REALITY CHECK GLOBAL LOOKUP (UNCONDITIONAL) ---
+                            // User Directive: Do not check for linked portfolios. Always look up real data if available.
+                            if (state.activeViewMode === 'reality-check') {
+                                const normalize = s => (s || '').replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+                                // 1. Identify Strategy Name/ID
+                                let rawName = stratObj.name; // Use stratObj.name as it's the current strategy being processed
+                                let sId = stratObj.strategyId || stratObj.name; // Assuming stratObj might have strategyId
+
+                                // If it's a "STRAT_" ID, try to find a real name from loaded files
+                                if (sId.startsWith('STR_')) { // Corrected from STRAT_ to STR_ based on common usage
+                                    const file = state.loadedStrategyFiles.find(f => f.strategyId === sId);
+                                    if (file) rawName = file.name;
+                                }
+
+                                console.log(`[RealKPI] Processing Strategy: ${rawName} (ID: ${sId})`);
+
+                                const cleanName = rawName.replace(/\.csv$/i, '').trim();
+                                const normalizedName = normalize(rawName);
+
+                                // 2. Resolve Mapped Keys (Robust Lookup)
+                                // Priority: Name (Strict) > Clean Name > ID > Normalized
+                                const mapByName = state.magicNumberMap[rawName];
+                                const mapByClean = state.magicNumberMap[cleanName];
+                                const mapById = state.magicNumberMap[sId];
+                                const mapByNorm = state.magicNumberMap[normalizedName];
+
+                                let magics = [];
+
+                                // A. Name-based lookup
+                                if (state.magicNumberMap[normalizedName]) magics = magics.concat(state.magicNumberMap[normalizedName]);
+
+                                // B. Clean Name lookup
+                                const normalizedClean = normalize(cleanName);
+                                if (state.magicNumberMap[normalizedClean]) magics = magics.concat(state.magicNumberMap[normalizedClean]);
+
+                                // C. ID-based lookup
+                                if (state.magicNumberMap[sId]) magics = magics.concat(state.magicNumberMap[sId]);
+
+                                // Allow for string/number mismatch in map keys
+                                const numericId = Number(sId);
+                                if (!isNaN(numericId) && state.magicNumberMap[numericId]) magics = magics.concat(state.magicNumberMap[numericId]);
+
+                                // Dedup
+                                magics = [...new Set(magics)];
+
+                                console.log(`[RealKPI] Resolved Magics for ${rawName}:`, magics);
+
+                                // 3. Fetch Trades from DeepScanData (Global Cache)
+                                let allRealTrades = [];
+                                if (state.deepScanData) {
+                                    // Debug deepScanData keys once to avoid spam, or check if specific keys exist
+                                    console.log('[RealKPI] deepScanData Keys:', Object.keys(state.deepScanData));
+
+                                    if (magics.length > 0) {
+                                        Object.values(state.deepScanData).forEach(accountData => {
+                                            if (!accountData._tradesById) {
+                                                console.warn('[RealKPI] Account Data missing _tradesById:', accountData);
+                                                return;
+                                            }
+                                            magics.forEach(m => {
+                                                const magicStr = String(m).trim();
+                                                // Try finding by magicStr directly or within the keys
+                                                if (accountData._tradesById[magicStr]) {
+                                                    allRealTrades = allRealTrades.concat(accountData._tradesById[magicStr]);
+                                                }
+                                            });
+                                        });
+                                    }
+                                } else {
+                                    console.warn('[RealKPI] state.deepScanData is undefined or null');
+                                }
+
+                                console.log(`[RealKPI] Found ${allRealTrades.length} trades for ${rawName}`);
+
+                                // 4. Calculate & Assign Metrics
+                                if (allRealTrades.length > 0) {
+                                    const metrics = calculateSQMetrics(allRealTrades, 10000); // Assuming 10k start balance for KPI
+                                    stratObj.realMetrics = metrics;
+                                    stratObj.realMetrics.trades = allRealTrades.length;
+                                    stratObj.realMetrics.profit = metrics.totalNetProfit;
+                                    stratObj.realMetrics.drawdown = metrics.maxDrawdownInDollars;
+                                } else {
+                                    // console.warn(`[StrategiesTable] ⚠️ No Real Trades found for '${rawName}' (Magics: ${magics})`);
+                                }
+                            } else {
+                                // Debug why it failed
+                                // console.warn(`[StrategiesTable] ⚠️ No Real Metrics found for '${name}' (Clean: '${cleanName}') in portfolio '${p.name}'. MapEntry: ${JSON.stringify(mapEntry)}`);
+                            }
+
                             return {
                                 ...t,
                                 pnl: pnl,
@@ -483,7 +594,9 @@ export const renderStrategiesTable = () => {
                                 winningPercentage: engineMetrics.winRate,
                                 profitFactor: engineMetrics.profitFactor,
                                 returnDD: engineMetrics.returnDDRatio,
-                                avgTrade: engineMetrics.avgTrade
+                                avgTrade: engineMetrics.avgTrade,
+                                _aggregatedTrades: normalizedTrades, // Store for chart generation
+                                isAggregated: true // Mark as aggregated data
                             };
                         } else {
                             // Fallback: If engine failed (e.g. only Open Trades), still show the strategy!
@@ -544,6 +657,162 @@ export const renderStrategiesTable = () => {
         });
     }
 
+    // --- LATE BINDING / METRIC PRE-CALCULATION ---
+    // We must calculate Real KPIs BEFORE filtering, otherwise filters like "Zero Trades" 
+    // will hide strategies that haven't been processed yet.
+    if (state.activeViewMode === 'reality-check') {
+        strategies.forEach((strategy, index) => {
+            // Calculate hasDirectMap for use in filters
+            const rawName = strategy.name;
+            const cleanName = rawName.replace(/\.csv$/i, '').trim();
+            const file = state.loadedStrategyFiles[strategy.originalIndex];
+            const id = file ? (file.strategyId || file.name) : strategy.name;
+
+            // Check ID, Raw Name, and Clean Name for mapping existence
+            const hasDirectMap = state.magicNumberMap && (
+                (state.magicNumberMap[id] && state.magicNumberMap[id].length > 0) ||
+                (state.magicNumberMap[rawName] && state.magicNumberMap[rawName].length > 0) ||
+                (state.magicNumberMap[cleanName] && state.magicNumberMap[cleanName].length > 0)
+            );
+
+            strategy._hasMap = hasDirectMap; // TAG FOR FILTERS
+
+            // Execute Late Binding if needed
+            if (!strategy.realMetrics && state.deepScanData) {
+                try {
+                    // 1. Resolve Identity (Duplicated from original block, but needed here)
+                    const normalize = s => (s || '').replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    let sId = strategy.strategyId || strategy.name;
+                    let resolvedFileName = null; // Store resolved file name for map lookup
+
+                    if (state.loadedStrategyFiles) {
+                        // FIX: Robust matching (Ignore .csv diff)
+                        const f = state.loadedStrategyFiles.find(f => {
+                            // strict match
+                            if (f.name === rawName) return true;
+                            // loose match (ignore .csv)
+                            if (f.name.replace(/\.csv$/i, '').trim() === rawName.replace(/\.csv$/i, '').trim()) return true;
+                            return false;
+                        });
+
+                        if (f) {
+                            if (f.strategyId) sId = f.strategyId;
+                            resolvedFileName = f.name; // Capture filename (likely has .csv)
+                        }
+                    }
+
+                    // 2. Resolve Magics
+                    const cleanName = rawName.replace(/\.csv$/i, '').trim();
+                    const normalizedName = normalize(rawName);
+                    let magics = [];
+
+                    // CRITICAL FIX: Lookup by Raw Name first
+                    if (state.magicNumberMap[rawName]) {
+                        console.log(`[RealKPI] ✅ Matched via RawName: '${rawName}'`);
+                        magics = magics.concat(state.magicNumberMap[rawName]);
+                    }
+                    if (state.magicNumberMap[normalizedName]) {
+                        console.log(`[RealKPI] ✅ Matched via NormName: '${normalizedName}'`);
+                        magics = magics.concat(state.magicNumberMap[normalizedName]);
+                    }
+                    if (state.magicNumberMap[cleanName]) {
+                        console.log(`[RealKPI] ✅ Matched via CleanName: '${cleanName}'`);
+                        magics = magics.concat(state.magicNumberMap[cleanName]);
+                    }
+                    if (state.magicNumberMap[sId]) {
+                        console.log(`[RealKPI] ✅ Matched via ID: '${sId}'`);
+                        magics = magics.concat(state.magicNumberMap[sId]);
+                    }
+
+                    // Add Resolved File Name Lookup
+                    if (resolvedFileName && state.magicNumberMap[resolvedFileName]) {
+                        console.log(`[RealKPI] ✅ Matched via ResolvedFile: '${resolvedFileName}'`);
+                        magics = magics.concat(state.magicNumberMap[resolvedFileName]);
+                    } else if (resolvedFileName) {
+                        console.log(`[RealKPI] ❌ Failed via ResolvedFile: '${resolvedFileName}' (Map has it? ${!!state.magicNumberMap[resolvedFileName]})`);
+                    }
+
+                    console.log(`[RealKPI] Strategy '${rawName}' (File: '${resolvedFileName}') -> Keys Checked:`,
+                        { raw: rawName, clean: cleanName, norm: normalizedName, id: sId, file: resolvedFileName });
+
+                    const numericId = Number(sId);
+                    if (!isNaN(numericId) && state.magicNumberMap[numericId]) magics = magics.concat(state.magicNumberMap[numericId]);
+                    magics = [...new Set(magics)];
+
+
+
+                    if (magics.length > 0) {
+                        // 3. Fetch Trades
+                        let allRealTrades = [];
+                        Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
+                            const tradesMap = accountData.tradesById || accountData._tradesById;
+                            if (!tradesMap) return;
+
+                            magics.forEach(m => {
+                                const magicStr = String(m).trim();
+                                let lookupKey = magicStr;
+                                if (magicStr.includes('::')) {
+                                    const [linkedAcctId, realMagic] = magicStr.split('::');
+                                    if (String(linkedAcctId) !== String(accountId)) return;
+                                    lookupKey = realMagic;
+                                }
+                                const availableKeys = Object.keys(tradesMap);
+                                if (tradesMap[lookupKey]) allRealTrades = allRealTrades.concat(tradesMap[lookupKey]);
+                                else if (tradesMap[magicStr]) allRealTrades = allRealTrades.concat(tradesMap[magicStr]);
+                                else {
+                                    const lowerLookup = lookupKey.toLowerCase();
+                                    const match = availableKeys.find(k => k.toLowerCase() === lowerLookup);
+                                    if (match) allRealTrades = allRealTrades.concat(tradesMap[match]);
+                                }
+                            });
+                        });
+
+                        // Normalize and Calculate
+                        if (allRealTrades.length > 0) {
+                            const normalizedTrades = allRealTrades.map(trade => {
+                                // Basic normalization for engine
+                                const p = parseFloat(trade.profit) || 0;
+                                const s = parseFloat(trade.swap) || 0;
+                                const c = parseFloat(trade.commission) || 0;
+                                const pnl = p + s + c;
+                                let closeDate = trade.closeTime ? new Date(trade.closeTime) : null;
+                                if (trade.closeDate) closeDate = new Date(trade.closeDate); // Fallback
+                                // If invalid date, try to parse string "DD.MM.YYYY HH:mm"
+                                if (!closeDate || isNaN(closeDate.getTime())) {
+                                    // Assuming ISO for now or handled by Date()
+                                }
+
+                                return {
+                                    ...trade,
+                                    pnl: pnl,
+                                    closeTime: closeDate,
+                                    exitTime: closeDate // for engine
+                                };
+                            }).filter(t => t.exitTime && !isNaN(t.pnl)); // Filter invalid
+
+                            const metrics = calculateSQMetrics(normalizedTrades, 10000); // 10k dummy balance
+                            strategy.realMetrics = metrics;
+                            strategy.realMetrics.trades = normalizedTrades.length;
+                            strategy.realMetrics._aggregatedTrades = normalizedTrades; // Store for chart generation
+                            strategy.realMetrics.isAggregated = true; // Mark as aggregated data
+                            // Fix Max DD Persistence: Map generic maxDD to table column ID
+                            strategy.realMetrics.maxDrawdownInDollars = metrics.maxDD;
+                            strategy.realMetrics.profit = metrics.totalNetProfit; // Aliasing just in case
+                            // We don't overwrite profit/drawdown here to keep Backtest metrics visible?
+                            // User wants Real KPIs "populated".
+                            // So we SHOULD overwrite for display in columns that use generic keys, 
+                            // OR reliance on `getMetricValue` handling `realMetrics`.
+                            // `getMetricValue` prioritizes `realMetrics` if activeViewMode is reality-check.
+                            // So just attaching `realMetrics` is enough.
+                        }
+                    }
+                } catch (err) {
+                    console.error('[PreCalc] Error:', err);
+                }
+            }
+        });
+    }
+
     // FILTER: Linked Strategies (3-state)
     console.log(`[StrategiesTable] 🛡️ Applying Filter: ${state.linkedStrategiesFilter.toUpperCase()}`);
     console.log(`[StrategiesTable]    - Total Before: ${strategies.length}`);
@@ -576,43 +845,64 @@ export const renderStrategiesTable = () => {
     // FILTER: Reality Check Mode (Only if NOT sourced from portfolios directly)
     // If we sourced from portfolios, we already have the correct set.
     if (state.activeViewMode === 'reality-check' && !sourcedFromPortfolios) {
-        const totalStrategies = strategies.length;
+        // CLEAN SLATE CHECK: If we have NO mappings and NO linked portfolios, 
+        // we must show ALL strategies to allow the user to see them and perform linking/mapping.
+        // Otherwise, a fresh session would show an empty table.
+        const hasMappings = state.magicNumberMap && Object.keys(state.magicNumberMap).length > 0;
 
         // 1. Identify all strategies belonging to Linked Portfolios
         const linkedStrategyIndices = new Set();
         if (state.savedPortfolios) {
             state.savedPortfolios.forEach(p => {
+                // Consider a portfolio "linked" context if it has an ID, but strictly for filtering 
+                // we care if it pulls strategies into view.
                 if (p.linkedAccountId && p.indices) {
                     p.indices.forEach(idx => linkedStrategyIndices.add(idx));
                 }
             });
         }
 
-        strategies = strategies.filter(s => {
-            // A. Check Direct Magic Number Linking
-            // Get ID from loaded files using original index
-            const file = state.loadedStrategyFiles[s.originalIndex];
-            const id = file ? (file.strategyId || file.name) : s.name;
-            const hasDirectMap = state.magicNumberMap && state.magicNumberMap[id] && state.magicNumberMap[id].length > 0;
+        const hasLinkedPortfolios = linkedStrategyIndices.size > 0;
 
-            // B. Check Portfolio Association (Fallback)
-            const isPartofLinkedPortfolio = linkedStrategyIndices.has(s.originalIndex);
+        if (!hasMappings && !hasLinkedPortfolios) {
+            console.log(`[StrategiesTable] 🛡️ Clean Slate Mode (No maps/links): Skipping Reality Check strict filter to show candidates.`);
+        } else {
+            const totalStrategies = strategies.length;
+            strategies = strategies.filter(s => {
+                // A. Check Direct Magic Number Linking
+                // Rely on Pre-Calculation tag (includes rawName check)
+                const hasDirectMap = s._hasMap;
 
-            return hasDirectMap || isPartofLinkedPortfolio;
-        });
-        console.log(`[StrategiesTable] 🔍 Reality Check Filter: Showing ${strategies.length} / ${totalStrategies} strategies (Linked to Myfxbook or in Linked Portfolio)`);
+                // B. Check Portfolio Association (Fallback)
+                const isPartofLinkedPortfolio = linkedStrategyIndices.has(s.originalIndex);
+
+                return hasDirectMap || isPartofLinkedPortfolio;
+            });
+            console.log(`[StrategiesTable] 🔍 Reality Check Filter: Showing ${strategies.length} / ${totalStrategies} strategies (Linked to Myfxbook or in Linked Portfolio)`);
+        }
     }
 
 
     // FILTER: Reality Check Mode - Zero Trades Cleanup
     // User Request: "habria k filtrar akellas k trades sea 0 (en este modo)"
     if (state.activeViewMode === 'reality-check') {
+        const hasMappings = state.magicNumberMap && Object.keys(state.magicNumberMap).length > 0;
+        const hasLinkedPortfolios = state.savedPortfolios && state.savedPortfolios.some(p => p.linkedAccountId);
+        const isSystemConfigured = hasMappings || hasLinkedPortfolios;
+
         const preFilterCount = strategies.length;
         strategies = strategies.filter(s => {
-            const trades = getMetricValue(s, 'totalTrades');
+            let trades = getMetricValue(s, 'totalTrades');
+
+            // STRICT MODE: If system is configured (not clean slate), force check on Real Metrics only.
+            // Do not fall back to Backtest trades if Real Trades are missing/zero.
+            if (isSystemConfigured) {
+                trades = s.realMetrics ? s.realMetrics.totalTrades : 0;
+            }
+
             // DEBUG FILTER
             if (!trades || trades <= 0) {
-                console.log(`[StrategiesTable] 🧹 Filter Dropping '${s.name}': trades=${trades}, realMetrics?`, s.realMetrics);
+                // console.log(`[StrategiesTable] 🧹 Filter Dropping '${s.name}': trades=${trades}, realMetrics?`, s.realMetrics);
             }
             return trades && trades > 0;
         });
@@ -686,7 +976,17 @@ export const renderStrategiesTable = () => {
     }
 
     strategies.forEach((strategy, index) => {
-        const originalIndex = (strategy.originalIndex !== undefined) ? strategy.originalIndex : window.analysisResults.indexOf(strategy);
+        // CRITICAL FIX: ALWAYS find index in state.loadedStrategyFiles by name
+        // strategy.originalIndex from analysisResults may be wrong due to different ordering
+        const stratName = strategy.name;
+        const originalIndex = state.loadedStrategyFiles.findIndex(f =>
+            f.name === stratName ||
+            f.name.replace(/\.csv$/i, '') === stratName.replace(/\.csv$/i, '')
+        );
+        console.log(`[StrategiesTable DEBUG] Row ${index}: strategy.name='${strategy.name}', originalIndex=${originalIndex}, foundFile='${state.loadedStrategyFiles[originalIndex]?.name}'`);
+
+
+
         const metrics = strategy.analysis?.metrics || strategy.analysis || strategy.metrics || {};
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0';
@@ -702,11 +1002,15 @@ export const renderStrategiesTable = () => {
         tdCheckbox.querySelector('input').addEventListener('change', (e) => {
             e.stopPropagation();
             if (originalIndex === -1) return; // Cannot select virtual strategies yet
+            const strategyName = strategy.name || 'unknown';
             if (e.target.checked) {
                 selectedStrategies.add(originalIndex);
+                console.log(`[StrategiesTable DEBUG] ✅ SELECTED: index=${originalIndex}, name='${strategyName}'`);
             } else {
                 selectedStrategies.delete(originalIndex);
+                console.log(`[StrategiesTable DEBUG] ❌ DESELECTED: index=${originalIndex}, name='${strategyName}'`);
             }
+            console.log(`[StrategiesTable DEBUG] Current selection:`, [...selectedStrategies]);
             updateFloatingActionBar();
         });
         tdCheckbox.addEventListener('click', (e) => {
@@ -1064,6 +1368,14 @@ export const updateFloatingActionBar = () => {
 
     document.getElementById('fab-test-selection').addEventListener('click', () => {
         const selectedIndices = Array.from(selectedStrategies);
+        console.log('[StrategiesTable DEBUG] === CREATE PORTFOLIO CLICKED ===');
+        console.log('[StrategiesTable DEBUG] selectedStrategies Set:', [...selectedStrategies]);
+        console.log('[StrategiesTable DEBUG] selectedIndices Array:', selectedIndices);
+        selectedIndices.forEach((idx, i) => {
+            const file = state.loadedStrategyFiles[idx];
+            const result = window.analysisResults?.[idx];
+            console.log(`[StrategiesTable DEBUG] Index ${idx} -> file: ${file?.name}, result: ${result?.name}`);
+        });
         analyzeCustomPortfolio(selectedIndices);
     });
 

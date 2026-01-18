@@ -1,3 +1,5 @@
-2026/01/17-23:33:34.123 109b8 Reusing MANIFEST /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/myfx_playground/myfx_auth/Default/Local Storage/leveldb/MANIFEST-000001
-2026/01/17-23:33:34.127 109b8 Recovering log #24
-2026/01/17-23:33:34.127 109b8 Reusing old log /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/myfx_playground/myfx_auth/Default/Local Storage/leveldb/000024.log 
+2026/01/18-18:00:47.015 217b3 Reusing MANIFEST /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/myfx_playground/myfx_auth/Default/Local Storage/leveldb/MANIFEST-000001
+2026/01/18-18:00:47.020 217b3 Recovering log #24
+2026/01/18-18:00:47.020 217b3 Reusing old log /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/myfx_playground/myfx_auth/Default/Local Storage/leveldb/000024.log 
+2026/01/18-18:01:31.300 21a7f Level-0 table #28: started
+2026/01/18-18:01:31.317 21a7f Level-0 table #28: 40133 bytes OK

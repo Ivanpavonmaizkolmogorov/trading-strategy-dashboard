@@ -642,10 +642,15 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
         return;
     }
 
-    console.log(`[Myfxbook] Fetching history for linked account ${finalAccountId}...`);
+    console.log(`[Myfxbook SYNC] ========================================`);
+    console.log(`[Myfxbook SYNC] Starting sync for account ${finalAccountId}`);
+    console.log(`[Myfxbook SYNC] Portfolio: ${portfolio.name}`);
+    console.log(`[Myfxbook SYNC] Email: ${finalEmail}`);
+    console.log(`[Myfxbook SYNC] ========================================`);
     import('./notifications.js').then(mod => mod.showToast(`Syncing history for ${portfolio.name}...`, 'info'));
 
     try {
+        console.log(`[Myfxbook SYNC] Step 1: Sending request to /myfxbook/get-history...`);
         const response = await fetch('/myfxbook/get-history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -657,10 +662,12 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
             })
         });
 
+        console.log(`[Myfxbook SYNC] Step 2: Response received. Status: ${response.status}`);
         const data = await response.json();
+        console.log(`[Myfxbook SYNC] Step 3: Response parsed.`, data.success ? '✅ Success' : '❌ Failed');
 
         if (response.ok && data.success) {
-            console.log(`[Myfxbook] History synced. ${data.count} closed trades, ${data.openCount || 0} open trades.`);
+            console.log(`[Myfxbook SYNC] ✅ History synced. ${data.count} closed trades, ${data.openCount || 0} open trades.`);
             console.log('[Myfxbook] Open Trades Data:', data.openTrades);
 
             // PROCESS DATA using extracted function
@@ -730,8 +737,6 @@ export async function fetchLinkedAccountData(portfolio, email = null, password =
             portfolio.lastSyncDate = new Date().toISOString();
 
             // Optional: Save to LocalStorage (Minified!)
-            import('../state.js').then(mod => mod.saveSavedPortfolios());
-
             import('../state.js').then(mod => mod.saveSavedPortfolios());
 
             import('../ui.js').then(mod => {
@@ -813,117 +818,139 @@ function showError(message) {
 }
 
 export function recalculateStrategyBreakdown(portfolio) {
-    if (!portfolio.realMetrics || !portfolio.realMetrics._tradesById) return;
-
-    const tradesById = portfolio.realMetrics._tradesById;
+    if (!portfolio.realMetrics) portfolio.realMetrics = {};
+    const tradesById = portfolio.realMetrics._tradesById || {};
     const magicMap = state.magicNumberMap || {};
     const strategyBreakdown = {};
 
-    console.log('[Myfxbook] Recalculating. Available IDs:', Object.keys(tradesById));
+    console.log('[Myfxbook] Recalculating Breakdown (Bottom-Up Approach)...');
 
-    // AUDIT: Track which IDs are actually mapped
-    const allMappedIds = new Set();
+    // 1. Identify Target Strategies
+    // We prefer `strategyNames` from the portfolio definition as the source of truth for "What is in this portfolio?"
+    const targetNames = portfolio.strategyNames || [];
 
-    Object.entries(magicMap).forEach(([strategyId, mappedIds]) => {
-        let ids = [];
-        if (Array.isArray(mappedIds)) {
-            ids = mappedIds;
-        } else if (typeof mappedIds === 'string') {
-            ids = mappedIds.split(',').map(s => s.trim());
-        } else {
-            ids = [mappedIds];
-        }
-
-        // Add to Set of known IDs
-        ids.forEach(id => allMappedIds.add(String(id)));
-
-        let allTrades = [];
-        ids.forEach(id => {
-            const idStr = String(id);
-            if (tradesById[idStr]) {
-                allTrades = allTrades.concat(tradesById[idStr]);
-            } else {
-                // console.warn(`[Myfxbook] ID lookup failed. Mapped ID: '${idStr}' not found...`);
-            }
-        });
-
-        // Recalculate metrics for this STRATEGY
-        let maxLosses = 0;
-        let currentLosses = 0;
-        let runningBalance = 0;
-        let maxBalance = 0;
-        let maxDD = 0;
-        let totalProfit = 0;
-
-        allTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
-
-        allTrades.forEach(t => {
-            // Exclude Deposits/Withdrawals
-            if (t.action === 'Deposit' || t.action === 'Withdrawal') return;
-
-            const profit = parseCurrency(t.profit) + parseCurrency(t.commission) + parseCurrency(t.swap);
-            totalProfit += profit;
-
-            // Consecutive Losses
-            if (profit < 0) {
-                currentLosses++;
-                if (currentLosses > maxLosses) maxLosses = currentLosses;
-            } else {
-                currentLosses = 0;
-            }
-
-            // Drawdown Calculation
-            runningBalance += profit;
-            if (runningBalance > maxBalance) maxBalance = runningBalance;
-            const dd = maxBalance - runningBalance;
-            if (dd > maxDD) maxDD = dd;
-        });
-
-        strategyBreakdown[strategyId] = {
-            mappedIds: ids,
-            tradesCount: allTrades.length,
-            totalProfit: totalProfit,
-            maxConsecutiveLosses: maxLosses,
-            currentConsecutiveLosses: currentLosses,
-            maxDrawdown: maxDD
-        };
-    });
-
-    // --- UNMAPPED PROFIT DETECTION ---
-    let unmappedProfit = 0;
-    const unmappedKeys = [];
-
-    // DEBUG: Log all keys and mapped status
-    // console.log('DEBUG: All Trades Keys:', Object.keys(tradesById));
-    // console.log('DEBUG: All Mapped IDs:', Array.from(allMappedIds));
-
-    Object.keys(tradesById).forEach(key => {
-        // Checking if this key was used in ANY mapping
-        // We use string comparison for safety
-        if (!allMappedIds.has(key)) {
-            const trades = tradesById[key];
-            const keyProfit = trades.reduce((sum, t) => {
-                if (t.action === 'Deposit' || t.action === 'Withdrawal') return sum;
-                return sum + parseCurrency(t.profit) + parseCurrency(t.commission) + parseCurrency(t.swap);
-            }, 0);
-
-            if (Math.abs(keyProfit) > 0.01) {
-                unmappedProfit += keyProfit;
-                unmappedKeys.push({ key, profit: keyProfit });
+    // Helper to find trades in this portfolio context
+    const findTradesForStrategy = (name) => {
+        // A. Check if strategy object in analysisResults already has realMetrics (from Strategies Table logic)
+        // This is the "Late Binding" shortcut
+        if (window.analysisResults) {
+            const entry = window.analysisResults.find(r => r.name === name);
+            if (entry && entry.realMetrics && entry.realMetrics._aggregatedTrades) {
+                // console.log(`[Myfxbook] 🚀 Using Cached Metrics for '${name}'`);
+                return entry.realMetrics._aggregatedTrades;
             }
         }
+
+        // B. Robust Search (Mirroring ui.js / strategiesTable.js logic)
+        // 1. Name Normalization
+        const normalize = s => (s || '').replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const cleanName = name.replace(/\.csv$/i, '').trim();
+        const normName = normalize(name);
+
+        // 2. ID Resolution
+        let sId = name;
+        if (state.loadedStrategyFiles) {
+            const f = state.loadedStrategyFiles.find(f => normalize(f.name) === normName);
+            if (f && f.strategyId) sId = f.strategyId;
+        }
+
+        // 3. Keys to Check
+        const keysToCheck = [
+            magicMap[sId],          // Map by ID
+            magicMap[name],         // Map by Name
+            magicMap[cleanName],    // Map by Clean Name
+            magicMap[normName],     // Map by Norm Name
+            name,                   // Implicit Name
+            cleanName,              // Implicit Clean
+            name + '.csv',          // Implicit CSV
+            cleanName + '.csv'      // Implicit Clean CSV
+        ].flat().filter(Boolean); // Flatten arrays and remove nulls
+
+        // 4. Extract
+        let trades = [];
+        const seen = new Set();
+
+        keysToCheck.forEach(k => {
+            const keyStr = String(k).trim();
+            // Support Account::Magic format
+            let lookup = keyStr;
+            if (keyStr.includes('::')) lookup = keyStr.split('::')[1];
+
+            if (tradesById[lookup]) trades = trades.concat(tradesById[lookup]);
+            if (tradesById[keyStr]) trades = trades.concat(tradesById[keyStr]);
+
+            // Try Case Insensitive Match in tradesById keys
+            const foundKey = Object.keys(tradesById).find(tk => tk.toLowerCase() === keyStr.toLowerCase());
+            if (foundKey) trades = trades.concat(tradesById[foundKey]);
+        });
+
+        // Dedup
+        return trades.filter(t => {
+            const tid = t.ticket || (t.openTime + t.symbol);
+            if (seen.has(tid)) return false;
+            seen.add(tid);
+            return true;
+        });
+    };
+
+    let totalPortfolioProfit = 0;
+    let mappedCount = 0;
+
+    targetNames.forEach(stratName => {
+        const trades = findTradesForStrategy(stratName);
+
+        // Even if 0 trades, we want an entry if possible, but mainly if trades exist
+        if (trades.length > 0) {
+            mappedCount++;
+
+            // Calculate Metrics
+            let maxLosses = 0;
+            let currentLosses = 0;
+            let runningBalance = 0;
+            let maxBalance = 0;
+            let maxDD = 0;
+            let totalProfit = 0;
+
+            // Sort by time
+            trades.sort((a, b) => new Date(a.closeTime || a.closeDate) - new Date(b.closeTime || b.closeDate));
+
+            trades.forEach(t => {
+                if (t.action === 'Deposit' || t.action === 'Withdrawal') return;
+                const profit = (parseFloat(t.profit) || 0) + (parseFloat(t.commission) || 0) + (parseFloat(t.swap) || 0);
+                totalProfit += profit;
+
+                if (profit < 0) {
+                    currentLosses++;
+                    if (currentLosses > maxLosses) maxLosses = currentLosses;
+                } else {
+                    currentLosses = 0;
+                }
+
+                runningBalance += profit;
+                if (runningBalance > maxBalance) maxBalance = runningBalance;
+                const dd = maxBalance - runningBalance;
+                if (dd > maxDD) maxDD = dd;
+            });
+
+            totalPortfolioProfit += totalProfit;
+
+            // Use ID or Name as key for the breakdown object
+            // Ideally we use what the UI expects. The UI iterates 'strategyNames' and looks up in 'strategyBreakdown'.
+            // So we MUST use 'stratName' as the key.
+            strategyBreakdown[stratName] = {
+                mappedIds: ['Resolved'], // Placeholder
+                tradesCount: trades.length,
+                totalProfit: totalProfit,
+                maxConsecutiveLosses: maxLosses,
+                currentConsecutiveLosses: currentLosses,
+                maxDrawdown: maxDD
+            };
+        }
     });
 
-    console.log(`[Myfxbook] Audit Complete. Found ${unmappedKeys.length} unmapped strategies with total profit: ${unmappedProfit}`);
-    if (unmappedKeys.length > 0) {
-        console.warn('⚠️ [Myfxbook] FOUND UNMAPPED TRADES with Profit! This explains the discrepancy.');
-        console.table(unmappedKeys);
-        console.warn('Total Unmapped Profit:', unmappedProfit);
-        import('./notifications.js').then(mod => mod.showToast(`⚠️ ATENCIÓN: ${unmappedKeys.length} estrategias NO ENLAZADAS con $${unmappedProfit.toFixed(2)} de beneficio. Revisa la consola (F12).`, 'warning', 8000));
-    }
+    console.log(`[Myfxbook] Bottom-Up Breakdown Complete. Mapped ${mappedCount}/${targetNames.length} strategies. Total Profit: ${totalPortfolioProfit}`);
 
     portfolio.realMetrics.strategyBreakdown = strategyBreakdown;
-    console.log('[Myfxbook] Strategy breakdown recalculated based on new mapping.');
 }
 
 export async function refreshAllAccounts() {

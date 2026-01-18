@@ -35,6 +35,12 @@ export const state = {
     linkedAccounts: [], // { myfxbookId, accountId, name, broker, portfolioId, lastSyncDate, metrics: {...} }
     myfxbookCredentials: null, // { email, password } - Session only, not persisted to localStorage for security (or optional)
 
+    // --- NUEVO: Deep Scan Data (Multi-Account) ---
+    // Estructura: { [accountId]: { accountInfo, processedStats, tradesById } }
+    // Cada deep scan de un account SOBRESCRIBE los datos de ese account
+    // Pero deep scans de accounts DIFERENTES conviven
+    deepScanData: {},
+
 
     // Configuraciones de ordenamiento
     databankSortConfig: { key: 'metricValue', order: 'desc' },
@@ -83,15 +89,12 @@ export const state = {
 
 // Funciones de persistencia para Magic Numbers
 export const loadMagicNumbers = () => {
-    try {
-        const stored = localStorage.getItem('magicNumberMap');
-        if (stored) {
-            state.magicNumberMap = JSON.parse(stored);
-            console.log('[State] Magic Numbers loaded:', Object.keys(state.magicNumberMap).length);
-        }
-    } catch (e) {
-        console.error('[State] Error loading Magic Numbers:', e);
-    }
+    // DISABLED: Auto-loading from localStorage is disabled per user request ("NO CACHE").
+    // Every session starts fresh. Use Import/Export to persist data manually if needed.
+    console.log('[State] Magic Numbers Auto-Load: DISABLED (Fresh Session).');
+
+    // Explicitly ensure it's empty in state just in case
+    state.magicNumberMap = {};
 };
 
 export const saveMagicNumbers = () => {

@@ -114,7 +114,7 @@ const initLiveMonitor = () => {
 
         // Inject Iframe
         const iframe = document.createElement('iframe');
-        iframe.src = "http://localhost:8002";
+        iframe.src = `http://${window.location.hostname}:8002`; // Use dynamic hostname
         iframe.style.width = "100%";
         iframe.style.height = "100%";
         iframe.style.border = "none";
@@ -199,13 +199,44 @@ const initLiveMonitor = () => {
             // Process payload to generate standardized stats
             const result = processTradeHistory(payload.history, payload.openTrades);
 
-            // 1. UPDATE GLOBAL SANDBOX STATE
-            // This ensures Magic Mapper sees this data source immediately
+            // 1. UPDATE DEEP SCAN DATA (Multi-Account Storage)
+            // Key by accountId: same account = OVERWRITE, different account = COEXIST
+            const accId = String(payload.accountInfo?.accountId || 'unknown');
+            const accName = payload.accountInfo?.name || payload.accountInfo?.broker || 'Unknown Account';
+
+            // Tag each trade with source account metadata
+            const taggedTradesById = {};
+            Object.entries(result.tradesById).forEach(([key, trades]) => {
+                taggedTradesById[key] = trades.map(t => ({
+                    ...t,
+                    _sourceAccount: {
+                        id: accId,
+                        name: accName,
+                        broker: payload.accountInfo?.broker
+                    }
+                }));
+            });
+
+            // Initialize deepScanData if needed
+            if (!state.deepScanData) state.deepScanData = {};
+
+            // Store/Overwrite data for this specific account
+            state.deepScanData[accId] = {
+                accountInfo: payload.accountInfo,
+                processedStats: result.magicStats,
+                tradesById: taggedTradesById,
+                sourceName: `Deep Scan: ${accName}`,
+                lastUpdated: new Date().toISOString()
+            };
+
+            console.log(`[Layout] 📊 Deep Scan Data stored for Account ${accId} (${accName}). Total accounts: ${Object.keys(state.deepScanData).length}`);
+
+            // Keep sandboxData as alias for backwards compatibility (points to last scanned account)
             state.sandboxData = {
                 accountInfo: payload.accountInfo,
                 processedStats: result.magicStats,
-                tradesById: result.tradesById, // Save detailed trades for inspector
-                sourceName: `Sandbox (${payload.accountInfo?.name || payload.accountInfo?.accountId || 'Active'})`
+                tradesById: taggedTradesById,
+                sourceName: `Sandbox (${accName})`
             };
 
             // 2. SEARCH & UPDATE MATCHING PORTFOLIO

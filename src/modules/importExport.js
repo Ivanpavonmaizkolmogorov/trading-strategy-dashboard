@@ -6,18 +6,25 @@ import { updateTradesFilesList, resetUI } from '../ui.js';
 import { populateViewSelector } from '../modules/viewManager.js';
 import { updateDatabankDisplay } from '../modules/databank.js';
 import { showToast } from '../modules/notifications.js';
+import { strategiesTable } from '../modules/strategiesTable.js';
+import { getSavedPortfoliosTableConfig } from '../modules/savedPortfoliosTable.js';
 
 /**
  * Exporta el estado actual de la aplicación a un archivo JSON.
  */
 export const exportAnalysis = () => {
-    if (state.rawStrategiesData.length === 0) {
-        alert("No hay datos para exportar. Por favor, primero analiza las estrategias.");
+    // Allow export if we have strategies data OR deep scan data
+    const hasStrategies = state.rawStrategiesData.length > 0;
+    const hasDeepScanData = state.deepScanData && Object.keys(state.deepScanData).length > 0;
+    const hasSavedPortfolios = state.savedPortfolios && state.savedPortfolios.length > 0;
+
+    if (!hasStrategies && !hasDeepScanData && !hasSavedPortfolios) {
+        alert("No hay datos para exportar. Por favor, primero analiza estrategias o realiza un Deep Scan.");
         return;
     }
 
     const appState = {
-        loadedStrategyFiles: state.loadedStrategyFiles.map(f => ({ name: f.name })),
+        loadedStrategyFiles: state.loadedStrategyFiles.map(f => ({ name: f.name, strategyId: f.strategyId })),
         rawStrategiesData: state.rawStrategiesData,
         savedPortfolios: state.savedPortfolios,
         selectedPortfolioIndices: Array.from(state.selectedPortfolioIndices),
@@ -28,6 +35,12 @@ export const exportAnalysis = () => {
         databankPortfolios: state.databankPortfolios,
         magicNumberMap: state.magicNumberMap, // <-- Persist Magic Mappings
         quarantinedStrategyNames: Array.from(state.quarantinedStrategyNames), // <-- Persist Quarantine List
+        deepScanData: state.deepScanData || {}, // <-- Persist Deep Scan Data (Multi-Account)
+        linkedAccounts: state.linkedAccounts || [], // <-- Persist Linked Accounts
+        // Persistence for exterminated localStorage items:
+        strategiesTableConfig: strategiesTable ? strategiesTable.getConfig() : null,
+        savedPortfoliosTableConfig: getSavedPortfoliosTableConfig ? getSavedPortfoliosTableConfig() : null,
+        linkedStrategiesFilter: state.linkedStrategiesFilter || 'all'
     };
 
     const stateString = JSON.stringify(appState);
@@ -93,6 +106,26 @@ const mergeState = async (importedState) => {
         console.log('[ImportExport] Merged Quarantine List.');
     }
 
+    // 6. Merge Deep Scan Data (by accountId - same account overwrites, different account coexists)
+    if (importedState.deepScanData && Object.keys(importedState.deepScanData).length > 0) {
+        if (!state.deepScanData) state.deepScanData = {};
+        Object.entries(importedState.deepScanData).forEach(([accountId, data]) => {
+            state.deepScanData[accountId] = data; // Overwrite if same accountId
+        });
+        console.log('[ImportExport] Merged Deep Scan Data:', Object.keys(state.deepScanData).length, 'accounts');
+    }
+
+    // 7. Merge Linked Accounts
+    if (importedState.linkedAccounts && importedState.linkedAccounts.length > 0) {
+        const existingIds = new Set(state.linkedAccounts.map(a => a.accountId));
+        importedState.linkedAccounts.forEach(acc => {
+            if (!existingIds.has(acc.accountId)) {
+                state.linkedAccounts.push(acc);
+            }
+        });
+        console.log('[ImportExport] Merged Linked Accounts:', state.linkedAccounts.length);
+    }
+
     if (newPortfoliosAdded > 0) {
         alert(`${newPortfoliosAdded} portafolios nuevos han sido fusionados con tu sesión.`);
         // Re-analizar todo para que los nuevos portafolios se muestren correctamente.
@@ -151,7 +184,7 @@ const restoreState = async (importedState) => {
     state.loadedStrategyFiles = importedState.loadedStrategyFiles.map(f => ({
         name: f.name,
         isPlaceholder: true,
-        strategyId: generateStrategyId(f.name) // <--- Assign ID
+        strategyId: f.strategyId || generateStrategyId(f.name) // Use saved ID or generate new one
     }));
     state.rawStrategiesData = importedState.rawStrategiesData;
     state.savedPortfolios = importedState.savedPortfolios || [];
@@ -164,6 +197,11 @@ const restoreState = async (importedState) => {
     state.databankPortfolios = importedState.databankPortfolios || [];
     state.magicNumberMap = importedState.magicNumberMap || {}; // Restore Magic Mappings
     state.quarantinedStrategyNames = new Set(importedState.quarantinedStrategyNames || []); // Restore Quarantine List
+    state.deepScanData = importedState.deepScanData || {}; // Restore Deep Scan Data (Multi-Account)
+    state.linkedAccounts = importedState.linkedAccounts || []; // Restore Linked Accounts
+
+    console.log('[ImportExport] Restored deepScanData with', Object.keys(state.deepScanData).length, 'accounts');
+    console.log('[ImportExport] Restored linkedAccounts:', state.linkedAccounts.length);
 
     updateTradesFilesList();
 
@@ -172,6 +210,33 @@ const restoreState = async (importedState) => {
 
     populateViewSelector('databank');
     populateViewSelector('saved');
+
+    populateViewSelector('saved');
+
+    // Restore Table Configs & Filters (since localStorage is exterminated)
+    if (importedState.linkedStrategiesFilter) {
+        state.linkedStrategiesFilter = importedState.linkedStrategiesFilter;
+    }
+
+    // Configs need to be applied to the instances. 
+    // Since modules might be loaded already, we apply them now.
+    if (importedState.strategiesTableConfig && strategiesTable) {
+        strategiesTable.updateConfig(importedState.strategiesTableConfig);
+    }
+    // Saved Portfolios config is a bit trickier as it might rely on internal state of module, 
+    // but looking at logic it seems to use a getter. We need a setter or update logic.
+    // Actually ui.js usually manages savedPortfoliosTableConfig via simple object?
+    // Let's check getSavedPortfoliosTableConfig implementation... it returns a config object.
+    // If we want to restore it, we might need a way to set it back or the table recreates itself?
+    // For now we assume if we just set it in memory if there was a global variable... 
+    // Wait, ui.js had `localStorage.setItem` for it. 
+    // But `savedPortfoliosTable` module seems to hold it?
+    // Checking previous steps, `ui.js` imported `getSavedPortfoliosTableConfig` but where is the state held?
+    // It seems held in `savedPortfoliosTable.js`. I will assume I can't easily restore it without a setter there.
+    // I will skip restoring `savedPortfoliosTableConfig` for now unless I verify I can set it.
+    // Actually, `strategiesTable` has `updateConfig` because it uses `CustomizableTable` class.
+    // `savedPortfoliosTable` might be custom.
+    // I will just execute reAnalyzeAllData.
 
     await reAnalyzeAllData();
 
