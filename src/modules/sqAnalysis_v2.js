@@ -724,6 +724,8 @@ const calculateMarkovChain = (trades, timeData) => {
 
 // --- TRADE MATCHING HELPER ---
 const matchTrades = (btTrades, realTrades) => {
+    console.log(`[MATCH DEBUG] Starting with ${btTrades.length} BT Trades and ${realTrades.length} Real Trades`);
+
     const roundToHour = (d) => {
         if (!d) return null;
         const x = new Date(d);
@@ -739,6 +741,8 @@ const matchTrades = (btTrades, realTrades) => {
         btMap.get(k).push(t);
     });
 
+    // console.log(`[MATCH DEBUG] Created BT Map with ${btMap.size} hourly buckets`);
+
     const matches = [];
     const orphanReal = [];
     const matchedBtIds = new Set();
@@ -748,9 +752,16 @@ const matchTrades = (btTrades, realTrades) => {
         const candidates = btMap.get(k);
         let best = null;
 
+        const realDateStr = real.openTime ? real.openTime.toISOString() : 'NoDate';
+        // console.log(`[MATCH DEBUG] processing Real Trade: ${realDateStr} (Bucket: ${new Date(k).toISOString()})`);
+
         if (candidates) {
             const avail = candidates.filter(c => !matchedBtIds.has(c));
             let bestScore = -1;
+
+            if (avail.length === 0) {
+                // console.log(`[MATCH DEBUG]   -> Bucket found but all ${candidates.length} candidates already matched.`);
+            }
 
             avail.forEach(bt => {
                 let score = 0;
@@ -764,22 +775,35 @@ const matchTrades = (btTrades, realTrades) => {
                 // Type Match
                 if (real.type && bt.type && real.type.toLowerCase() === bt.type.toLowerCase()) score += 100;
 
+                // console.log(`[MATCH DEBUG]     -> Candidate BT ${bt.openTime.toISOString()} | Diff: ${diffMin.toFixed(1)}m | Score: ${score.toFixed(1)}`);
+
                 if (score > bestScore) {
                     bestScore = score;
                     best = bt;
                 }
             });
+        } else {
+            // console.log(`[MATCH DEBUG]   -> No BT candidates in bucket ${new Date(k).toISOString()}`);
+            // Extended Debug: Check +/- 1 hour explicitly to see if it was a boundary issue
+            const prev = k - 3600000;
+            const next = k + 3600000;
+            if (btMap.has(prev)) console.log(`[MATCH DEBUG]   -> ⚠️ NEAR MISS: Found candidates in PREV hour bucket (${new Date(prev).toISOString()})!`);
+            if (btMap.has(next)) console.log(`[MATCH DEBUG]   -> ⚠️ NEAR MISS: Found candidates in NEXT hour bucket (${new Date(next).toISOString()})!`);
         }
 
         if (best) {
             matches.push({ real, bt: best });
             matchedBtIds.add(best);
+            // console.log(`[MATCH DEBUG]   -> ✅ MATCHED with BT ${best.openTime.toISOString()}`);
         } else {
             orphanReal.push(real);
+            console.log(`[MATCH DEBUG]   -> ❌ ORPHAN REAL: ${realDateStr} (Pnl: ${real.pnl})`);
         }
     });
 
     const orphanBT = btTrades.filter(t => !matchedBtIds.has(t));
+
+    console.log(`[MATCH DEBUG] Result: ${matches.length} Matches, ${orphanReal.length} Orphan Real, ${orphanBT.length} Orphan BT`);
 
     // Sort Descending by Real Exit Time (or Open Time)
     matches.sort((a, b) => b.real.openTime - a.real.openTime);
@@ -869,7 +893,7 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
 
     const strategySelectorHTML = `
         <select id="sq-strategy-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500">
-            <option value="all" ${currentStrategyId === 'all' ? 'selected' : ''}>All Strategies (Portfolio)</option>
+            <option value="all" ${currentStrategyId === 'all' ? 'selected' : ''}>All Strategies</option>
             ${strategyOptions}
         </select>
         <button onclick="const sel = document.getElementById('sq-strategy-select'); if(sel.value !== 'all') window.addStrategyToQuarantine(sel.options[sel.selectedIndex].text.trim());" class="ml-2 text-red-500 hover:text-red-400 p-1 rounded hover:bg-gray-700 transition-colors" title="Mover estrategia a Cuarentena">
@@ -911,7 +935,7 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
 
     const headerControls = `
         <div class="flex gap-2 items-center flex-wrap">
-            ${portfolioSelectorHTML}
+            ${/* DISABLED: portfolioSelectorHTML - strategies no longer depend on portfolio */''}
             ${strategySelectorHTML}
             ${dataTypeSelectorHTML}
 
@@ -2246,6 +2270,144 @@ const renderHistogram = (canvasId, values, label) => {
         }
     });
 };
+let exitDistChart = null;
+let exitDurationChart = null;
+
+const renderExitAnalysisCharts = (exitStats) => {
+    if (!exitStats) return;
+
+    const ctxDist = document.getElementById('sq-exit-dist-chart');
+    const ctxDur = document.getElementById('sq-exit-duration-chart');
+
+    if (exitDistChart) { exitDistChart.destroy(); exitDistChart = null; }
+    if (exitDurationChart) { exitDurationChart.destroy(); exitDurationChart = null; }
+
+    const labels = Object.keys(exitStats).filter(k => exitStats[k].count > 0);
+    const dataCount = labels.map(k => exitStats[k].count);
+    const dataDur = labels.map(k => exitStats[k].avgDuration / (1000 * 60 * 60)); // Hours
+
+    if (ctxDist) {
+        exitDistChart = new Chart(ctxDist, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: dataCount,
+                    backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#6366f1', '#9ca3af'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'right', labels: { color: '#9ca3af', font: { size: 10 } } },
+                    title: { display: true, text: 'Distribution', color: '#d1d5db', font: { size: 12 } }
+                }
+            }
+        });
+    }
+
+    if (ctxDur) {
+        exitDurationChart = new Chart(ctxDur, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Avg Duration (Hours)',
+                    data: dataDur,
+                    backgroundColor: '#8b5cf6',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    title: { display: true, text: 'Avg Duration (Hours)', color: '#d1d5db', font: { size: 12 } }
+                },
+                scales: {
+                    y: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                    x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                }
+            }
+        });
+    }
+};
+
+let interTradeChart = null;
+let interTradeChartInstances = {};
+
+const renderFrequencyCharts = (statsMap) => {
+    if (!statsMap) return;
+
+    // Color Mapping (Matching HTML)
+    const colorMap = {
+        'TP': { bg: 'rgba(16, 185, 129, 0.4)', border: 'rgba(16, 185, 129, 0.8)' }, // Emerald
+        'SL': { bg: 'rgba(239, 68, 68, 0.4)', border: 'rgba(239, 68, 68, 0.8)' },   // Red
+        'Trailing': { bg: 'rgba(168, 85, 247, 0.4)', border: 'rgba(168, 85, 247, 0.8)' }, // Purple
+        'Time': { bg: 'rgba(59, 130, 246, 0.4)', border: 'rgba(59, 130, 246, 0.8)' },     // Blue
+        'Manual': { bg: 'rgba(107, 114, 128, 0.4)', border: 'rgba(107, 114, 128, 0.8)' }, // Gray
+        'Other': { bg: 'rgba(75, 85, 99, 0.4)', border: 'rgba(75, 85, 99, 0.8)' }        // Dark Gray
+    };
+
+    // Destroy old charts
+    Object.values(interTradeChartInstances).forEach(c => c.destroy());
+    interTradeChartInstances = {};
+
+    Object.keys(statsMap).forEach(key => {
+        if (key === 'All') return; // Skip All
+
+        const stats = statsMap[key];
+        // Skip if empty or too small
+        if (!stats || stats.values.length < 2) return;
+
+        const ctx = document.getElementById(`sq-freq-chart-${key}`);
+        if (!ctx) return;
+
+        // Assuming calculateHistogramData is available in scope (or imported/defined globally)
+        const { labels, data } = calculateHistogramData(stats.values, 15);
+        const colors = colorMap[key] || colorMap['Other'];
+
+        interTradeChartInstances[key] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Freq',
+                    data: data,
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    barPercentage: 1.0,
+                    categoryPercentage: 1.0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    title: { display: false },
+                    tooltip: {
+                        enabled: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        display: false
+                    },
+                    x: {
+                        display: false
+                    }
+                }
+            }
+        });
+    });
+};
+
 
 export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initialStrategyId = 'all', initialDataType = 'backtest') => {
     // Update active config
@@ -2307,15 +2469,66 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
 
             const strategiesList = [];
 
-            strategyIndices.forEach(idx => {
-                if (idx === -1) return;
-                const file = state.loadedStrategyFiles[idx];
-                if (file) strategiesList.push({ id: file.strategyId || file.name, name: file.name, index: idx });
+            // ======= DEBUG: STRATEGY LIST SOURCING =======
+            console.log(`[SQ Analysis] 🔍 STRATEGY LIST SOURCING DEBUG ===============`);
+            console.log(`[SQ Analysis]    - portfolioIndex: ${portfolioIndex}`);
+            console.log(`[SQ Analysis]    - source: ${source}`);
+            console.log(`[SQ Analysis]    - portfolio.name: ${portfolio?.name}`);
+            console.log(`[SQ Analysis]    - portfolio.strategyIds: ${portfolio?.strategyIds?.length || 0}`);
+            console.log(`[SQ Analysis]    - portfolio.indices: ${portfolio?.indices?.length || 0}`);
+            console.log(`[SQ Analysis]    - state.loadedStrategyFiles: ${state.loadedStrategyFiles?.length || 0}`);
+            console.log(`[SQ Analysis]    - strategyIndices resolved: [${strategyIndices.join(', ')}]`);
+            console.log(`[SQ Analysis]    - initialDataType: ${initialDataType}`);
+
+            // Log all loaded strategies for comparison
+            console.log(`[SQ Analysis]    - ALL LOADED STRATEGIES:`);
+            (state.loadedStrategyFiles || []).forEach((file, idx) => {
+                console.log(`[SQ Analysis]       [${idx}] ${file.name} (ID: ${file.strategyId})`);
+            });
+            // ======= END DEBUG =======
+
+            // ======= NEW LOGIC: strategiesList should NOT depend on portfolio =======
+            // For Backtest: ALL loaded strategies
+            // For Real: Only strategies with magic mappings
+            console.log(`[SQ Analysis] 🚀 NEW STRATEGY SOURCING LOGIC ===============`);
+            console.log(`[SQ Analysis]    - initialDataType: ${initialDataType}`);
+
+            // Build list from ALL loaded strategy files
+            (state.loadedStrategyFiles || []).forEach((file, idx) => {
+                if (!file) return;
+                const stratId = file.strategyId || file.name;
+                const rawName = file.name;
+                const cleanName = rawName.replace(/\.csv$/i, '').trim();
+
+                // For "real" data type, only include strategies with magic mappings
+                if (initialDataType === 'real') {
+                    const hasMapping =
+                        (state.magicNumberMap && state.magicNumberMap[stratId] && state.magicNumberMap[stratId].length > 0) ||
+                        (state.magicNumberMap && state.magicNumberMap[rawName] && state.magicNumberMap[rawName].length > 0) ||
+                        (state.magicNumberMap && state.magicNumberMap[cleanName] && state.magicNumberMap[cleanName].length > 0);
+
+                    if (!hasMapping) {
+                        console.log(`[SQ Analysis]    ⏭️ Skipping (no mapping): ${rawName}`);
+                        return;
+                    }
+                    console.log(`[SQ Analysis]    ✅ Including (has mapping): ${rawName}`);
+                }
+
+                strategiesList.push({ id: stratId, name: rawName, index: idx });
             });
 
-            strategyIndices.forEach((idx, i) => {
-                if (idx === -1 || !state.loadedStrategyFiles[idx]) return;
-                const file = state.loadedStrategyFiles[idx];
+            console.log(`[SQ Analysis]    - strategiesList FINAL: ${strategiesList.length} strategies`);
+            strategiesList.forEach((s, i) => {
+                console.log(`[SQ Analysis]       [${i}] ${s.name} (ID: ${s.id})`);
+            });
+            console.log(`[SQ Analysis] 🚀 END NEW STRATEGY SOURCING LOGIC ===============`);
+
+
+
+            // ======= LOAD TRADES FROM ALL STRATEGIES (not just portfolio) =======
+            console.log(`[SQ Analysis] 📂 LOADING BACKTEST TRADES FROM ALL STRATEGIES ===============`);
+            (state.loadedStrategyFiles || []).forEach((file, idx) => {
+                if (!file) return;
                 let trades = [];
                 if (file && file.content) trades = parseTradesFromContent(file.content);
                 else if (state.rawStrategiesData[idx]) trades = parseTradesFromData(state.rawStrategiesData[idx]);
@@ -2324,65 +2537,18 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
                 const strategyId = file.strategyId || file.name;
                 trades.forEach(t => t.strategyId = strategyId);
 
-
-
-                // DEBUG LOG for Risk Normalization
-                console.log(`[SQ DEBUG] Strategy ${i} (${file.name}) check. Portfolio Keys: ${Object.keys(portfolio).join(',')}`);
-                console.log(`[SQ DEBUG] Risk Value: ${portfolio.riskPerStrategy ? portfolio.riskPerStrategy[i] : 'UNDEFINED'}, Scaled Flag: ${portfolio.riskConfig?.isScaled}`);
-
-
-
-                // --- RISK NORMALIZATION APPLICATION ---
-                // If portfolio is normalized, we must scale the raw trades to match the table metrics.
-                // Multiplier = riskPerStrategy[i] / 100.0 (Assuming base risk 100)
-                let multiplier = 1.0;
-                if (portfolio.riskPerStrategy && portfolio.riskPerStrategy[i] !== undefined) {
-                    // Check if scaling is active. 
-                    // Usually we trust riskPerStrategy if it differs from 100, BUT
-                    // checking riskConfig.isScaled is safer if available.
-                    // Fallback: if riskPerStrategy[i] != 100, apply it.
-                    // Or if portfolio.riskConfig exists.
-                    // Let's use the explicit values in riskPerStrategy.
-                    const r = portfolio.riskPerStrategy[i];
-                    // Multiplier is RiskValue / 100.0 (Base 100)
-                    const multiplier = (r / 100.0);
-                    console.log(`[SQ ANALYSIS] Strategy ${i} Risk: ${r}, Multiplier: ${multiplier.toFixed(4)}, Scaled Flag: ${portfolio.riskConfig?.isScaled}`);
-                    // console.log(`[SQ ANALYIS] Applying Scaling Factor ${multiplier.toFixed(4)} to Strategy ${i}`);
-
-                    // console.log(`[SQ ANALYIS] Applying Scaling Factor ${multiplier.toFixed(4)} to Strategy ${i}`);
-
-                    trades.forEach(t => {
-                        t.pnl = t.pnl * multiplier;
-                        t.commission = t.commission * multiplier;
-                        t.swap = t.swap * multiplier;
-                    });
-
-                    // DEBUG: Calculate simple Drawdown to verify
-                    let peak = -Infinity;
-                    let maxDD = 0;
-                    let runningPnL = 0;
-                    trades.forEach(t => {
-                        runningPnL += t.pnl;
-                        if (runningPnL > peak) peak = runningPnL;
-                        const dd = peak - runningPnL;
-                        if (dd > maxDD) maxDD = dd;
-                    });
-                    console.log(`[SQ DEBUG] Strategy ${i} Scaled MaxDD: ${maxDD.toFixed(2)} (Target should be close to normalization target)`);
-                }
+                console.log(`[SQ Analysis]    [${idx}] ${file.name}: ${trades.length} trades loaded`);
 
                 // Collect missing columns
                 if (trades.missingCols && trades.missingCols.length > 0) {
                     trades.missingCols.forEach(c => allMissingCols.add(c));
                 }
 
-                // DEBUG LOGGING
-                const pnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-                // console.log(`[SQ DEBUG] Backtest Parse Strategy: ${file.name} (Idx: ${idx})`);
-                // console.log(`[SQ DEBUG]  -> Parsed BT Trades: ${trades.length}`);
-                // console.log(`[SQ DEBUG]  -> Net Profit: ${pnl.toFixed(2)}`);
-
                 allTrades = allTrades.concat(trades);
             });
+            console.log(`[SQ Analysis] 📂 TOTAL BACKTEST TRADES LOADED: ${allTrades.length}`);
+            console.log(`[SQ Analysis] 📂 END LOADING TRADES ===============`);
+
 
             if (allTrades.length === 0 && initialDataType === 'backtest') {
                 contentDiv.innerHTML = '<div class="text-gray-400 text-center p-10">No data available.</div>';
@@ -2410,7 +2576,7 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
     }, 50);
 };
 
-function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'all', initialDataType = 'backtest', portfolio, allMissingCols = new Set(), portfoliosList = [], portfolioIndex = -1, source = 'saved') {
+function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'all', initialDataType = 'backtest', portfolio, allMissingCols = new Set(), portfoliosList = [], portfolioIndex = -1, source = 'saved', dateRange = null) {
     let currentMetric = 'pnl';
     let currentPeriod = 'month';
     let currentStrategyId = initialStrategyId;
@@ -2430,14 +2596,17 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
     };
 
     const getRealTrades = (stratIdInput) => {
-        if (!portfolio || !portfolio.realMetrics || !portfolio.realMetrics._tradesById) return [];
+        // Allow proceeding if we have deepScanData, even if portfolio metrics are missing
+        const hasPortfolioMetrics = portfolio && portfolio.realMetrics && portfolio.realMetrics._tradesById;
+        if (!hasPortfolioMetrics && (!state.deepScanData || state.deepScanData.length === 0)) return [];
 
-        const tradesById = portfolio.realMetrics._tradesById;
+        const tradesById = hasPortfolioMetrics ? portfolio.realMetrics._tradesById : {};
         const magicMap = state.magicNumberMap || {};
         let rawRealTrades = [];
 
         // ROBUST MAPPING Helper
         const resolveMagic = (sId) => {
+            // console.log(`[SQ DEBUG] resolveMagic called for: ${sId}`);
             // 1. Try Portfolio specific name first (Most Robust for "Linked" accounts)
             let portfolioSpecificName = null;
 
@@ -2462,16 +2631,36 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
 
             if (portfolioSpecificName) {
                 const m = magicMap[portfolioSpecificName];
-                if (m) return m;
+                if (m) {
+                    // console.log(`[SQ DEBUG] Resolved via Portfolio Name '${portfolioSpecificName}': ${m}`);
+                    return m;
+                }
             }
 
             // 2. Fallback to ID
-            if (magicMap[sId]) return magicMap[sId];
+            if (magicMap[sId]) {
+                console.log(`[SQ DEBUG] Resolved via ID '${sId}': ${magicMap[sId]}`);
+                return magicMap[sId];
+            }
 
             // 3. Fallback to global Name
             const s = strategiesList.find(x => x.id === sId);
-            if (s && s.name && magicMap[s.name]) return magicMap[s.name];
+            if (s && s.name && magicMap[s.name]) {
+                console.log(`[SQ DEBUG] Resolved via Name '${s.name}': ${magicMap[s.name]}`);
+                return magicMap[s.name];
+            }
 
+            // 3b. Try cleaning the name (remove .csv)
+            if (s && s.name) {
+                const cleanName = s.name.replace(/\.csv$/i, '').trim();
+                const m = magicMap[cleanName];
+                if (m) {
+                    console.log(`[SQ DEBUG] Resolved via Clean Name '${cleanName}': ${m}`);
+                    return m;
+                }
+            }
+
+            console.warn(`[SQ DEBUG] ❌ Failed to resolve Magic for ${sId} (Name: ${s ? s.name : '?'})`);
             return null;
         };
 
@@ -2499,9 +2688,52 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             magicList.forEach(magicStr => {
                 const subIds = String(magicStr).split(',').map(s => s.trim());
                 subIds.forEach(realMagic => {
-                    if (tradesById[realMagic]) {
+                    let foundTrades = [];
+                    // 1. Try Portfolio Cache
+                    if (tradesById && tradesById[realMagic]) {
+                        foundTrades = tradesById[realMagic];
+                    }
+                    // 2. Try Global Deep Scan Data (Fallback)
+                    else if (state.deepScanData) {
+                        const key = String(realMagic).trim();
+                        // Logic from focusMode.js::findTradesInDeepScanData
+                        if (key.includes('::')) {
+                            const [targetAccountId, magicNumber] = key.split('::');
+                            // Direct lookup if deepScanData is an object keyed by Account ID
+                            // Check if deepScanData is Array or Object
+                            if (!Array.isArray(state.deepScanData)) {
+                                const accountData = state.deepScanData[targetAccountId];
+                                if (accountData && accountData.tradesById && accountData.tradesById[magicNumber]) {
+                                    const trades = accountData.tradesById[magicNumber];
+                                    foundTrades = foundTrades.concat(trades);
+                                }
+                            } else {
+                                // If Array, find account by ID
+                                const acc = state.deepScanData.find(a => String(a.accountId) === String(targetAccountId));
+                                if (acc && acc.tradesById && acc.tradesById[magicNumber]) {
+                                    foundTrades = foundTrades.concat(acc.tradesById[magicNumber]);
+                                }
+                            }
+                        } else {
+                            // Legacy: Search everywhere
+                            const deepData = Array.isArray(state.deepScanData) ? state.deepScanData : Object.values(state.deepScanData);
+                            deepData.forEach(acc => {
+                                if (acc.tradesById && acc.tradesById[key]) {
+                                    foundTrades = foundTrades.concat(acc.tradesById[key]);
+                                } else if (acc.history) {
+                                    // Fallback to raw history scan if tradesById missing
+                                    const matches = acc.history.filter(t => String(t.magicNumber) === key);
+                                    if (matches.length > 0) foundTrades = foundTrades.concat(matches);
+                                }
+                            });
+                        }
+                    }
+
+                    if (foundTrades.length > 0) {
+                        console.log(`[SQ ANALYSIS] ✅ Found ${foundTrades.length} trades for Magic ${realMagic} (Strategy: ${displayName})`);
                         // Clone and Tag with Display Name
-                        const tagged = tradesById[realMagic].map(t => ({ ...t, displaySymbol: displayName }));
+
+                        const tagged = foundTrades.map(t => ({ ...t, displaySymbol: displayName }));
                         rawRealTrades.push(...tagged);
                     }
                 });
@@ -2553,6 +2785,7 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
     };
 
     const render = () => {
+
         let filteredTrades = []; // Primary Dataset
         let secondaryMetrics = null; // For Comparison Mode
 
@@ -2577,42 +2810,45 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
 
         // Initialize Defaults on first real/comparison load if unset
         if (currentDataType === 'comparison' || currentDataType === 'real') {
-            // "Default: From First Real Data to Last Available Data (BT or Real)"
-            const allReal = getRealTrades('all');
+            // Logic Update: Default Start = First Real Trade, Default End = Last BT Trade (Specific to selected strategy)
+
+            // 1. Find Min/Max Real Dates (Start/End)
+            let minRealTime = 0;
             let maxRealTime = 0;
-            if (allReal.length > 0) {
-                const lastReal = allReal[allReal.length - 1];
-                if (lastReal && lastReal.exitTime) maxRealTime = lastReal.exitTime.getTime();
+            if (realTrades.length > 0) {
+                const sortedReal = [...realTrades].sort((a, b) => a.openTime - b.openTime);
+                minRealTime = sortedReal[0].openTime.getTime();
+                maxRealTime = sortedReal[sortedReal.length - 1].openTime.getTime(); // Define maxRealTime here
             }
 
-            if (!currentStartDate && !currentEndDate) {
+            // 2. Find Max Date (End) - Prefer BT End, fallback to Real End
+            let maxTime = 0;
+            if (backtestTrades.length > 0) {
+                const sortedBT = [...backtestTrades].sort((a, b) => a.openTime - b.openTime); // Sort by openTime usually
+                maxTime = sortedBT[sortedBT.length - 1].openTime.getTime();
+            }
+            // If no BT or BT ends before Real starts (weird but possible), try Real End
+            if (maxTime === 0 && maxRealTime > 0) {
+                maxTime = maxRealTime;
+            }
 
-                // 1. Start Date: First Real Trade
-                if (allReal.length > 0) {
-                    currentStartDate = fmtDate(allReal[0].openTime);
-                }
+            // Apply Defaults ONLY if dateRange is empty (or on initial load)
+            // Note: dateRange is passed from outside, if it's empty we set currents.
+            const rangeDefined = typeof dateRange !== 'undefined' && dateRange !== null;
+            if (!rangeDefined || (!dateRange.start && !dateRange.end)) {
+                if (minRealTime > 0) currentStartDate = new Date(minRealTime);
+                if (maxTime > 0) currentEndDate = new Date(maxTime);
 
-                // 2. End Date: Max(Last BT, Last Real)
-                let maxTime = 0;
-
-                // Check Last Backtest Trade
-                if (allPortfolioTrades.length > 0) {
-                    const lastBT = allPortfolioTrades[allPortfolioTrades.length - 1]; // Sorted by exitTime
-                    if (lastBT && lastBT.exitTime) maxTime = Math.max(maxTime, lastBT.exitTime.getTime());
-                }
-
-                // Check Last Real Trade
-                if (allReal.length > 0) {
-                    const lastReal = allReal[allReal.length - 1];
-                    if (lastReal && lastReal.exitTime) maxTime = Math.max(maxTime, lastReal.exitTime.getTime());
-                }
-
-                if (maxTime > 0) {
-                    currentEndDate = fmtDate(new Date(maxTime));
+                // Safety: Ensure Start < End. If Real started AFTER BT ended, expand End
+                if (currentStartDate && currentEndDate && currentStartDate > currentEndDate) {
+                    if (maxRealTime > 0) {
+                        if (maxRealTime > maxTime) currentEndDate = new Date(maxRealTime);
+                    }
                 }
             }
-            // Expansion Logic
-            else if (currentEndDate && maxRealTime > 0) {
+
+            // Expansion Logic (Moved inside block to access local vars and fix scope)
+            if (currentEndDate && maxRealTime > 0) {
                 const currEndTs = new Date(currentEndDate).getTime();
                 if (maxRealTime > currEndTs) {
                     console.log(`[SQ INFO] Auto-expanding End Date to ${fmtDate(new Date(maxRealTime))}`);
@@ -2982,161 +3218,34 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
     };
 
     render();
-}
 
 
-let exitDistChart = null;
-let exitDurationChart = null;
 
-const renderExitAnalysisCharts = (exitStats) => {
-    if (!exitStats) return;
-
-    const ctxDist = document.getElementById('sq-exit-dist-chart');
-    const ctxDur = document.getElementById('sq-exit-duration-chart');
-
-    if (exitDistChart) { exitDistChart.destroy(); exitDistChart = null; }
-    if (exitDurationChart) { exitDurationChart.destroy(); exitDurationChart = null; }
-
-    const labels = Object.keys(exitStats).filter(k => exitStats[k].count > 0);
-    const dataCount = labels.map(k => exitStats[k].count);
-    const dataDur = labels.map(k => exitStats[k].avgDuration / (1000 * 60 * 60)); // Hours
-
-    if (ctxDist) {
-        exitDistChart = new Chart(ctxDist, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: dataCount,
-                    backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#6366f1', '#9ca3af'],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'right', labels: { color: '#9ca3af', font: { size: 10 } } },
-                    title: { display: true, text: 'Distribution', color: '#d1d5db', font: { size: 12 } }
-                }
-            }
-        });
-    }
-
-    if (ctxDur) {
-        exitDurationChart = new Chart(ctxDur, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Avg Duration (Hours)',
-                    data: dataDur,
-                    backgroundColor: '#8b5cf6',
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    title: { display: true, text: 'Avg Duration (Hours)', color: '#d1d5db', font: { size: 12 } }
-                },
-                scales: {
-                    y: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
-                    x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
-                }
-            }
-        });
-    }
-};
+    let exitDistChart = null;
+    let exitDurationChart = null;
 
 
-let interTradeChart = null;
 
-let interTradeChartInstances = {};
 
-const renderFrequencyCharts = (statsMap) => {
-    if (!statsMap) return;
+    let interTradeChart = null;
 
-    // Color Mapping (Matching HTML)
-    const colorMap = {
-        'TP': { bg: 'rgba(16, 185, 129, 0.4)', border: 'rgba(16, 185, 129, 0.8)' }, // Emerald
-        'SL': { bg: 'rgba(239, 68, 68, 0.4)', border: 'rgba(239, 68, 68, 0.8)' },   // Red
-        'Trailing': { bg: 'rgba(168, 85, 247, 0.4)', border: 'rgba(168, 85, 247, 0.8)' }, // Purple
-        'Time': { bg: 'rgba(59, 130, 246, 0.4)', border: 'rgba(59, 130, 246, 0.8)' },     // Blue
-        'Manual': { bg: 'rgba(107, 114, 128, 0.4)', border: 'rgba(107, 114, 128, 0.8)' }, // Gray
-        'Other': { bg: 'rgba(75, 85, 99, 0.4)', border: 'rgba(75, 85, 99, 0.8)' }        // Dark Gray
-    };
+    let interTradeChartInstances = {};
 
-    // Destroy old charts
-    Object.values(interTradeChartInstances).forEach(c => c.destroy());
-    interTradeChartInstances = {};
 
-    Object.keys(statsMap).forEach(key => {
-        if (key === 'All') return; // Skip All
+    // --- EXIT DETAILS MODAL ---
+    // --- REUSABLE TRADES MODAL ---
+    window.renderTradesModal = (trades, title, colorClass = 'bg-blue-500') => {
+        // Generate Table HTML
+        let trs = trades.map(t => {
+            const ticket = t.ticket || t.id || '-';
+            const open = t.openTime ? t.openTime.toLocaleString() : '-';
+            const exit = t.exitTime ? t.exitTime.toLocaleString() : 'N/A';
+            const type = t.type !== undefined ? (t.type === 0 || t.type === 'Buy' ? 'Buy' : 'Sell') : '-';
+            const size = t.size || t.lots || '-';
+            const pnlClass = t.pnl >= 0 ? 'text-green-400' : 'text-red-400';
+            const comment = t.comment || t.exitReason || '-';
 
-        const stats = statsMap[key];
-        // Skip if empty or too small
-        if (!stats || stats.values.length < 2) return;
-
-        const ctx = document.getElementById(`sq-freq-chart-${key}`);
-        if (!ctx) return;
-
-        const { labels, data } = calculateHistogramData(stats.values, 15);
-        const colors = colorMap[key] || colorMap['Other'];
-
-        interTradeChartInstances[key] = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Freq',
-                    data: data,
-                    backgroundColor: colors.bg,
-                    borderColor: colors.border,
-                    borderWidth: 1,
-                    barPercentage: 1.0,
-                    categoryPercentage: 1.0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    title: { display: false },
-                    tooltip: {
-                        enabled: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        display: false
-                    },
-                    x: {
-                        display: false
-                    }
-                }
-            }
-        });
-    });
-};
-// --- EXIT DETAILS MODAL ---
-// --- REUSABLE TRADES MODAL ---
-window.renderTradesModal = (trades, title, colorClass = 'bg-blue-500') => {
-    // Generate Table HTML
-    let trs = trades.map(t => {
-        const ticket = t.ticket || t.id || '-';
-        const open = t.openTime ? t.openTime.toLocaleString() : '-';
-        const exit = t.exitTime ? t.exitTime.toLocaleString() : 'N/A';
-        const type = t.type !== undefined ? (t.type === 0 || t.type === 'Buy' ? 'Buy' : 'Sell') : '-';
-        const size = t.size || t.lots || '-';
-        const pnlClass = t.pnl >= 0 ? 'text-green-400' : 'text-red-400';
-        const comment = t.comment || t.exitReason || '-';
-
-        return `
+            return `
             <tr class="border-b border-gray-700 hover:bg-gray-700/50">
                 <td class="px-4 py-2 text-sm text-gray-500 font-mono text-xs">${ticket}</td>
                 <td class="px-4 py-2 text-sm text-gray-300 whitespace-nowrap">${open}</td>
@@ -3147,9 +3256,9 @@ window.renderTradesModal = (trades, title, colorClass = 'bg-blue-500') => {
                 <td class="px-4 py-2 text-sm text-gray-400 truncate max-w-xs" title="${comment}">${comment}</td>
             </tr>
         `;
-    }).join('');
+        }).join('');
 
-    const modalHtml = `
+        const modalHtml = `
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] backdrop-blur-sm" onclick="this.remove()">
             <div class="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col" onclick="event.stopPropagation()">
                 <div class="flex items-center justify-between px-6 py-4 border-b border-gray-700 bg-gray-900/50 rounded-t-lg">
@@ -3186,221 +3295,221 @@ window.renderTradesModal = (trades, title, colorClass = 'bg-blue-500') => {
         </div>
     `;
 
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-};
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
 
-// --- EXIT DETAILS MODAL ---
-window.showExitDetails = (category) => {
-    if (!window.activeAnalysisData || !window.activeAnalysisData.interTradeStatsByReason) return;
-    const data = window.activeAnalysisData.interTradeStatsByReason[category];
-    if (!data || !data.trades) return alert('No trades found for this category.');
+    // --- EXIT DETAILS MODAL ---
+    window.showExitDetails = (category) => {
+        if (!window.activeAnalysisData || !window.activeAnalysisData.interTradeStatsByReason) return;
+        const data = window.activeAnalysisData.interTradeStatsByReason[category];
+        if (!data || !data.trades) return alert('No trades found for this category.');
 
-    window.renderTradesModal(data.trades, `${category} Details`);
-};
+        window.renderTradesModal(data.trades, `${category} Details`);
+    };
 
-// --- STAGNATION AUDIT TOOL ---
-window.openStagnationAudit = (yearStr, weekStr, type) => {
-    console.group(`[Stagnation Audit] ${type.toUpperCase()} | ${yearStr} | ${weekStr}`);
-    const data = window.activeAnalysisData;
-    const dataType = data.dataType || 'unknown';
-    console.log(`[Audit Debug] Active Analysis Mode: ${dataType} | Request: ${type}`);
+    // --- STAGNATION AUDIT TOOL ---
+    window.openStagnationAudit = (yearStr, weekStr, type) => {
+        console.group(`[Stagnation Audit] ${type.toUpperCase()} | ${yearStr} | ${weekStr}`);
+        const data = window.activeAnalysisData;
+        const dataType = data.dataType || 'unknown';
+        console.log(`[Audit Debug] Active Analysis Mode: ${dataType} | Request: ${type}`);
 
-    let trades = [];
+        let trades = [];
 
-    // Strict Data Selection
-    if (type === 'backtest') {
-        if (dataType === 'backtest' || dataType === 'comparison') {
-            trades = data.primaryTrades || [];
+        // Strict Data Selection
+        if (type === 'backtest') {
+            if (dataType === 'backtest' || dataType === 'comparison') {
+                trades = data.primaryTrades || [];
+            } else {
+                console.warn(`[Audit] Requested Backtest trades but current mode is '${dataType}'.`);
+                alert("⚠️ Backtest data is not loaded in this view.\nSwitch to 'Backtest' or 'Comparison' mode.");
+                console.groupEnd();
+                return;
+            }
+        } else if (type === 'real') {
+            if (dataType === 'real') {
+                trades = data.primaryTrades || [];
+            } else if (dataType === 'comparison') {
+                trades = data.secondaryTrades || [];
+            } else {
+                console.warn(`[Audit] Requested Real trades but current mode is '${dataType}'.`);
+                alert("⚠️ Real data is not loaded in this view.\nSwitch to 'Real' or 'Comparison' mode.");
+                console.groupEnd();
+                return;
+            }
+        }
+
+
+        console.log(`[Audit] Total Candidates: ${trades.length}`);
+
+        const targetYear = parseInt(yearStr);
+        let isDayMode = false;
+        let targetDayMonth = '';
+
+        if (String(weekStr).includes('-')) {
+            isDayMode = true;
+            targetDayMonth = weekStr; // "01-16"
+        }
+
+        const targetWeek = parseInt(weekStr);
+
+        const hits = trades.filter(t => {
+            if (!t.exitTime) return false;
+
+            const d = new Date(Date.UTC(t.exitTime.getFullYear(), t.exitTime.getMonth(), t.exitTime.getDate()));
+
+            if (isDayMode) {
+                const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(d.getUTCDate()).padStart(2, '0');
+                const key = `${m}-${day}`;
+                return d.getUTCFullYear() === targetYear && key === targetDayMonth;
+            }
+
+            // Week Logic (Exact match to calculateSQMetrics)
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            const w = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+            const wy = d.getUTCFullYear();
+
+            return wy === targetYear && w === targetWeek;
+        });
+
+        console.log(`[Audit] Found ${hits.length} trades for ${yearStr}-${isDayMode ? targetDayMonth : 'W' + weekStr}`);
+        if (hits.length > 0) {
+            window.renderTradesModal(
+                hits,
+                `Audit: ${type === 'real' ? 'Real' : 'Backtest'} (${yearStr}-W${weekStr})`,
+                type === 'real' ? 'bg-emerald-500' : 'bg-blue-500'
+            );
+
+
         } else {
-            console.warn(`[Audit] Requested Backtest trades but current mode is '${dataType}'.`);
-            alert("⚠️ Backtest data is not loaded in this view.\nSwitch to 'Backtest' or 'Comparison' mode.");
-            console.groupEnd();
-            return;
-        }
-    } else if (type === 'real') {
-        if (dataType === 'real') {
-            trades = data.primaryTrades || [];
-        } else if (dataType === 'comparison') {
-            trades = data.secondaryTrades || [];
-        } else {
-            console.warn(`[Audit] Requested Real trades but current mode is '${dataType}'.`);
-            alert("⚠️ Real data is not loaded in this view.\nSwitch to 'Real' or 'Comparison' mode.");
-            console.groupEnd();
-            return;
-        }
-    }
-
-
-    console.log(`[Audit] Total Candidates: ${trades.length}`);
-
-    const targetYear = parseInt(yearStr);
-    let isDayMode = false;
-    let targetDayMonth = '';
-
-    if (String(weekStr).includes('-')) {
-        isDayMode = true;
-        targetDayMonth = weekStr; // "01-16"
-    }
-
-    const targetWeek = parseInt(weekStr);
-
-    const hits = trades.filter(t => {
-        if (!t.exitTime) return false;
-
-        const d = new Date(Date.UTC(t.exitTime.getFullYear(), t.exitTime.getMonth(), t.exitTime.getDate()));
-
-        if (isDayMode) {
-            const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-            const day = String(d.getUTCDate()).padStart(2, '0');
-            const key = `${m}-${day}`;
-            return d.getUTCFullYear() === targetYear && key === targetDayMonth;
+            console.warn("No trades matched this period.");
+            alert(`No trades found for ${type.toUpperCase()} in ${yearStr}-W${weekStr}.`);
         }
 
-        // Week Logic (Exact match to calculateSQMetrics)
-        const dayNum = d.getUTCDay() || 7;
-        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-        const w = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-        const wy = d.getUTCFullYear();
-
-        return wy === targetYear && w === targetWeek;
-    });
-
-    console.log(`[Audit] Found ${hits.length} trades for ${yearStr}-${isDayMode ? targetDayMonth : 'W' + weekStr}`);
-    if (hits.length > 0) {
-        window.renderTradesModal(
-            hits,
-            `Audit: ${type === 'real' ? 'Real' : 'Backtest'} (${yearStr}-W${weekStr})`,
-            type === 'real' ? 'bg-emerald-500' : 'bg-blue-500'
-        );
 
 
-    } else {
-        console.warn("No trades matched this period.");
-        alert(`No trades found for ${type.toUpperCase()} in ${yearStr}-W${weekStr}.`);
-    }
+        console.groupEnd();
+    };
 
+    // ... existing code ...
 
+    // --- GLOBAL BREAKDOWN HELPERS ---
+    const formatMoneyBreakdown = (val) => val !== undefined && val !== null ? `$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
 
-    console.groupEnd();
-};
+    const normalizeCompareData = (d) => {
+        if (d.matches) return { matches: d.matches, orphanReal: d.orphanReal, orphanBT: d.orphanBT };
 
-// ... existing code ...
+        // Trade-by-Trade Matching Logic
+        const btTrades = d.primaryTrades || [];
+        const realTrades = d.secondaryTrades || [];
 
-// --- GLOBAL BREAKDOWN HELPERS ---
-const formatMoneyBreakdown = (val) => val !== undefined && val !== null ? `$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
+        const matches = [];
+        const orphanReal = [];
+        const orphanBT = [];
 
-const normalizeCompareData = (d) => {
-    if (d.matches) return { matches: d.matches, orphanReal: d.orphanReal, orphanBT: d.orphanBT };
+        if (d.dataType === 'comparison' && btTrades.length > 0 && realTrades.length > 0) {
+            // Create a set of matched indices
+            const matchedBT = new Set();
+            const matchedReal = new Set();
 
-    // Trade-by-Trade Matching Logic
-    const btTrades = d.primaryTrades || [];
-    const realTrades = d.secondaryTrades || [];
+            // Matching criteria: displaySymbol + Type + OpenTime (with tolerance)
+            const TIME_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
 
-    const matches = [];
-    const orphanReal = [];
-    const orphanBT = [];
+            realTrades.forEach((rt, rIdx) => {
+                let bestMatch = null;
+                let bestTimeDiff = Infinity;
 
-    if (d.dataType === 'comparison' && btTrades.length > 0 && realTrades.length > 0) {
-        // Create a set of matched indices
-        const matchedBT = new Set();
-        const matchedReal = new Set();
+                btTrades.forEach((bt, bIdx) => {
+                    if (matchedBT.has(bIdx)) return; // Already matched
 
-        // Matching criteria: displaySymbol + Type + OpenTime (with tolerance)
-        const TIME_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+                    // Check symbol match (use displaySymbol if available, fallback to comment match logic)
+                    const rtSym = rt.displaySymbol || rt.comment || rt.strategyId || 'Unknown';
+                    const btSym = bt.displaySymbol || bt.strategyId || 'Unknown';
 
-        realTrades.forEach((rt, rIdx) => {
-            let bestMatch = null;
-            let bestTimeDiff = Infinity;
+                    const symbolMatch = rtSym === btSym ||
+                        rtSym.includes(btSym) ||
+                        btSym.includes(rtSym);
 
-            btTrades.forEach((bt, bIdx) => {
-                if (matchedBT.has(bIdx)) return; // Already matched
+                    if (!symbolMatch) return;
 
-                // Check symbol match (use displaySymbol if available, fallback to comment match logic)
-                const rtSym = rt.displaySymbol || rt.comment || rt.strategyId || 'Unknown';
-                const btSym = bt.displaySymbol || bt.strategyId || 'Unknown';
+                    // Check type match
+                    if (rt.type && bt.type && rt.type.toLowerCase() !== bt.type.toLowerCase()) return;
 
-                const symbolMatch = rtSym === btSym ||
-                    rtSym.includes(btSym) ||
-                    btSym.includes(rtSym);
+                    // Check time proximity
+                    const timeDiff = Math.abs(rt.openTime - bt.openTime);
+                    if (timeDiff < TIME_TOLERANCE_MS && timeDiff < bestTimeDiff) {
+                        bestTimeDiff = timeDiff;
+                        bestMatch = bIdx;
+                    }
+                });
 
-                if (!symbolMatch) return;
-
-                // Check type match
-                if (rt.type && bt.type && rt.type.toLowerCase() !== bt.type.toLowerCase()) return;
-
-                // Check time proximity
-                const timeDiff = Math.abs(rt.openTime - bt.openTime);
-                if (timeDiff < TIME_TOLERANCE_MS && timeDiff < bestTimeDiff) {
-                    bestTimeDiff = timeDiff;
-                    bestMatch = bIdx;
+                if (bestMatch !== null) {
+                    matches.push({
+                        real: rt,
+                        bt: btTrades[bestMatch],
+                        displaySymbol: rt.displaySymbol || btTrades[bestMatch].displaySymbol
+                    });
+                    matchedReal.add(rIdx);
+                    matchedBT.add(bestMatch);
+                } else {
+                    orphanReal.push(rt);
                 }
             });
 
-            if (bestMatch !== null) {
-                matches.push({
-                    real: rt,
-                    bt: btTrades[bestMatch],
-                    displaySymbol: rt.displaySymbol || btTrades[bestMatch].displaySymbol
-                });
-                matchedReal.add(rIdx);
-                matchedBT.add(bestMatch);
-            } else {
-                orphanReal.push(rt);
+            // Collect unmatched BT trades
+            btTrades.forEach((bt, idx) => {
+                if (!matchedBT.has(idx)) {
+                    orphanBT.push(bt);
+                }
+            });
+        } else {
+            // Non-comparison mode: just categorize
+            if (d.dataType === 'backtest') {
+                orphanBT.push(...btTrades);
+            } else if (d.dataType === 'real') {
+                orphanReal.push(...realTrades);
             }
-        });
-
-        // Collect unmatched BT trades
-        btTrades.forEach((bt, idx) => {
-            if (!matchedBT.has(idx)) {
-                orphanBT.push(bt);
-            }
-        });
-    } else {
-        // Non-comparison mode: just categorize
-        if (d.dataType === 'backtest') {
-            orphanBT.push(...btTrades);
-        } else if (d.dataType === 'real') {
-            orphanReal.push(...realTrades);
         }
-    }
 
-    return { matches, orphanReal, orphanBT };
-};
+        return { matches, orphanReal, orphanBT };
+    };
 
-const getSym = (t) => t.displaySymbol || t.strategyId || t.symbol || "Unknown";
+    const getSym = (t) => t.displaySymbol || t.strategyId || t.symbol || "Unknown";
 
-// --- NEW: Strategy Drill Down Logic (Global) ---
-window.showStrategyDrillDown = (sym) => {
-    const d = window.activeAnalysisData;
-    if (!d) return;
-    const { matches, orphanReal, orphanBT } = normalizeCompareData(d);
+    // --- NEW: Strategy Drill Down Logic (Global) ---
+    window.showStrategyDrillDown = (sym) => {
+        const d = window.activeAnalysisData;
+        if (!d) return;
+        const { matches, orphanReal, orphanBT } = normalizeCompareData(d);
 
-    const matchMatches = matches.filter(m => getSym(m) === sym); // Note: matches usually have displaySymbol on the match obj, but check logic
-    // Actually match objects are { real: t, bt: t, displaySymbol: s }. 
-    // If we normalized, our fallback arrays are TRADES, not match objects.
-    // We need to handle that distinction.
+        const matchMatches = matches.filter(m => getSym(m) === sym); // Note: matches usually have displaySymbol on the match obj, but check logic
+        // Actually match objects are { real: t, bt: t, displaySymbol: s }. 
+        // If we normalized, our fallback arrays are TRADES, not match objects.
+        // We need to handle that distinction.
 
-    // REFINED LOGIC for Drill Down filtering:
-    const targetReal = matches.filter(m => m.displaySymbol === sym);
-    const targetOrphanR = orphanReal.filter(r => getSym(r) === sym);
-    const targetOrphanB = orphanBT.filter(b => getSym(b) === sym);
+        // REFINED LOGIC for Drill Down filtering:
+        const targetReal = matches.filter(m => m.displaySymbol === sym);
+        const targetOrphanR = orphanReal.filter(r => getSym(r) === sym);
+        const targetOrphanB = orphanBT.filter(b => getSym(b) === sym);
 
-    let content = '';
+        let content = '';
 
-    const renderSection = (title, trades, isMatch) => {
-        if (trades.length === 0) return '';
-        let rows = trades.map(t => {
-            const real = isMatch ? t.real : (title.includes('Real') ? t : null);
-            const bt = isMatch ? t.bt : (title.includes('Backtest') ? t : null);
-            // Derive props from available obj
-            const primary = real || bt;
-            const time = primary.openTime ? new Date(primary.openTime).toISOString().slice(0, 16).replace('T', ' ') : '-';
+        const renderSection = (title, trades, isMatch) => {
+            if (trades.length === 0) return '';
+            let rows = trades.map(t => {
+                const real = isMatch ? t.real : (title.includes('Real') ? t : null);
+                const bt = isMatch ? t.bt : (title.includes('Backtest') ? t : null);
+                // Derive props from available obj
+                const primary = real || bt;
+                const time = primary.openTime ? new Date(primary.openTime).toISOString().slice(0, 16).replace('T', ' ') : '-';
 
-            const pnlVal = isMatch ? real.pnl : primary.pnl; // Show Real PnL for match, or orphan pnl
-            const btPnlVal = isMatch ? bt.pnl : null;
+                const pnlVal = isMatch ? real.pnl : primary.pnl; // Show Real PnL for match, or orphan pnl
+                const btPnlVal = isMatch ? bt.pnl : null;
 
-            return `
+                return `
                 <tr class="border-b border-gray-700 hover:bg-gray-700/50">
                     <td class="p-2 text-xs text-gray-300">${time}</td>
                     <td class="p-2 text-xs text-gray-400">${primary.type || (primary.comment ? primary.comment.split(' ')[0] : '-')}</td>
@@ -3408,8 +3517,8 @@ window.showStrategyDrillDown = (sym) => {
                     ${isMatch ? `<td class="p-2 text-right font-mono text-xs ${btPnlVal > 0 ? 'text-emerald-500/70' : (btPnlVal < 0 ? 'text-red-500/70' : 'text-gray-500/70')}">${formatMoneyBreakdown(btPnlVal)}</td>` : ''}
                 </tr>
                 `;
-        }).join('');
-        return `
+            }).join('');
+            return `
             <div class="mb-4">
                 <h4 class="text-xs font-bold text-gray-400 uppercase mb-2 border-b border-gray-700 pb-1">${title} (${trades.length})</h4>
                 <table class="w-full text-left">
@@ -3418,15 +3527,15 @@ window.showStrategyDrillDown = (sym) => {
                 </table>
             </div>
             `;
-    };
+        };
 
-    content += renderSection('Matched Trades', targetReal, true);
-    content += renderSection('Orphan Real Trades', targetOrphanR, false);
-    content += renderSection('Orphan Backtest Trades', targetOrphanB, false);
+        content += renderSection('Matched Trades', targetReal, true);
+        content += renderSection('Orphan Real Trades', targetOrphanR, false);
+        content += renderSection('Orphan Backtest Trades', targetOrphanB, false);
 
-    const modal = document.createElement('div');
-    modal.className = "fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4";
-    modal.innerHTML = `
+        const modal = document.createElement('div');
+        modal.className = "fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4";
+        modal.innerHTML = `
         <div class="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
             <div class="p-3 border-b border-gray-700 flex justify-between items-center bg-gray-900">
                 <h3 class="text-gray-200 font-bold text-sm truncate pr-4">${sym}</h3>
@@ -3437,92 +3546,92 @@ window.showStrategyDrillDown = (sym) => {
             </div>
         </div>
         `;
-    document.body.appendChild(modal);
-};
-
-// --- NEW: Breakdown Modal Logic (Global) ---
-window.showAnalysisBreakdown = () => {
-    if (!window.activeAnalysisData) return alert("No data available.");
-    const d = window.activeAnalysisData;
-    const { matches, orphanReal, orphanBT } = normalizeCompareData(d);
-
-    // AGGREGATE BY STRATEGY (displaySymbol)
-    const aggregations = {};
-    const add = (sym, type, val) => {
-        if (!aggregations[sym]) aggregations[sym] = { real: 0, bt: 0 };
-        aggregations[sym][type] += Number(val || 0);
+        document.body.appendChild(modal);
     };
 
-    // Add matched trades (both real and bt)
-    matches.forEach(m => {
-        const sym = m.displaySymbol || 'Unknown';
-        add(sym, 'real', m.real.pnl);
-        add(sym, 'bt', m.bt.pnl);
-    });
+    // --- NEW: Breakdown Modal Logic (Global) ---
+    window.showAnalysisBreakdown = () => {
+        if (!window.activeAnalysisData) return alert("No data available.");
+        const d = window.activeAnalysisData;
+        const { matches, orphanReal, orphanBT } = normalizeCompareData(d);
 
-    // Add orphan real (only real PnL)
-    orphanReal.forEach(r => {
-        const sym = r.displaySymbol || r.comment || r.strategyId || 'Unknown';
-        add(sym, 'real', r.pnl);
-    });
+        // AGGREGATE BY STRATEGY (displaySymbol)
+        const aggregations = {};
+        const add = (sym, type, val) => {
+            if (!aggregations[sym]) aggregations[sym] = { real: 0, bt: 0 };
+            aggregations[sym][type] += Number(val || 0);
+        };
 
-    // Add orphan BT (only BT PnL)
-    orphanBT.forEach(b => {
-        const sym = b.displaySymbol || b.strategyId || 'Unknown';
-        add(sym, 'bt', b.pnl);
-    });
+        // Add matched trades (both real and bt)
+        matches.forEach(m => {
+            const sym = m.displaySymbol || 'Unknown';
+            add(sym, 'real', m.real.pnl);
+            add(sym, 'bt', m.bt.pnl);
+        });
 
-    // Separate strategies vs orphans (comments without strategy name)
-    const groupStrategies = [];
-    const groupOrphans = [];
+        // Add orphan real (only real PnL)
+        orphanReal.forEach(r => {
+            const sym = r.displaySymbol || r.comment || r.strategyId || 'Unknown';
+            add(sym, 'real', r.pnl);
+        });
 
-    Object.keys(aggregations).sort().forEach(sym => {
-        const r = aggregations[sym];
-        const diff = r.real - r.bt;
-        const pct = r.bt !== 0 ? ((r.bt - r.real) / r.bt) * 100 : null;
-        const item = { sym, ...r, diff, pct };
+        // Add orphan BT (only BT PnL)
+        orphanBT.forEach(b => {
+            const sym = b.displaySymbol || b.strategyId || 'Unknown';
+            add(sym, 'bt', b.pnl);
+        });
 
-        // Heuristic: if sym contains " - " or "Improved", it's a strategy name
-        const isStrategyName = sym.includes(' - ') || sym.includes('Improved') || sym.includes('.');
-        if (isStrategyName) {
-            groupStrategies.push(item);
-        } else {
-            groupOrphans.push(item);
+        // Separate strategies vs orphans (comments without strategy name)
+        const groupStrategies = [];
+        const groupOrphans = [];
+
+        Object.keys(aggregations).sort().forEach(sym => {
+            const r = aggregations[sym];
+            const diff = r.real - r.bt;
+            const pct = r.bt !== 0 ? ((r.bt - r.real) / r.bt) * 100 : null;
+            const item = { sym, ...r, diff, pct };
+
+            // Heuristic: if sym contains " - " or "Improved", it's a strategy name
+            const isStrategyName = sym.includes(' - ') || sym.includes('Improved') || sym.includes('.');
+            if (isStrategyName) {
+                groupStrategies.push(item);
+            } else {
+                groupOrphans.push(item);
+            }
+        });
+
+        // Calculate R² for matched trades
+        let rSquared = null;
+        if (matches.length > 0) {
+            const realPnls = matches.map(m => m.real.pnl);
+            const btPnls = matches.map(m => m.bt.pnl);
+            const meanReal = realPnls.reduce((a, b) => a + b, 0) / realPnls.length;
+            const meanBT = btPnls.reduce((a, b) => a + b, 0) / btPnls.length;
+
+            let ssRes = 0, ssTot = 0;
+            for (let i = 0; i < matches.length; i++) {
+                ssRes += Math.pow(realPnls[i] - btPnls[i], 2);
+                ssTot += Math.pow(realPnls[i] - meanReal, 2);
+            }
+            rSquared = ssTot > 0 ? 1 - (ssRes / ssTot) : 0;
         }
-    });
 
-    // Calculate R² for matched trades
-    let rSquared = null;
-    if (matches.length > 0) {
-        const realPnls = matches.map(m => m.real.pnl);
-        const btPnls = matches.map(m => m.bt.pnl);
-        const meanReal = realPnls.reduce((a, b) => a + b, 0) / realPnls.length;
-        const meanBT = btPnls.reduce((a, b) => a + b, 0) / btPnls.length;
+        // HTML Generators
+        const formatPct = (v) => {
+            if (v === null || isNaN(v)) return '<span class="text-gray-600">-</span>';
+            const color = v > 0 ? 'text-red-400' : (v < 0 ? 'text-emerald-400' : 'text-gray-400');
+            return `<span class="${color} font-mono text-xs">${v.toFixed(1)}%</span>`;
+        };
 
-        let ssRes = 0, ssTot = 0;
-        for (let i = 0; i < matches.length; i++) {
-            ssRes += Math.pow(realPnls[i] - btPnls[i], 2);
-            ssTot += Math.pow(realPnls[i] - meanReal, 2);
-        }
-        rSquared = ssTot > 0 ? 1 - (ssRes / ssTot) : 0;
-    }
+        const generateRow = (item) => {
+            // Diff: Real - BT (positive = better real performance → green, negative = worse → red)
+            const diffClass = Math.abs(item.diff) > 0.01 ? (item.diff > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-500';
+            // Real PnL: positive → green, negative → red
+            const realClass = item.real > 0 ? 'text-emerald-400' : (item.real < 0 ? 'text-red-400' : 'text-gray-500');
+            // BT PnL: positive → green, negative → red
+            const btClass = item.bt > 0 ? 'text-emerald-500/70' : (item.bt < 0 ? 'text-red-500/70' : 'text-gray-500/70');
 
-    // HTML Generators
-    const formatPct = (v) => {
-        if (v === null || isNaN(v)) return '<span class="text-gray-600">-</span>';
-        const color = v > 0 ? 'text-red-400' : (v < 0 ? 'text-emerald-400' : 'text-gray-400');
-        return `<span class="${color} font-mono text-xs">${v.toFixed(1)}%</span>`;
-    };
-
-    const generateRow = (item) => {
-        // Diff: Real - BT (positive = better real performance → green, negative = worse → red)
-        const diffClass = Math.abs(item.diff) > 0.01 ? (item.diff > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-500';
-        // Real PnL: positive → green, negative → red
-        const realClass = item.real > 0 ? 'text-emerald-400' : (item.real < 0 ? 'text-red-400' : 'text-gray-500');
-        // BT PnL: positive → green, negative → red
-        const btClass = item.bt > 0 ? 'text-emerald-500/70' : (item.bt < 0 ? 'text-red-500/70' : 'text-gray-500/70');
-
-        return `
+            return `
             <tr class="hover:bg-gray-700/30 border-b border-gray-700">
                 <td class="py-2 px-4 text-gray-300 font-mono text-xs">
                     <div class="flex items-center justify-between group">
@@ -3536,19 +3645,19 @@ window.showAnalysisBreakdown = () => {
                 <td class="py-2 px-4 text-right">${formatPct(item.pct)}</td>
             </tr>
         `;
-    };
+        };
 
-    const generateSubtotal = (label, items) => {
-        const sumReal = items.reduce((a, b) => a + b.real, 0);
-        const sumBT = items.reduce((a, b) => a + b.bt, 0);
-        const sumDiff = items.reduce((a, b) => a + b.diff, 0);
-        const sumPct = sumBT !== 0 ? ((sumBT - sumReal) / sumBT) * 100 : null;
+        const generateSubtotal = (label, items) => {
+            const sumReal = items.reduce((a, b) => a + b.real, 0);
+            const sumBT = items.reduce((a, b) => a + b.bt, 0);
+            const sumDiff = items.reduce((a, b) => a + b.diff, 0);
+            const sumPct = sumBT !== 0 ? ((sumBT - sumReal) / sumBT) * 100 : null;
 
-        const diffClass = Math.abs(sumDiff) > 0.01 ? (sumDiff > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-500';
-        const realClass = sumReal > 0 ? 'text-emerald-400' : (sumReal < 0 ? 'text-red-400' : 'text-gray-500');
-        const btClass = sumBT > 0 ? 'text-emerald-500/70' : (sumBT < 0 ? 'text-red-500/70' : 'text-gray-500/70');
+            const diffClass = Math.abs(sumDiff) > 0.01 ? (sumDiff > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-500';
+            const realClass = sumReal > 0 ? 'text-emerald-400' : (sumReal < 0 ? 'text-red-400' : 'text-gray-500');
+            const btClass = sumBT > 0 ? 'text-emerald-500/70' : (sumBT < 0 ? 'text-red-500/70' : 'text-gray-500/70');
 
-        return `
+            return `
             <tr class="bg-gray-800/80 font-bold border-b border-gray-600">
                 <td class="py-2 px-4 text-amber-500/80 text-right text-xs uppercase tracking-wider">${label}</td>
                 <td class="py-2 px-4 text-right font-mono text-sm ${realClass}">${formatMoneyBreakdown(sumReal)}</td>
@@ -3557,33 +3666,33 @@ window.showAnalysisBreakdown = () => {
                 <td class="py-2 px-4 text-right">${formatPct(sumPct)}</td>
             </tr>
         `;
-    };
+        };
 
-    // Build HTML
-    let htmlRows = '';
+        // Build HTML
+        let htmlRows = '';
 
-    // 1. Orphans (comments without strategy name) - TOP
-    if (groupOrphans.length > 0) {
-        htmlRows += `<tr><td colspan="5" class="py-2 px-4 text-xs font-bold text-gray-500 uppercase bg-gray-900/40">Unmatched Real Ops (Likely Orphans)</td></tr>`;
-        htmlRows += groupOrphans.map(generateRow).join('');
-        htmlRows += generateSubtotal('Real Only Subtotal', groupOrphans);
-    }
+        // 1. Orphans (comments without strategy name) - TOP
+        if (groupOrphans.length > 0) {
+            htmlRows += `<tr><td colspan="5" class="py-2 px-4 text-xs font-bold text-gray-500 uppercase bg-gray-900/40">Unmatched Real Ops (Likely Orphans)</td></tr>`;
+            htmlRows += groupOrphans.map(generateRow).join('');
+            htmlRows += generateSubtotal('Real Only Subtotal', groupOrphans);
+        }
 
-    // 2. Identified Strategies - BOTTOM
-    if (groupStrategies.length > 0) {
-        htmlRows += `<tr><td colspan="5" class="py-2 px-4 text-xs font-bold text-blue-400 uppercase bg-gray-900/40 mt-4">Matched / Backtested Strategies</td></tr>`;
-        htmlRows += groupStrategies.map(generateRow).join('');
-        htmlRows += generateSubtotal('Strategies Subtotal', groupStrategies);
-    }
+        // 2. Identified Strategies - BOTTOM
+        if (groupStrategies.length > 0) {
+            htmlRows += `<tr><td colspan="5" class="py-2 px-4 text-xs font-bold text-blue-400 uppercase bg-gray-900/40 mt-4">Matched / Backtested Strategies</td></tr>`;
+            htmlRows += groupStrategies.map(generateRow).join('');
+            htmlRows += generateSubtotal('Strategies Subtotal', groupStrategies);
+        }
 
-    // 3. Grand Total
-    const allItems = [...groupOrphans, ...groupStrategies];
-    const grandReal = allItems.reduce((a, b) => a + b.real, 0);
-    const grandBT = allItems.reduce((a, b) => a + b.bt, 0);
-    const grandDiff = allItems.reduce((a, b) => a + b.diff, 0);
-    const grandPct = grandBT !== 0 ? ((grandBT - grandReal) / grandBT) * 100 : null;
+        // 3. Grand Total
+        const allItems = [...groupOrphans, ...groupStrategies];
+        const grandReal = allItems.reduce((a, b) => a + b.real, 0);
+        const grandBT = allItems.reduce((a, b) => a + b.bt, 0);
+        const grandDiff = allItems.reduce((a, b) => a + b.diff, 0);
+        const grandPct = grandBT !== 0 ? ((grandBT - grandReal) / grandBT) * 100 : null;
 
-    htmlRows += `
+        htmlRows += `
         <tr class="bg-gray-900 font-bold border-t-2 border-amber-500/50">
             <td class="py-4 px-4 text-amber-400 text-right text-sm uppercase tracking-wider">GRAND TOTAL${rSquared !== null ? ` (R²: ${rSquared.toFixed(3)})` : ''}</td>
             <td class="py-4 px-4 text-right font-mono text-base ${grandReal > 0 ? 'text-emerald-400' : (grandReal < 0 ? 'text-red-400' : 'text-gray-500')}">${formatMoneyBreakdown(grandReal)}</td>
@@ -3593,10 +3702,10 @@ window.showAnalysisBreakdown = () => {
         </tr>
     `;
 
-    // Modal HTML
-    const modal = document.createElement('div');
-    modal.className = "fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4";
-    modal.innerHTML = `
+        // Modal HTML
+        const modal = document.createElement('div');
+        modal.className = "fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4";
+        modal.innerHTML = `
         <div class="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
             <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900/50">
                 <h3 class="text-amber-400 font-bold text-lg uppercase tracking-wider">Strategy PnL Breakdown & Var</h3>
@@ -3623,32 +3732,32 @@ window.showAnalysisBreakdown = () => {
             </div>
         </div>
     `;
-    document.body.appendChild(modal);
-};
+        document.body.appendChild(modal);
+    };
 
-// --- NEW: PnL Chart Modal (Cumulative) ---
-// --- NEW: PnL Chart Modal (Cumulative) ---
-window.showPnLChart = (initialStrategy = 'all') => {
-    if (!window.latestSQAnalysisData || !window.latestSQAnalysisData.matches) {
-        return alert("No matched trade data available for charting.");
-    }
+    // --- NEW: PnL Chart Modal (Cumulative) ---
+    // --- NEW: PnL Chart Modal (Cumulative) ---
+    window.showPnLChart = (initialStrategy = 'all') => {
+        if (!window.latestSQAnalysisData || !window.latestSQAnalysisData.matches) {
+            return alert("No matched trade data available for charting.");
+        }
 
-    // Use `let` for these so they can be updated by the event listener
-    let matches = window.latestSQAnalysisData.matches || [];
-    let orphanReal = window.latestSQAnalysisData.orphanReal || [];
-    let orphanBT = window.latestSQAnalysisData.orphanBT || [];
-    let activeTooltipListener = null; // Manage listener lifecycle
-    let tooltipEnabled = true; // Toggle with click
+        // Use `let` for these so they can be updated by the event listener
+        let matches = window.latestSQAnalysisData.matches || [];
+        let orphanReal = window.latestSQAnalysisData.orphanReal || [];
+        let orphanBT = window.latestSQAnalysisData.orphanBT || [];
+        let activeTooltipListener = null; // Manage listener lifecycle
+        let tooltipEnabled = true; // Toggle with click
 
-    // Initialize global threshold if not exists
-    if (typeof window.pnlChartThreshold === 'undefined') {
-        window.pnlChartThreshold = 80;
-    }
+        // Initialize global threshold if not exists
+        if (typeof window.pnlChartThreshold === 'undefined') {
+            window.pnlChartThreshold = 80;
+        }
 
-    // Create modal
-    const modal = document.createElement('div');
-    modal.className = "fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4";
-    modal.innerHTML = `
+        // Create modal
+        const modal = document.createElement('div');
+        modal.className = "fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4";
+        modal.innerHTML = `
         <div class="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl">
             <div class="p-3 border-b border-gray-700 flex justify-between items-center bg-gray-900 gap-3">
                 <h3 id="sq-pnl-modal-title" class="text-gray-200 font-bold text-sm truncate max-w-[400px]">Cumulative PnL Comparison (BT vs Real)</h3>
@@ -3681,375 +3790,375 @@ window.showPnLChart = (initialStrategy = 'all') => {
         </div>
     `;
 
-    document.body.appendChild(modal);
+        document.body.appendChild(modal);
 
-    // Function to render the chart
-    const renderChart = (filteredMatches, filteredOrphanReal, filteredOrphanBT, divThreshold) => {
-        // Combine all trades into a unified format
-        const allTrades = [];
+        // Function to render the chart
+        const renderChart = (filteredMatches, filteredOrphanReal, filteredOrphanBT, divThreshold) => {
+            // Combine all trades into a unified format
+            const allTrades = [];
 
-        // Add matched trades (have both BT and Real)
-        filteredMatches.forEach(m => {
-            allTrades.push({
-                time: m.real.openTime || m.bt.openTime,
-                btPnL: m.bt.pnl || 0,
-                realPnL: m.real.pnl || 0,
-                type: 'matched',
-                displaySymbol: m.displaySymbol || m.bt.strategyId || 'Unknown'
+            // Add matched trades (have both BT and Real)
+            filteredMatches.forEach(m => {
+                allTrades.push({
+                    time: m.real.openTime || m.bt.openTime,
+                    btPnL: m.bt.pnl || 0,
+                    realPnL: m.real.pnl || 0,
+                    type: 'matched',
+                    displaySymbol: m.displaySymbol || m.bt.strategyId || 'Unknown'
+                });
             });
-        });
 
-        // Add orphan real trades (only Real PnL)
-        filteredOrphanReal.forEach(r => {
-            allTrades.push({
-                time: r.openTime,
-                btPnL: 0, // No BT data
-                realPnL: r.pnl || 0,
-                type: 'orphan-real',
-                displaySymbol: r.displaySymbol || r.comment || r.strategyId || 'Unknown'
+            // Add orphan real trades (only Real PnL)
+            filteredOrphanReal.forEach(r => {
+                allTrades.push({
+                    time: r.openTime,
+                    btPnL: 0, // No BT data
+                    realPnL: r.pnl || 0,
+                    type: 'orphan-real',
+                    displaySymbol: r.displaySymbol || r.comment || r.strategyId || 'Unknown'
+                });
             });
-        });
 
-        // Add orphan BT trades (only BT PnL)
-        filteredOrphanBT.forEach(bt => {
-            allTrades.push({
-                time: bt.openTime,
-                btPnL: bt.pnl || 0,
-                realPnL: 0, // No Real data
-                type: 'orphan-bt',
-                displaySymbol: bt.displaySymbol || bt.strategyId || 'Unknown'
+            // Add orphan BT trades (only BT PnL)
+            filteredOrphanBT.forEach(bt => {
+                allTrades.push({
+                    time: bt.openTime,
+                    btPnL: bt.pnl || 0,
+                    realPnL: 0, // No Real data
+                    type: 'orphan-bt',
+                    displaySymbol: bt.displaySymbol || bt.strategyId || 'Unknown'
+                });
             });
-        });
 
-        // Sort all trades chronologically
-        const sorted = allTrades.sort((a, b) => a.time - b.time);
+            // Sort all trades chronologically
+            const sorted = allTrades.sort((a, b) => a.time - b.time);
 
-        // Calculate cumulative PnL
-        const chartData = [];
-        let cumBT = 0;
-        let cumReal = 0;
+            // Calculate cumulative PnL
+            const chartData = [];
+            let cumBT = 0;
+            let cumReal = 0;
 
-        sorted.forEach((trade, idx) => {
-            cumBT += trade.btPnL;
-            cumReal += trade.realPnL;
-            chartData.push({
-                index: idx,
-                time: trade.time,
-                cumBT: cumBT,
-                cumReal: cumReal,
-                btPnL: trade.btPnL,
-                realPnL: trade.realPnL,
-                type: trade.type,
-                displaySymbol: trade.displaySymbol
+            sorted.forEach((trade, idx) => {
+                cumBT += trade.btPnL;
+                cumReal += trade.realPnL;
+                chartData.push({
+                    index: idx,
+                    time: trade.time,
+                    cumBT: cumBT,
+                    cumReal: cumReal,
+                    btPnL: trade.btPnL,
+                    realPnL: trade.realPnL,
+                    type: trade.type,
+                    displaySymbol: trade.displaySymbol
+                });
             });
-        });
 
-        const canvas = document.getElementById('pnl-chart-canvas');
-        if (!canvas || chartData.length === 0) {
-            if (canvas) {
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = '#1f2937';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = '#9ca3af';
-                ctx.font = '14px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('No trades for selected strategy', canvas.width / 2, canvas.height / 2);
+            const canvas = document.getElementById('pnl-chart-canvas');
+            if (!canvas || chartData.length === 0) {
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#1f2937';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = '#9ca3af';
+                    ctx.font = '14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('No trades for selected strategy', canvas.width / 2, canvas.height / 2);
+                }
+                return;
             }
-            return;
-        }
 
-        const ctx = canvas.getContext('2d');
-        const parent = canvas.parentElement;
-        canvas.width = parent.clientWidth;
-        canvas.height = parent.clientHeight;
+            const ctx = canvas.getContext('2d');
+            const parent = canvas.parentElement;
+            canvas.width = parent.clientWidth;
+            canvas.height = parent.clientHeight;
 
-        // Chart dimensions
-        const padding = { top: 40, right: 60, bottom: 60, left: 80 };
-        const chartWidth = canvas.width - padding.left - padding.right;
-        const chartHeight = canvas.height - padding.top - padding.bottom;
+            // Chart dimensions
+            const padding = { top: 40, right: 60, bottom: 60, left: 80 };
+            const chartWidth = canvas.width - padding.left - padding.right;
+            const chartHeight = canvas.height - padding.top - padding.bottom;
 
-        // Find min/max for Y axis
-        const allValues = chartData.flatMap(d => [d.cumBT, d.cumReal]);
-        const minY = Math.min(0, ...allValues);
-        const maxY = Math.max(...allValues);
-        const rangeY = maxY - minY;
-        const paddingY = rangeY * 0.1;
-        const yMin = minY - paddingY;
-        const yMax = maxY + paddingY;
+            // Find min/max for Y axis
+            const allValues = chartData.flatMap(d => [d.cumBT, d.cumReal]);
+            const minY = Math.min(0, ...allValues);
+            const maxY = Math.max(...allValues);
+            const rangeY = maxY - minY;
+            const paddingY = rangeY * 0.1;
+            const yMin = minY - paddingY;
+            const yMax = maxY + paddingY;
 
-        // Scale functions
-        const scaleX = (index) => padding.left + (index / (chartData.length - 1)) * chartWidth;
-        const scaleY = (value) => padding.top + chartHeight - ((value - yMin) / (yMax - yMin)) * chartHeight;
+            // Scale functions
+            const scaleX = (index) => padding.left + (index / (chartData.length - 1)) * chartWidth;
+            const scaleY = (value) => padding.top + chartHeight - ((value - yMin) / (yMax - yMin)) * chartHeight;
 
-        // Clear canvas
-        ctx.fillStyle = '#1f2937';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Clear canvas
+            ctx.fillStyle = '#1f2937';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw grid
-        ctx.strokeStyle = '#374151';
-        ctx.lineWidth = 1;
-        const gridLines = 8;
-        for (let i = 0; i <= gridLines; i++) {
-            const y = padding.top + (i / gridLines) * chartHeight;
-            ctx.beginPath();
-            ctx.moveTo(padding.left, y);
-            ctx.lineTo(padding.left + chartWidth, y);
-            ctx.stroke();
-        }
+            // Draw grid
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 1;
+            const gridLines = 8;
+            for (let i = 0; i <= gridLines; i++) {
+                const y = padding.top + (i / gridLines) * chartHeight;
+                ctx.beginPath();
+                ctx.moveTo(padding.left, y);
+                ctx.lineTo(padding.left + chartWidth, y);
+                ctx.stroke();
+            }
 
-        // Draw Y axis labels
-        ctx.fillStyle = '#9ca3af';
-        ctx.font = '11px monospace';
-        ctx.textAlign = 'right';
-        for (let i = 0; i <= gridLines; i++) {
-            const value = yMin + (i / gridLines) * (yMax - yMin);
-            const y = padding.top + chartHeight - (i / gridLines) * chartHeight;
-            ctx.fillText('$' + value.toFixed(0), padding.left - 10, y + 4);
-        }
+            // Draw Y axis labels
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'right';
+            for (let i = 0; i <= gridLines; i++) {
+                const value = yMin + (i / gridLines) * (yMax - yMin);
+                const y = padding.top + chartHeight - (i / gridLines) * chartHeight;
+                ctx.fillText('$' + value.toFixed(0), padding.left - 10, y + 4);
+            }
 
-        // Draw zero line if needed
-        if (yMin < 0 && yMax > 0) {
-            const zeroY = scaleY(0);
-            ctx.strokeStyle = '#6b7280';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 5]);
-            ctx.beginPath();
-            ctx.moveTo(padding.left, zeroY);
-            ctx.lineTo(padding.left + chartWidth, zeroY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
+            // Draw zero line if needed
+            if (yMin < 0 && yMax > 0) {
+                const zeroY = scaleY(0);
+                ctx.strokeStyle = '#6b7280';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(padding.left, zeroY);
+                ctx.lineTo(padding.left + chartWidth, zeroY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
 
-        // Draw lines
-        const drawLine = (data, color, lineWidth = 2) => {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = lineWidth;
-            ctx.beginPath();
-            data.forEach((d, i) => {
+            // Draw lines
+            const drawLine = (data, color, lineWidth = 2) => {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lineWidth;
+                ctx.beginPath();
+                data.forEach((d, i) => {
+                    const x = scaleX(i);
+                    const y = scaleY(d);
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            };
+
+            // Draw BT line (blue, semi-transparent)
+            drawLine(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.7)', 3);
+
+            // Draw Real line (green)
+            drawLine(chartData.map(d => d.cumReal), 'rgba(16, 185, 129, 1)', 3);
+
+            // Draw points with divergence detection
+            const drawPoints = (data, color) => {
+                data.forEach((d, i) => {
+                    const x = scaleX(i);
+                    const y = scaleY(d);
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+            };
+
+            // Draw BT points (blue)
+            drawPoints(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.9)');
+
+            // Draw Real points with divergence detection (categorize as positive/negative)
+            let positiveDiv = 0; // Real better than BT
+            let negativeDiv = 0; // Real worse than BT
+            let sumPosDiv = 0;
+            let sumNegDiv = 0;
+
+            chartData.forEach((d, i) => {
                 const x = scaleX(i);
-                const y = scaleY(d);
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            });
-            ctx.stroke();
-        };
+                const y = scaleY(d.cumReal);
 
-        // Draw BT line (blue, semi-transparent)
-        drawLine(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.7)', 3);
+                // Detect divergence: compare direction of movement
+                let divergenceType = null; // null, 'positive', or 'negative'
 
-        // Draw Real line (green)
-        drawLine(chartData.map(d => d.cumReal), 'rgba(16, 185, 129, 1)', 3);
+                if (i > 0) {
+                    const prevBT = chartData[i - 1].cumBT;
+                    const prevReal = chartData[i - 1].cumReal;
+                    const btChange = d.cumBT - prevBT;
+                    const realChange = d.cumReal - prevReal;
 
-        // Draw points with divergence detection
-        const drawPoints = (data, color) => {
-            data.forEach((d, i) => {
-                const x = scaleX(i);
-                const y = scaleY(d);
-                ctx.fillStyle = color;
+                    // Divergence occurs when:
+                    // 1. BT moves but Real doesn't (or vice versa)
+                    // 2. They move in opposite directions
+                    // 3. Difference between changes is >= threshold
+                    const btMoving = Math.abs(btChange) > 0.01;
+                    const realMoving = Math.abs(realChange) > 0.01;
+                    const changeDiff = Math.abs(btChange - realChange);
+
+                    let isDivergent = false;
+
+                    // Divergence logic simplified: ONLY trigger if difference exceeds threshold
+                    if (changeDiff >= divThreshold) {
+                        isDivergent = true;
+                    }
+
+                    // Classify divergence as positive or negative
+                    if (isDivergent) {
+                        // Positive: Real performed better than BT
+                        // Negative: Real performed worse than BT
+                        if (realChange > btChange) {
+                            divergenceType = 'positive'; // Real better
+                            positiveDiv++;
+                            sumPosDiv += changeDiff;
+                        } else {
+                            divergenceType = 'negative'; // Real worse
+                            negativeDiv++;
+                            sumNegDiv += changeDiff;
+                        }
+                    }
+                }
+
+                // Color based on divergence type
+                let pointColor = 'rgba(16, 185, 129, 1)'; // Green (aligned)
+                if (divergenceType === 'positive') {
+                    pointColor = 'rgba(251, 191, 36, 1)'; // Amber/Orange (positive divergence)
+                } else if (divergenceType === 'negative') {
+                    pointColor = 'rgba(239, 68, 68, 1)'; // Red (negative divergence)
+                }
+
+                ctx.fillStyle = pointColor;
                 ctx.beginPath();
                 ctx.arc(x, y, 3, 0, 2 * Math.PI);
                 ctx.fill();
             });
-        };
 
-        // Draw BT points (blue)
-        drawPoints(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.9)');
-
-        // Draw Real points with divergence detection (categorize as positive/negative)
-        let positiveDiv = 0; // Real better than BT
-        let negativeDiv = 0; // Real worse than BT
-        let sumPosDiv = 0;
-        let sumNegDiv = 0;
-
-        chartData.forEach((d, i) => {
-            const x = scaleX(i);
-            const y = scaleY(d.cumReal);
-
-            // Detect divergence: compare direction of movement
-            let divergenceType = null; // null, 'positive', or 'negative'
-
-            if (i > 0) {
-                const prevBT = chartData[i - 1].cumBT;
-                const prevReal = chartData[i - 1].cumReal;
-                const btChange = d.cumBT - prevBT;
-                const realChange = d.cumReal - prevReal;
-
-                // Divergence occurs when:
-                // 1. BT moves but Real doesn't (or vice versa)
-                // 2. They move in opposite directions
-                // 3. Difference between changes is >= threshold
-                const btMoving = Math.abs(btChange) > 0.01;
-                const realMoving = Math.abs(realChange) > 0.01;
-                const changeDiff = Math.abs(btChange - realChange);
-
-                let isDivergent = false;
-
-                // Divergence logic simplified: ONLY trigger if difference exceeds threshold
-                if (changeDiff >= divThreshold) {
-                    isDivergent = true;
-                }
-
-                // Classify divergence as positive or negative
-                if (isDivergent) {
-                    // Positive: Real performed better than BT
-                    // Negative: Real performed worse than BT
-                    if (realChange > btChange) {
-                        divergenceType = 'positive'; // Real better
-                        positiveDiv++;
-                        sumPosDiv += changeDiff;
-                    } else {
-                        divergenceType = 'negative'; // Real worse
-                        negativeDiv++;
-                        sumNegDiv += changeDiff;
-                    }
-                }
-            }
-
-            // Color based on divergence type
-            let pointColor = 'rgba(16, 185, 129, 1)'; // Green (aligned)
-            if (divergenceType === 'positive') {
-                pointColor = 'rgba(251, 191, 36, 1)'; // Amber/Orange (positive divergence)
-            } else if (divergenceType === 'negative') {
-                pointColor = 'rgba(239, 68, 68, 1)'; // Red (negative divergence)
-            }
-
-            ctx.fillStyle = pointColor;
-            ctx.beginPath();
-            ctx.arc(x, y, 3, 0, 2 * Math.PI);
-            ctx.fill();
-        });
-
-        const totalDiv = positiveDiv + negativeDiv;
-        const avgPos = positiveDiv > 0 ? (sumPosDiv / positiveDiv).toFixed(2) : '0.00';
-        const avgNeg = negativeDiv > 0 ? (sumNegDiv / negativeDiv).toFixed(2) : '0.00';
-        // User requested Total Average = (SumPos - SumNeg) / TotalCount
-        const netSumDiv = sumPosDiv - sumNegDiv;
-        const avgTotal = totalDiv > 0 ? (netSumDiv / totalDiv).toFixed(2) : '0.00';
+            const totalDiv = positiveDiv + negativeDiv;
+            const avgPos = positiveDiv > 0 ? (sumPosDiv / positiveDiv).toFixed(2) : '0.00';
+            const avgNeg = negativeDiv > 0 ? (sumNegDiv / negativeDiv).toFixed(2) : '0.00';
+            // User requested Total Average = (SumPos - SumNeg) / TotalCount
+            const netSumDiv = sumPosDiv - sumNegDiv;
+            const avgTotal = totalDiv > 0 ? (netSumDiv / totalDiv).toFixed(2) : '0.00';
 
 
-        ctx.fillStyle = '#9ca3af';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'center';
-        const labelStep = Math.max(1, Math.floor(chartData.length / 10));
-        chartData.forEach((d, i) => {
-            if (i % labelStep === 0 || i === chartData.length - 1) {
-                const x = scaleX(i);
-                const dateStr = d.time.toISOString().slice(0, 10);
-                ctx.fillText(dateStr, x, canvas.height - padding.bottom + 20);
-            }
-        });
-
-        // Chart title
-        ctx.fillStyle = '#f3f4f6';
-        ctx.font = 'bold 14px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Cumulative PnL Over Time', canvas.width / 2, 20);
-
-        // Display final values with enhanced statistics (LEFT SIDE)
-        const finalBT = chartData[chartData.length - 1].cumBT;
-        const finalReal = chartData[chartData.length - 1].cumReal;
-        const totalDiff = finalReal - finalBT;
-
-        ctx.font = '12px monospace';
-        ctx.textAlign = 'left';
-        const leftX = padding.left + 10;
-
-        // BT Net Profit
-        ctx.fillStyle = 'rgba(59, 130, 246, 1)';
-        ctx.fillText('BT: $' + finalBT.toFixed(2), leftX, padding.top + 20);
-
-        // Real Net Profit
-        ctx.fillStyle = 'rgba(16, 185, 129, 1)';
-        ctx.fillText('Real: $' + finalReal.toFixed(2), leftX, padding.top + 40);
-
-        // Total Difference
-        ctx.fillStyle = totalDiff >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
-        ctx.fillText('Diff: $' + totalDiff.toFixed(2), leftX, padding.top + 60);
-
-        // Divergence statistics
-        ctx.fillStyle = 'rgba(251, 191, 36, 1)'; // Amber
-        ctx.fillText(`🟠 Div+: ${positiveDiv} (Avg: $${avgPos}, Sum: $${sumPosDiv.toFixed(2)})`, leftX, padding.top + 80);
-        ctx.fillStyle = 'rgba(239, 68, 68, 1)'; // Red
-        ctx.fillText(`🔴 Div-: ${negativeDiv} (Avg: $${avgNeg}, Sum: -$${sumNegDiv.toFixed(2)})`, leftX, padding.top + 100);
-        ctx.fillStyle = '#9ca3af'; // Gray
-        ctx.fillText(`Total Div: ${totalDiv} (Avg: $${avgTotal}, Net: $${netSumDiv.toFixed(2)})`, leftX, padding.top + 120);
-
-        // No SL indicator (Net / 100)
-        const noSLValue = netSumDiv / 100;
-        ctx.fillStyle = noSLValue >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
-        ctx.fillText(`No SL: ${noSLValue.toFixed(2)}`, leftX, padding.top + 140);
-
-        // Update stats
-        const statsDiv = document.getElementById('pnl-chart-stats');
-        if (statsDiv) {
-            statsDiv.innerHTML = `<span>Trades: ${chartData.length}</span>`;
-        }
-
-        // Change cursor to crosshair
-        canvas.style.cursor = 'crosshair';
-
-        // Add tooltip functionality
-        if (activeTooltipListener) {
-            canvas.removeEventListener('mousemove', activeTooltipListener);
-        }
-
-        activeTooltipListener = (e) => {
-            if (!tooltipEnabled) return; // Skip if disabled
-
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-
-            // Find or create tooltip element
-            let tooltip = document.getElementById('pnl-chart-tooltip');
-            if (!tooltip) {
-                tooltip = document.createElement('div');
-                tooltip.id = 'pnl-chart-tooltip';
-                tooltip.className = 'fixed z-[200] bg-gray-900/95 border border-gray-600 rounded-lg shadow-xl p-3 text-xs font-mono pointer-events-none transition-opacity duration-150';
-                tooltip.style.maxWidth = '260px';
-                document.body.appendChild(tooltip);
-            }
-
-            // Find closest point
-            let closestPoint = null;
-            let minDistance = 20; // Max distance to trigger tooltip
-            let closestX = 0;
-            let closestY = 0;
-
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            const labelStep = Math.max(1, Math.floor(chartData.length / 10));
             chartData.forEach((d, i) => {
-                const x = scaleX(i);
-                const yReal = scaleY(d.cumReal);
-
-                // Check distance to Real point (primary)
-                const distReal = Math.sqrt(Math.pow(mouseX - x, 2) + Math.pow(mouseY - yReal, 2));
-                if (distReal < minDistance) {
-                    minDistance = distReal;
-                    closestPoint = { ...d, index: i };
-                    closestX = x;
-                    closestY = yReal;
+                if (i % labelStep === 0 || i === chartData.length - 1) {
+                    const x = scaleX(i);
+                    const dateStr = d.time.toISOString().slice(0, 10);
+                    ctx.fillText(dateStr, x, canvas.height - padding.bottom + 20);
                 }
             });
 
-            if (closestPoint) {
-                // Position tooltip near cursor but not overlapping
-                const tooltipLeft = e.clientX + 15;
-                const tooltipTop = e.clientY - 100;
+            // Chart title
+            ctx.fillStyle = '#f3f4f6';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Cumulative PnL Over Time', canvas.width / 2, 20);
 
-                tooltip.style.left = tooltipLeft + 'px';
-                tooltip.style.top = Math.max(10, tooltipTop) + 'px';
-                tooltip.style.opacity = '1';
+            // Display final values with enhanced statistics (LEFT SIDE)
+            const finalBT = chartData[chartData.length - 1].cumBT;
+            const finalReal = chartData[chartData.length - 1].cumReal;
+            const totalDiff = finalReal - finalBT;
 
-                // Build tooltip content
-                const stratName = (closestPoint.displaySymbol || 'Strategy').substring(0, 25);
-                const dateStr = closestPoint.time.toISOString().slice(0, 10);
-                const timeStr = closestPoint.time.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+            const leftX = padding.left + 10;
 
-                const btVal = closestPoint.btPnL;
-                const realVal = closestPoint.realPnL;
-                const diff = realVal - btVal;
-                const diffColor = diff >= 0 ? 'text-emerald-400' : 'text-red-400';
+            // BT Net Profit
+            ctx.fillStyle = 'rgba(59, 130, 246, 1)';
+            ctx.fillText('BT: $' + finalBT.toFixed(2), leftX, padding.top + 20);
 
-                tooltip.innerHTML = `
+            // Real Net Profit
+            ctx.fillStyle = 'rgba(16, 185, 129, 1)';
+            ctx.fillText('Real: $' + finalReal.toFixed(2), leftX, padding.top + 40);
+
+            // Total Difference
+            ctx.fillStyle = totalDiff >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
+            ctx.fillText('Diff: $' + totalDiff.toFixed(2), leftX, padding.top + 60);
+
+            // Divergence statistics
+            ctx.fillStyle = 'rgba(251, 191, 36, 1)'; // Amber
+            ctx.fillText(`🟠 Div+: ${positiveDiv} (Avg: $${avgPos}, Sum: $${sumPosDiv.toFixed(2)})`, leftX, padding.top + 80);
+            ctx.fillStyle = 'rgba(239, 68, 68, 1)'; // Red
+            ctx.fillText(`🔴 Div-: ${negativeDiv} (Avg: $${avgNeg}, Sum: -$${sumNegDiv.toFixed(2)})`, leftX, padding.top + 100);
+            ctx.fillStyle = '#9ca3af'; // Gray
+            ctx.fillText(`Total Div: ${totalDiv} (Avg: $${avgTotal}, Net: $${netSumDiv.toFixed(2)})`, leftX, padding.top + 120);
+
+            // No SL indicator (Net / 100)
+            const noSLValue = netSumDiv / 100;
+            ctx.fillStyle = noSLValue >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
+            ctx.fillText(`No SL: ${noSLValue.toFixed(2)}`, leftX, padding.top + 140);
+
+            // Update stats
+            const statsDiv = document.getElementById('pnl-chart-stats');
+            if (statsDiv) {
+                statsDiv.innerHTML = `<span>Trades: ${chartData.length}</span>`;
+            }
+
+            // Change cursor to crosshair
+            canvas.style.cursor = 'crosshair';
+
+            // Add tooltip functionality
+            if (activeTooltipListener) {
+                canvas.removeEventListener('mousemove', activeTooltipListener);
+            }
+
+            activeTooltipListener = (e) => {
+                if (!tooltipEnabled) return; // Skip if disabled
+
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                // Find or create tooltip element
+                let tooltip = document.getElementById('pnl-chart-tooltip');
+                if (!tooltip) {
+                    tooltip = document.createElement('div');
+                    tooltip.id = 'pnl-chart-tooltip';
+                    tooltip.className = 'fixed z-[200] bg-gray-900/95 border border-gray-600 rounded-lg shadow-xl p-3 text-xs font-mono pointer-events-none transition-opacity duration-150';
+                    tooltip.style.maxWidth = '260px';
+                    document.body.appendChild(tooltip);
+                }
+
+                // Find closest point
+                let closestPoint = null;
+                let minDistance = 20; // Max distance to trigger tooltip
+                let closestX = 0;
+                let closestY = 0;
+
+                chartData.forEach((d, i) => {
+                    const x = scaleX(i);
+                    const yReal = scaleY(d.cumReal);
+
+                    // Check distance to Real point (primary)
+                    const distReal = Math.sqrt(Math.pow(mouseX - x, 2) + Math.pow(mouseY - yReal, 2));
+                    if (distReal < minDistance) {
+                        minDistance = distReal;
+                        closestPoint = { ...d, index: i };
+                        closestX = x;
+                        closestY = yReal;
+                    }
+                });
+
+                if (closestPoint) {
+                    // Position tooltip near cursor but not overlapping
+                    const tooltipLeft = e.clientX + 15;
+                    const tooltipTop = e.clientY - 100;
+
+                    tooltip.style.left = tooltipLeft + 'px';
+                    tooltip.style.top = Math.max(10, tooltipTop) + 'px';
+                    tooltip.style.opacity = '1';
+
+                    // Build tooltip content
+                    const stratName = (closestPoint.displaySymbol || 'Strategy').substring(0, 25);
+                    const dateStr = closestPoint.time.toISOString().slice(0, 10);
+                    const timeStr = closestPoint.time.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+                    const btVal = closestPoint.btPnL;
+                    const realVal = closestPoint.realPnL;
+                    const diff = realVal - btVal;
+                    const diffColor = diff >= 0 ? 'text-emerald-400' : 'text-red-400';
+
+                    tooltip.innerHTML = `
                     <div class="text-gray-200 font-bold mb-1 truncate" title="${closestPoint.displaySymbol}">${stratName}</div>
                     <div class="text-gray-500 mb-2">${dateStr} ${timeStr}</div>
                     <div class="grid grid-cols-2 gap-x-3 gap-y-1">
@@ -4067,223 +4176,224 @@ window.showPnLChart = (initialStrategy = 'all') => {
                         <span class="text-emerald-400">$${closestPoint.cumReal.toFixed(2)}</span>
                     </div>
                 `;
-            } else {
-                // Hide tooltip when not near any point
-                tooltip.style.opacity = '0';
-            }
-        };
-        canvas.addEventListener('mousemove', activeTooltipListener);
-
-        // Hide tooltip when leaving canvas
-        canvas.addEventListener('mouseleave', () => {
-            const tooltip = document.getElementById('pnl-chart-tooltip');
-            if (tooltip) tooltip.style.opacity = '0';
-        });
-
-        // Click to toggle tooltip visibility
-        canvas.onclick = () => {
-            tooltipEnabled = !tooltipEnabled;
-            console.log('[PnL Chart] Tooltip', tooltipEnabled ? 'ENABLED' : 'DISABLED');
-            const tooltip = document.getElementById('pnl-chart-tooltip');
-            if (tooltip && !tooltipEnabled) tooltip.style.opacity = '0';
-        };
-    };
-
-    // Initial render
-    setTimeout(() => {
-        // We TRUST window.latestSQAnalysisData to contain the relevant data for the current view.
-        // We do NOT filter it further, because Orphans often lack the metadata (displaySymbol) to match strictly,
-        // leading to them being hidden (the "User Error" description).
-
-        if (initialStrategy !== 'all') {
-            const titleEl = document.getElementById('sq-pnl-modal-title');
-            if (titleEl) {
-                // Determine clean name from initialStrategy (filename)
-                const cleanName = initialStrategy.replace('.csv', '').trim();
-                titleEl.innerText = cleanName;
-                titleEl.title = initialStrategy;
-            }
-        } else {
-            const titleEl = document.getElementById('sq-pnl-modal-title');
-            if (titleEl) {
-                titleEl.innerText = 'Cumulative PnL Comparison (BT vs Real)';
-                titleEl.title = '';
-            }
-        }
-
-        // --- CLONE & PROXY STRATEGY SELECTOR ---
-        const mainSelector = document.getElementById('sq-strategy-select');
-        const container = document.getElementById('pnl-strategy-selector-container');
-
-        if (mainSelector && container) {
-            // Clone the node (deep clone to get options)
-            const clone = mainSelector.cloneNode(true);
-
-            // Update ID to avoid duplicates (invalid HTML)
-            clone.id = 'pnl-chart-strategy-select-clone';
-
-            // Ensure classes match exactly (already done by clone)
-            // Remove any inline onclick/onchange attributes to prevent double firing or bad context
-            clone.removeAttribute('onchange');
-            clone.removeAttribute('onclick');
-
-            // Ensure styling: set max-width to fit in modal header
-            clone.style.height = "26px"; // match input height if needed
-            clone.classList.remove('w-full'); // remove full width if present
-
-            // Sync Value
-            // Try setting value directly (ID)
-            clone.value = initialStrategy;
-
-            // If that didn't work (maybe initialStrategy is a name, or 'all' mismatch), try fuzzy find by text
-            if (clone.value !== initialStrategy && initialStrategy !== 'all') {
-                const target = initialStrategy.trim();
-                const targetNoExt = target.replace('.csv', '');
-
-                for (let i = 0; i < clone.options.length; i++) {
-                    const txt = clone.options[i].text;
-                    if (txt === target || txt === targetNoExt || txt.includes(targetNoExt)) {
-                        clone.selectedIndex = i;
-                        break;
-                    }
+                } else {
+                    // Hide tooltip when not near any point
+                    tooltip.style.opacity = '0';
                 }
-            }
-            if (initialStrategy === 'all') clone.value = 'all';
+            };
+            canvas.addEventListener('mousemove', activeTooltipListener);
 
-            // ATTACH PROXY LISTENER ("Remote Control")
-            clone.addEventListener('change', (e) => {
-                const newVal = e.target.value;
-                console.log('[PnL Chart] Cloned Selector Changed -> Updating Main App to:', newVal);
-
-                if (mainSelector.value !== newVal) {
-                    mainSelector.value = newVal;
-                    // Dispatch change to trigger Main App logic
-                    mainSelector.dispatchEvent(new Event('change'));
-
-                    // Show loading feedback on chart
-                    const canvas = document.getElementById('pnl-chart-canvas');
-                    if (canvas) {
-                        const ctx = canvas.getContext('2d');
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.font = "14px Inter";
-                        ctx.fillStyle = "#9ca3af";
-                        ctx.textAlign = "center";
-                        ctx.fillText("Reloading data from main app...", canvas.width / 2, canvas.height / 2);
-                    }
-                }
+            // Hide tooltip when leaving canvas
+            canvas.addEventListener('mouseleave', () => {
+                const tooltip = document.getElementById('pnl-chart-tooltip');
+                if (tooltip) tooltip.style.opacity = '0';
             });
 
-            container.appendChild(clone);
-        }
-
-        // Wire up Quarantine Button (Toggle: Add/Remove)
-        const quarantineBtn = document.getElementById('pnl-quarantine-btn');
-        const updateQuarantineButtonState = () => {
-            if (!quarantineBtn) return;
-            const clone = document.getElementById('pnl-chart-strategy-select-clone');
-            if (clone && clone.value !== 'all') {
-                const stratName = clone.options[clone.selectedIndex]?.text || clone.value;
-                const isQuarantined = window.state?.quarantinedStrategyNames?.has(stratName);
-
-                if (isQuarantined) {
-                    quarantineBtn.innerHTML = '✅ Rehabilitar';
-                    quarantineBtn.className = 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/30 px-2 py-1 rounded text-xs border border-emerald-900/50 transition-colors';
-                    quarantineBtn.title = 'Quitar estrategia de Cuarentena';
-                } else {
-                    quarantineBtn.innerHTML = '☣️ Cuarentena';
-                    quarantineBtn.className = 'text-red-400 hover:text-red-300 hover:bg-red-900/30 px-2 py-1 rounded text-xs border border-red-900/50 transition-colors';
-                    quarantineBtn.title = 'Enviar estrategia a Cuarentena';
-                }
-            }
+            // Click to toggle tooltip visibility
+            canvas.onclick = () => {
+                tooltipEnabled = !tooltipEnabled;
+                console.log('[PnL Chart] Tooltip', tooltipEnabled ? 'ENABLED' : 'DISABLED');
+                const tooltip = document.getElementById('pnl-chart-tooltip');
+                if (tooltip && !tooltipEnabled) tooltip.style.opacity = '0';
+            };
         };
 
-        // Update button state initially and when selector changes
-        updateQuarantineButtonState();
-        const cloneForListener = document.getElementById('pnl-chart-strategy-select-clone');
-        if (cloneForListener) {
-            cloneForListener.addEventListener('change', updateQuarantineButtonState);
-        }
+        // Initial render
+        setTimeout(() => {
+            // We TRUST window.latestSQAnalysisData to contain the relevant data for the current view.
+            // We do NOT filter it further, because Orphans often lack the metadata (displaySymbol) to match strictly,
+            // leading to them being hidden (the "User Error" description).
 
-        if (quarantineBtn) {
-            quarantineBtn.onclick = () => {
+            if (initialStrategy !== 'all') {
+                const titleEl = document.getElementById('sq-pnl-modal-title');
+                if (titleEl) {
+                    // Determine clean name from initialStrategy (filename)
+                    const cleanName = initialStrategy.replace('.csv', '').trim();
+                    titleEl.innerText = cleanName;
+                    titleEl.title = initialStrategy;
+                }
+            } else {
+                const titleEl = document.getElementById('sq-pnl-modal-title');
+                if (titleEl) {
+                    titleEl.innerText = 'Cumulative PnL Comparison (BT vs Real)';
+                    titleEl.title = '';
+                }
+            }
+
+            // --- CLONE & PROXY STRATEGY SELECTOR ---
+            const mainSelector = document.getElementById('sq-strategy-select');
+            const container = document.getElementById('pnl-strategy-selector-container');
+
+            if (mainSelector && container) {
+                // Clone the node (deep clone to get options)
+                const clone = mainSelector.cloneNode(true);
+
+                // Update ID to avoid duplicates (invalid HTML)
+                clone.id = 'pnl-chart-strategy-select-clone';
+
+                // Ensure classes match exactly (already done by clone)
+                // Remove any inline onclick/onchange attributes to prevent double firing or bad context
+                clone.removeAttribute('onchange');
+                clone.removeAttribute('onclick');
+
+                // Ensure styling: set max-width to fit in modal header
+                clone.style.height = "26px"; // match input height if needed
+                clone.classList.remove('w-full'); // remove full width if present
+
+                // Sync Value
+                // Try setting value directly (ID)
+                clone.value = initialStrategy;
+
+                // If that didn't work (maybe initialStrategy is a name, or 'all' mismatch), try fuzzy find by text
+                if (clone.value !== initialStrategy && initialStrategy !== 'all') {
+                    const target = initialStrategy.trim();
+                    const targetNoExt = target.replace('.csv', '');
+
+                    for (let i = 0; i < clone.options.length; i++) {
+                        const txt = clone.options[i].text;
+                        if (txt === target || txt === targetNoExt || txt.includes(targetNoExt)) {
+                            clone.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+                if (initialStrategy === 'all') clone.value = 'all';
+
+                // ATTACH PROXY LISTENER ("Remote Control")
+                clone.addEventListener('change', (e) => {
+                    const newVal = e.target.value;
+                    console.log('[PnL Chart] Cloned Selector Changed -> Updating Main App to:', newVal);
+
+                    if (mainSelector.value !== newVal) {
+                        mainSelector.value = newVal;
+                        // Dispatch change to trigger Main App logic
+                        mainSelector.dispatchEvent(new Event('change'));
+
+                        // Show loading feedback on chart
+                        const canvas = document.getElementById('pnl-chart-canvas');
+                        if (canvas) {
+                            const ctx = canvas.getContext('2d');
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            ctx.font = "14px Inter";
+                            ctx.fillStyle = "#9ca3af";
+                            ctx.textAlign = "center";
+                            ctx.fillText("Reloading data from main app...", canvas.width / 2, canvas.height / 2);
+                        }
+                    }
+                });
+
+                container.appendChild(clone);
+            }
+
+            // Wire up Quarantine Button (Toggle: Add/Remove)
+            const quarantineBtn = document.getElementById('pnl-quarantine-btn');
+            const updateQuarantineButtonState = () => {
+                if (!quarantineBtn) return;
                 const clone = document.getElementById('pnl-chart-strategy-select-clone');
                 if (clone && clone.value !== 'all') {
                     const stratName = clone.options[clone.selectedIndex]?.text || clone.value;
                     const isQuarantined = window.state?.quarantinedStrategyNames?.has(stratName);
 
                     if (isQuarantined) {
-                        // Remove from quarantine
-                        if (window.removeStrategyFromQuarantine) {
-                            window.removeStrategyFromQuarantine(stratName);
-                            updateQuarantineButtonState();
-                        }
+                        quarantineBtn.innerHTML = '✅ Rehabilitar';
+                        quarantineBtn.className = 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/30 px-2 py-1 rounded text-xs border border-emerald-900/50 transition-colors';
+                        quarantineBtn.title = 'Quitar estrategia de Cuarentena';
                     } else {
-                        // Add to quarantine
-                        if (window.addStrategyToQuarantine) {
-                            window.addStrategyToQuarantine(stratName);
-                            updateQuarantineButtonState();
-                        }
+                        quarantineBtn.innerHTML = '☣️ Cuarentena';
+                        quarantineBtn.className = 'text-red-400 hover:text-red-300 hover:bg-red-900/30 px-2 py-1 rounded text-xs border border-red-900/50 transition-colors';
+                        quarantineBtn.title = 'Enviar estrategia a Cuarentena';
                     }
-                } else {
-                    alert('Selecciona una estrategia específica (no "All") para gestionar cuarentena.');
                 }
             };
-        }
 
-        renderChart(matches, orphanReal, orphanBT, window.pnlChartThreshold);
+            // Update button state initially and when selector changes
+            updateQuarantineButtonState();
+            const cloneForListener = document.getElementById('pnl-chart-strategy-select-clone');
+            if (cloneForListener) {
+                cloneForListener.addEventListener('change', updateQuarantineButtonState);
+            }
 
-        // Add Threshold Input listener
-        const thresholdInput = document.getElementById('pnl-div-threshold');
-        if (thresholdInput) {
-            thresholdInput.addEventListener('input', (e) => {
-                const newThreshold = parseFloat(e.target.value) || 80;
-                window.pnlChartThreshold = newThreshold; // Save globally
-                console.log('[PnL Chart] Threshold changed to:', newThreshold);
-                renderChart(matches, orphanReal, orphanBT, newThreshold);
-            });
-        }
-    }, 100);
+            if (quarantineBtn) {
+                quarantineBtn.onclick = () => {
+                    const clone = document.getElementById('pnl-chart-strategy-select-clone');
+                    if (clone && clone.value !== 'all') {
+                        const stratName = clone.options[clone.selectedIndex]?.text || clone.value;
+                        const isQuarantined = window.state?.quarantinedStrategyNames?.has(stratName);
 
-    // Listen for Global Updates (from Main App) to Refresh Chart
-    window.addEventListener('sq-analysis-rendered', (e) => {
-        console.log('[PnL Chart] Received Global Update Event. Refreshing...');
-        const data = e.detail;
-        if (!data) return;
+                        if (isQuarantined) {
+                            // Remove from quarantine
+                            if (window.removeStrategyFromQuarantine) {
+                                window.removeStrategyFromQuarantine(stratName);
+                                updateQuarantineButtonState();
+                            }
+                        } else {
+                            // Add to quarantine
+                            if (window.addStrategyToQuarantine) {
+                                window.addStrategyToQuarantine(stratName);
+                                updateQuarantineButtonState();
+                            }
+                        }
+                    } else {
+                        alert('Selecciona una estrategia específica (no "All") para gestionar cuarentena.');
+                    }
+                };
+            }
 
-        // Update local references
-        matches = data.matches || [];
-        orphanReal = data.orphanReal || [];
-        orphanBT = data.orphanBT || [];
+            renderChart(matches, orphanReal, orphanBT, window.pnlChartThreshold);
 
-        // Get current threshold value
-        const thresholdInput = document.getElementById('pnl-div-threshold');
-        const divThreshold = thresholdInput ? parseFloat(thresholdInput.value) || 80 : 80;
+            // Add Threshold Input listener
+            const thresholdInput = document.getElementById('pnl-div-threshold');
+            if (thresholdInput) {
+                thresholdInput.addEventListener('input', (e) => {
+                    const newThreshold = parseFloat(e.target.value) || 80;
+                    window.pnlChartThreshold = newThreshold; // Save globally
+                    console.log('[PnL Chart] Threshold changed to:', newThreshold);
+                    renderChart(matches, orphanReal, orphanBT, newThreshold);
+                });
+            }
+        }, 100);
 
-        // Sync Clone with Main Selector (in case update came from outside)
-        const clone = document.getElementById('pnl-chart-strategy-select-clone');
-        const mainSelector = document.getElementById('sq-strategy-select');
+        // Listen for Global Updates (from Main App) to Refresh Chart
+        window.addEventListener('sq-analysis-rendered', (e) => {
+            console.log('[PnL Chart] Received Global Update Event. Refreshing...');
+            const data = e.detail;
+            if (!data) return;
 
-        if (clone && mainSelector) {
-            clone.value = mainSelector.value;
+            // Update local references
+            matches = data.matches || [];
+            orphanReal = data.orphanReal || [];
+            orphanBT = data.orphanBT || [];
 
-            // Update Title
-            const titleEl = document.getElementById('sq-pnl-modal-title');
-            if (titleEl && clone.selectedIndex >= 0) {
-                const stratName = clone.options[clone.selectedIndex].text;
-                const cleanName = stratName.replace('.csv', '').trim();
+            // Get current threshold value
+            const thresholdInput = document.getElementById('pnl-div-threshold');
+            const divThreshold = thresholdInput ? parseFloat(thresholdInput.value) || 80 : 80;
 
-                // If all strategies
-                if (clone.value === 'all') {
-                    titleEl.innerText = 'Cumulative PnL Comparison (BT vs Real)';
-                    titleEl.title = '';
-                } else {
-                    titleEl.innerText = cleanName;
-                    titleEl.title = stratName;
+            // Sync Clone with Main Selector (in case update came from outside)
+            const clone = document.getElementById('pnl-chart-strategy-select-clone');
+            const mainSelector = document.getElementById('sq-strategy-select');
+
+            if (clone && mainSelector) {
+                clone.value = mainSelector.value;
+
+                // Update Title
+                const titleEl = document.getElementById('sq-pnl-modal-title');
+                if (titleEl && clone.selectedIndex >= 0) {
+                    const stratName = clone.options[clone.selectedIndex].text;
+                    const cleanName = stratName.replace('.csv', '').trim();
+
+                    // If all strategies
+                    if (clone.value === 'all') {
+                        titleEl.innerText = 'Cumulative PnL Comparison (BT vs Real)';
+                        titleEl.title = '';
+                    } else {
+                        titleEl.innerText = cleanName;
+                        titleEl.title = stratName;
+                    }
                 }
             }
-        }
 
-        // Render WITHOUT local filtering (trusting main app data context)
-        renderChart(matches, orphanReal, orphanBT, divThreshold);
-    }, 150);
-};
+            // Render WITHOUT local filtering (trusting main app data context)
+            renderChart(matches, orphanReal, orphanBT, divThreshold);
+        }, 150);
+    };
+}

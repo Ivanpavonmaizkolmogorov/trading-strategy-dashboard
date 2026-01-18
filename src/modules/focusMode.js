@@ -603,8 +603,8 @@ export const focusMode = {
                             const strategyTrades = deepScanResult.trades;
                             const tradesById = deepScanResult.tradesById;
 
-                            // Calculate stats
-                            const profit = strategyTrades.reduce((sum, t) => sum + (t.profit || 0) + (t.swap || 0) + (t.commission || 0), 0);
+                            // Calculate stats - ensure numeric conversion for trade values that may be strings
+                            const profit = strategyTrades.reduce((sum, t) => sum + (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0), 0);
 
                             // Calculate drawdown
                             strategyTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
@@ -613,7 +613,7 @@ export const focusMode = {
                             let maxDD = 0;
 
                             strategyTrades.forEach(t => {
-                                const p = (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
+                                const p = (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0);
                                 currentEq += p;
                                 if (currentEq > maxEq) maxEq = currentEq;
                                 const dd = maxEq - currentEq;
@@ -629,7 +629,7 @@ export const focusMode = {
                                 sharpe: 0,
                                 lastSync: new Date().toISOString()
                             };
-                            console.log(`[FocusMode] ✅ Real Metrics from deepScanData for ${item.name}: Profit=${profit.toFixed(2)}, DD=${maxDD.toFixed(2)}, Trades=${strategyTrades.length}`);
+                            console.log(`[FocusMode] ✅ Real Metrics from deepScanData for ${item.name}: Profit=${parseFloat(profit).toFixed(2)}, DD=${parseFloat(maxDD).toFixed(2)}, Trades=${strategyTrades.length}`);
                         } else {
                             console.warn(`[FocusMode] ❌ No trades found in portfolios OR deepScanData for Magics: ${magics.join(', ')}`);
                             // Debug: Log available IDs in deepScanData
@@ -810,7 +810,8 @@ export const focusMode = {
                     }
 
                     console.log(`[FocusMode] Updating SQ Analysis for strategy: ${finalId} (Name: ${strategyId}) in portfolio ${parentPortfolioIndex}`);
-                    renderSQAnalysis(parentPortfolioIndex, 'saved', finalId, 'comparison');
+                    const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
+                    renderSQAnalysis(parentPortfolioIndex, 'saved', finalId, currentDataType);
                 } else {
                     // If not found by ID, maybe by name?
                     // Or maybe it's a databank portfolio?
@@ -819,7 +820,8 @@ export const focusMode = {
             } else if (item.type === 'saved') {
                 // If a Saved Portfolio is focused, update SQ Analysis to show that portfolio
                 console.log(`[FocusMode] Updating SQ Analysis for focused portfolio index: ${item.index}`);
-                renderSQAnalysis(item.index, 'saved', 'all', 'comparison');
+                const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
+                renderSQAnalysis(item.index, 'saved', 'all', currentDataType);
             }
         } else if (this.focusedItems.size > 1) {
             // MULTI-SELECTION LOGIC
@@ -874,7 +876,8 @@ export const focusMode = {
 
                     if (validIds.length > 0) {
                         console.log(`[FocusMode] Updating SQ Analysis for ${validIds.length} strategies in portfolio ${parentPortfolioIndex}`);
-                        renderSQAnalysis(parentPortfolioIndex, 'saved', validIds, 'comparison');
+                        const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
+                        renderSQAnalysis(parentPortfolioIndex, 'saved', validIds, currentDataType);
                     }
                 } else {
                     console.warn("[FocusMode] Could not determine parent portfolio for multi-selection.");

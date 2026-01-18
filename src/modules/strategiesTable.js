@@ -648,6 +648,7 @@ export const renderStrategiesTable = () => {
         }
     }
 
+    // Standard sourcing (non-Reality-Check, or Reality-Check fallback if no portfolios)
     if (!sourcedFromPortfolios && window.analysisResults) {
         window.analysisResults.forEach((r, i) => {
             if (!r.is_saved_portfolio && !r.is_databank_portfolio && !r.isSavedPortfolio && !r.isPortfolio) {
@@ -655,6 +656,54 @@ export const renderStrategiesTable = () => {
                 strategies.push(r);
             }
         });
+    }
+
+    // REALITY CHECK ENHANCEMENT: Also include strategies from analysisResults that have magic mappings
+    // even if they're NOT in a portfolio. This ensures standalone mapped strategies (like BTC) appear.
+    if (state.activeViewMode === 'reality-check' && sourcedFromPortfolios && window.analysisResults && state.magicNumberMap) {
+        // Normalize names by removing .csv extension for proper duplicate detection
+        const normalizeForComparison = (name) => name.replace(/\.csv$/i, '').trim().toLowerCase();
+        const existingNamesNormalized = new Set(strategies.map(s => normalizeForComparison(s.name)));
+
+        console.log(`[StrategiesTable] 🔍 ADDITIONAL MAPPED STRATEGIES CHECK ===============`);
+        console.log(`[StrategiesTable]    - Already have ${strategies.length} strategies from portfolios`);
+        console.log(`[StrategiesTable]    - Existing names (normalized): `, [...existingNamesNormalized].slice(0, 5));
+        console.log(`[StrategiesTable]    - Checking ${window.analysisResults.length} strategies from analysisResults for standalone mappings`);
+
+        let addedCount = 0;
+        window.analysisResults.forEach((r, i) => {
+            if (r.is_saved_portfolio || r.is_databank_portfolio || r.isSavedPortfolio || r.isPortfolio) return;
+
+            // Normalize name for comparison
+            const normalizedName = normalizeForComparison(r.name);
+            if (existingNamesNormalized.has(normalizedName)) {
+                console.log(`[StrategiesTable]    ⏭️ Skipping duplicate: ${r.name} (normalized: ${normalizedName})`);
+                return; // Skip if already included (normalized match)
+            }
+
+            // Check if this strategy has a magic number mapping
+            const rawName = r.name;
+            const cleanName = rawName.replace(/\.csv$/i, '').trim();
+            const file = state.loadedStrategyFiles ? state.loadedStrategyFiles[i] : null;
+            const stratId = file ? (file.strategyId || file.name) : r.name;
+
+            const hasMapping =
+                (state.magicNumberMap[stratId] && state.magicNumberMap[stratId].length > 0) ||
+                (state.magicNumberMap[rawName] && state.magicNumberMap[rawName].length > 0) ||
+                (state.magicNumberMap[cleanName] && state.magicNumberMap[cleanName].length > 0);
+
+            if (hasMapping) {
+                console.log(`[StrategiesTable]    ✅ Adding standalone mapped strategy: ${r.name}`);
+                r.originalIndex = i;
+                strategies.push(r);
+                existingNamesNormalized.add(normalizedName); // Add to set to prevent future duplicates
+                addedCount++;
+            }
+        });
+
+        console.log(`[StrategiesTable]    - Added ${addedCount} additional standalone mapped strategies`);
+        console.log(`[StrategiesTable]    - Total strategies now: ${strategies.length}`);
+        console.log(`[StrategiesTable] 🔍 END ADDITIONAL MAPPED STRATEGIES CHECK ===============`);
     }
 
     // --- LATE BINDING / METRIC PRE-CALCULATION ---
@@ -844,71 +893,96 @@ export const renderStrategiesTable = () => {
 
     // FILTER: Reality Check Mode (Only if NOT sourced from portfolios directly)
     // If we sourced from portfolios, we already have the correct set.
+    // NEW LOGIC: Do NOT require strategies to be in a portfolio. 
+    // Only filter by whether they have real trades (done in Zero Trades filter below).
     if (state.activeViewMode === 'reality-check' && !sourcedFromPortfolios) {
-        // CLEAN SLATE CHECK: If we have NO mappings and NO linked portfolios, 
-        // we must show ALL strategies to allow the user to see them and perform linking/mapping.
-        // Otherwise, a fresh session would show an empty table.
-        const hasMappings = state.magicNumberMap && Object.keys(state.magicNumberMap).length > 0;
+        console.log(`[StrategiesTable] 🔍 REALITY CHECK FILTER DEBUG ===============`);
+        console.log(`[StrategiesTable]    - Strategies BEFORE any filter: ${strategies.length}`);
+        console.log(`[StrategiesTable]    - sourcedFromPortfolios: ${sourcedFromPortfolios}`);
+        console.log(`[StrategiesTable]    - magicNumberMap keys: ${state.magicNumberMap ? Object.keys(state.magicNumberMap).length : 0}`);
+        console.log(`[StrategiesTable]    - deepScanData accounts: ${state.deepScanData ? Object.keys(state.deepScanData).length : 0}`);
 
-        // 1. Identify all strategies belonging to Linked Portfolios
-        const linkedStrategyIndices = new Set();
-        if (state.savedPortfolios) {
-            state.savedPortfolios.forEach(p => {
-                // Consider a portfolio "linked" context if it has an ID, but strictly for filtering 
-                // we care if it pulls strategies into view.
-                if (p.linkedAccountId && p.indices) {
-                    p.indices.forEach(idx => linkedStrategyIndices.add(idx));
-                }
-            });
-        }
+        // DEBUG: Log first 5 strategies to see their state
+        strategies.slice(0, 5).forEach((s, i) => {
+            console.log(`[StrategiesTable] 📋 Strategy[${i}]: ${s.name}`);
+            console.log(`[StrategiesTable]    _hasMap: ${s._hasMap}`);
+            console.log(`[StrategiesTable]    realMetrics?: ${!!s.realMetrics}`);
+            if (s.realMetrics) {
+                console.log(`[StrategiesTable]    realMetrics.trades: ${s.realMetrics.trades || s.realMetrics.totalTrades}`);
+            }
+        });
 
-        const hasLinkedPortfolios = linkedStrategyIndices.size > 0;
+        // OLD LOGIC REMOVED: We no longer require strategies to be in a linked portfolio.
+        // The ONLY filter should be: does this strategy have real trades?
+        // That filter is applied below in "Zero Trades Cleanup".
 
-        if (!hasMappings && !hasLinkedPortfolios) {
-            console.log(`[StrategiesTable] 🛡️ Clean Slate Mode (No maps/links): Skipping Reality Check strict filter to show candidates.`);
-        } else {
-            const totalStrategies = strategies.length;
-            strategies = strategies.filter(s => {
-                // A. Check Direct Magic Number Linking
-                // Rely on Pre-Calculation tag (includes rawName check)
-                const hasDirectMap = s._hasMap;
-
-                // B. Check Portfolio Association (Fallback)
-                const isPartofLinkedPortfolio = linkedStrategyIndices.has(s.originalIndex);
-
-                return hasDirectMap || isPartofLinkedPortfolio;
-            });
-            console.log(`[StrategiesTable] 🔍 Reality Check Filter: Showing ${strategies.length} / ${totalStrategies} strategies (Linked to Myfxbook or in Linked Portfolio)`);
-        }
+        console.log(`[StrategiesTable] ✅ Portfolio-association filter DISABLED. Strategies passed through: ${strategies.length}`);
+        console.log(`[StrategiesTable] 🔍 END REALITY CHECK FILTER DEBUG ===============`);
     }
 
 
     // FILTER: Reality Check Mode - Zero Trades Cleanup
     // User Request: "habria k filtrar akellas k trades sea 0 (en este modo)"
     if (state.activeViewMode === 'reality-check') {
+        console.log(`[StrategiesTable] 🧹 ZERO TRADES FILTER DEBUG ===============`);
+        console.log(`[StrategiesTable]    - Strategies BEFORE Zero Trade filter: ${strategies.length}`);
+
         const hasMappings = state.magicNumberMap && Object.keys(state.magicNumberMap).length > 0;
         const hasLinkedPortfolios = state.savedPortfolios && state.savedPortfolios.some(p => p.linkedAccountId);
         const isSystemConfigured = hasMappings || hasLinkedPortfolios;
+        console.log(`[StrategiesTable]    - hasMappings: ${hasMappings}`);
+        console.log(`[StrategiesTable]    - hasLinkedPortfolios: ${hasLinkedPortfolios}`);
+        console.log(`[StrategiesTable]    - isSystemConfigured: ${isSystemConfigured}`);
 
         const preFilterCount = strategies.length;
+        const droppedStrategies = [];
+        const passedStrategies = [];
+
         strategies = strategies.filter(s => {
             let trades = getMetricValue(s, 'totalTrades');
+            let tradesSource = 'getMetricValue';
 
             // STRICT MODE: If system is configured (not clean slate), force check on Real Metrics only.
             // Do not fall back to Backtest trades if Real Trades are missing/zero.
             if (isSystemConfigured) {
-                trades = s.realMetrics ? s.realMetrics.totalTrades : 0;
+                trades = s.realMetrics ? (s.realMetrics.totalTrades || s.realMetrics.trades) : 0;
+                tradesSource = 'realMetrics';
             }
 
-            // DEBUG FILTER
-            if (!trades || trades <= 0) {
-                // console.log(`[StrategiesTable] 🧹 Filter Dropping '${s.name}': trades=${trades}, realMetrics?`, s.realMetrics);
+            const passed = trades && trades > 0;
+
+            if (!passed) {
+                droppedStrategies.push({
+                    name: s.name,
+                    trades: trades,
+                    tradesSource: tradesSource,
+                    hasRealMetrics: !!s.realMetrics,
+                    _hasMap: s._hasMap
+                });
+            } else {
+                passedStrategies.push({
+                    name: s.name,
+                    trades: trades
+                });
             }
-            return trades && trades > 0;
+
+            return passed;
         });
-        if (preFilterCount !== strategies.length) {
-            console.log(`[StrategiesTable] 🧹 Zero Trade Filter: Removed ${preFilterCount - strategies.length} empty strategies.`);
+
+        console.log(`[StrategiesTable] ✅ PASSED (${passedStrategies.length}):`);
+        passedStrategies.slice(0, 10).forEach(s => {
+            console.log(`[StrategiesTable]    ✅ ${s.name} (${s.trades} trades)`);
+        });
+        if (passedStrategies.length > 10) {
+            console.log(`[StrategiesTable]    ... and ${passedStrategies.length - 10} more`);
         }
+
+        console.log(`[StrategiesTable] ❌ DROPPED (${droppedStrategies.length}):`);
+        droppedStrategies.forEach(s => {
+            console.log(`[StrategiesTable]    ❌ ${s.name} | trades=${s.trades} | src=${s.tradesSource} | hasRealMetrics=${s.hasRealMetrics} | _hasMap=${s._hasMap}`);
+        });
+
+        console.log(`[StrategiesTable] 🧹 END ZERO TRADES FILTER DEBUG ===============`);
     }
 
     // Update count badge
