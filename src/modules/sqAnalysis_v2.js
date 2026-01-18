@@ -3637,6 +3637,7 @@ window.showPnLChart = (initialStrategy = 'all') => {
     let matches = window.latestSQAnalysisData.matches || [];
     let orphanReal = window.latestSQAnalysisData.orphanReal || [];
     let orphanBT = window.latestSQAnalysisData.orphanBT || [];
+    let activeTooltipListener = null; // Manage listener lifecycle
 
     // Initialize global threshold if not exists
     if (typeof window.pnlChartThreshold === 'undefined') {
@@ -3650,6 +3651,7 @@ window.showPnLChart = (initialStrategy = 'all') => {
         <div class="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl">
             <div class="p-3 border-b border-gray-700 flex justify-between items-center bg-gray-900 gap-3">
                 <h3 id="sq-pnl-modal-title" class="text-gray-200 font-bold text-sm truncate max-w-[400px]">Cumulative PnL Comparison (BT vs Real)</h3>
+                <div id="pnl-strategy-selector-container" class="ml-4"></div>
                 <div class="flex items-center gap-2">
                     <label class="text-gray-400 text-xs" title="Divergence threshold: difference in PnL change">⚠️ Threshold:</label>
                     <input type="number" id="pnl-div-threshold" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500 w-20 text-center" value="${window.pnlChartThreshold}" min="1" step="10" inputmode="numeric">
@@ -3918,7 +3920,9 @@ window.showPnLChart = (initialStrategy = 'all') => {
         const totalDiv = positiveDiv + negativeDiv;
         const avgPos = positiveDiv > 0 ? (sumPosDiv / positiveDiv).toFixed(2) : '0.00';
         const avgNeg = negativeDiv > 0 ? (sumNegDiv / negativeDiv).toFixed(2) : '0.00';
-        const avgTotal = totalDiv > 0 ? ((sumPosDiv + sumNegDiv) / totalDiv).toFixed(2) : '0.00';
+        // User requested Total Average = (SumPos - SumNeg) / TotalCount
+        const netSumDiv = sumPosDiv - sumNegDiv;
+        const avgTotal = totalDiv > 0 ? (netSumDiv / totalDiv).toFixed(2) : '0.00';
 
 
         ctx.fillStyle = '#9ca3af';
@@ -3961,13 +3965,12 @@ window.showPnLChart = (initialStrategy = 'all') => {
         ctx.fillText('Diff: $' + totalDiff.toFixed(2), leftX, padding.top + 60);
 
         // Divergence statistics
-        // Divergence statistics
         ctx.fillStyle = 'rgba(251, 191, 36, 1)'; // Amber
-        ctx.fillText(`🟠 Div+: ${positiveDiv} (Avg: $${avgPos})`, leftX, padding.top + 80);
+        ctx.fillText(`🟠 Div+: ${positiveDiv} (Avg: $${avgPos}, Sum: $${sumPosDiv.toFixed(2)})`, leftX, padding.top + 80);
         ctx.fillStyle = 'rgba(239, 68, 68, 1)'; // Red
-        ctx.fillText(`🔴 Div-: ${negativeDiv} (Avg: $${avgNeg})`, leftX, padding.top + 100);
+        ctx.fillText(`🔴 Div-: ${negativeDiv} (Avg: $${avgNeg}, Sum: -$${sumNegDiv.toFixed(2)})`, leftX, padding.top + 100);
         ctx.fillStyle = '#9ca3af'; // Gray
-        ctx.fillText(`Total Div: ${totalDiv} (Avg: $${avgTotal})`, leftX, padding.top + 120);
+        ctx.fillText(`Total Div: ${totalDiv} (Avg: $${avgTotal}, Net: $${netSumDiv.toFixed(2)})`, leftX, padding.top + 120);
 
         // Update stats
         const statsDiv = document.getElementById('pnl-chart-stats');
@@ -3979,7 +3982,11 @@ window.showPnLChart = (initialStrategy = 'all') => {
         canvas.style.cursor = 'crosshair';
 
         // Add tooltip functionality
-        canvas.addEventListener('mousemove', (e) => {
+        if (activeTooltipListener) {
+            canvas.removeEventListener('mousemove', activeTooltipListener);
+        }
+
+        activeTooltipListener = (e) => {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
@@ -4233,7 +4240,8 @@ window.showPnLChart = (initialStrategy = 'all') => {
 
 
             }
-        });
+        };
+        canvas.addEventListener('mousemove', activeTooltipListener);
     };
 
     // Initial render
@@ -4258,6 +4266,71 @@ window.showPnLChart = (initialStrategy = 'all') => {
             }
         }
 
+        // --- CLONE & PROXY STRATEGY SELECTOR ---
+        const mainSelector = document.getElementById('sq-strategy-select');
+        const container = document.getElementById('pnl-strategy-selector-container');
+
+        if (mainSelector && container) {
+            // Clone the node (deep clone to get options)
+            const clone = mainSelector.cloneNode(true);
+
+            // Update ID to avoid duplicates (invalid HTML)
+            clone.id = 'pnl-chart-strategy-select-clone';
+
+            // Ensure classes match exactly (already done by clone)
+            // Remove any inline onclick/onchange attributes to prevent double firing or bad context
+            clone.removeAttribute('onchange');
+            clone.removeAttribute('onclick');
+
+            // Ensure styling: set max-width to fit in modal header
+            clone.style.height = "26px"; // match input height if needed
+            clone.classList.remove('w-full'); // remove full width if present
+
+            // Sync Value
+            // Try setting value directly (ID)
+            clone.value = initialStrategy;
+
+            // If that didn't work (maybe initialStrategy is a name, or 'all' mismatch), try fuzzy find by text
+            if (clone.value !== initialStrategy && initialStrategy !== 'all') {
+                const target = initialStrategy.trim();
+                const targetNoExt = target.replace('.csv', '');
+
+                for (let i = 0; i < clone.options.length; i++) {
+                    const txt = clone.options[i].text;
+                    if (txt === target || txt === targetNoExt || txt.includes(targetNoExt)) {
+                        clone.selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+            if (initialStrategy === 'all') clone.value = 'all';
+
+            // ATTACH PROXY LISTENER ("Remote Control")
+            clone.addEventListener('change', (e) => {
+                const newVal = e.target.value;
+                console.log('[PnL Chart] Cloned Selector Changed -> Updating Main App to:', newVal);
+
+                if (mainSelector.value !== newVal) {
+                    mainSelector.value = newVal;
+                    // Dispatch change to trigger Main App logic
+                    mainSelector.dispatchEvent(new Event('change'));
+
+                    // Show loading feedback on chart
+                    const canvas = document.getElementById('pnl-chart-canvas');
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.font = "14px Inter";
+                        ctx.fillStyle = "#9ca3af";
+                        ctx.textAlign = "center";
+                        ctx.fillText("Reloading data from main app...", canvas.width / 2, canvas.height / 2);
+                    }
+                }
+            });
+
+            container.appendChild(clone);
+        }
+
         renderChart(matches, orphanReal, orphanBT, window.pnlChartThreshold);
     }, 100);
 
@@ -4276,31 +4349,31 @@ window.showPnLChart = (initialStrategy = 'all') => {
         const thresholdInput = document.getElementById('pnl-div-threshold');
         const divThreshold = thresholdInput ? parseFloat(thresholdInput.value) || 80 : 80;
 
-        // Check current selection in modal
-        const currVal = selector.value;
+        // Sync Clone with Main Selector (in case update came from outside)
+        const clone = document.getElementById('pnl-chart-strategy-select-clone');
+        const mainSelector = document.getElementById('sq-strategy-select');
 
-        if (currVal !== 'all') {
-            // Filter
-            let fMatches = matches.filter(m => (m.displaySymbol || m.bt.strategyId) === currVal);
-            let fReal = orphanReal.filter(r => (r.displaySymbol || r.comment || r.strategyId) === currVal);
-            let fBt = orphanBT.filter(b => (b.displaySymbol || b.strategyId) === currVal);
-            renderChart(fMatches, fReal, fBt, divThreshold);
+        if (clone && mainSelector) {
+            clone.value = mainSelector.value;
 
-            // Also ensure title is correct
+            // Update Title
             const titleEl = document.getElementById('sq-pnl-modal-title');
-            if (titleEl && selector.selectedIndex >= 0) {
-                const stratName = selector.options[selector.selectedIndex].text;
-                titleEl.innerText = stratName.replace('.csv', '').trim();
-                titleEl.title = stratName;
-            }
+            if (titleEl && clone.selectedIndex >= 0) {
+                const stratName = clone.options[clone.selectedIndex].text;
+                const cleanName = stratName.replace('.csv', '').trim();
 
-        } else {
-            renderChart(matches, orphanReal, orphanBT, divThreshold);
-            const titleEl = document.getElementById('sq-pnl-modal-title');
-            if (titleEl) {
-                titleEl.innerText = 'Cumulative PnL Comparison (BT vs Real)';
-                titleEl.title = '';
+                // If all strategies
+                if (clone.value === 'all') {
+                    titleEl.innerText = 'Cumulative PnL Comparison (BT vs Real)';
+                    titleEl.title = '';
+                } else {
+                    titleEl.innerText = cleanName;
+                    titleEl.title = stratName;
+                }
             }
         }
+
+        // Render WITHOUT local filtering (trusting main app data context)
+        renderChart(matches, orphanReal, orphanBT, divThreshold);
     }, 150);
 };

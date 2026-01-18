@@ -1,0 +1,15 @@
+
+--- NEW SEARCH ---
+Objective: lab
+Base Indices: [0, 1, 2, 3, 4]
+Metric Key: profitMaxDD_Ratio
+Base Score Calculated: 56.554661526852605
+ACCEPTED: 60.602865527652135 > 56.554661526852605
+ACCEPTED: 56.83616700201218 > 56.554661526852605
+
+--- NEW SEARCH ---
+Objective: lab
+Base Indices: [0, 1, 2, 3, 4]
+Metric Key: profitMaxDD_Ratio
+Base Score Calculated: 56.554661526852605
+ACCEPTED: 58.094161013806186 > 56.554661526852605
