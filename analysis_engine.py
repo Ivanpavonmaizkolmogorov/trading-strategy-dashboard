@@ -871,6 +871,102 @@ def process_strategy_data(trades_df: pd.DataFrame, benchmark_df: pd.DataFrame, b
     return metrics_dict, daily_returns
 
 
+def calculate_metrics_for_period(trades_df: pd.DataFrame, period_config: dict = None, benchmark_df: pd.DataFrame = None, broker_config: dict = None):
+    """
+    Wrapper function that calculates metrics for a specific time period.
+    
+    Args:
+        trades_df: DataFrame with all trades
+        period_config: Optional dict with {'start': '2023-01-01', 'end': '2024-12-31'}
+                      If None, uses full history
+        benchmark_df: Optional benchmark data
+        broker_config: Optional broker configuration
+    
+    Returns:
+        Dictionary with:
+            - periodKey: str identifier for this period
+            - dateRange: dict with start/end dates
+            - tradeCount: number of trades in this period
+            - metrics: all calculated KPIs
+            - monthlyReturns: list of monthly returns
+    """
+    if trades_df.empty:
+        return {
+            'periodKey': 'full',
+            'dateRange': {'start': None, 'end': None},
+            'tradeCount': 0,
+            'metrics': {},
+            'monthlyReturns': []
+        }
+    
+    # Apply date filter if provided
+    filtered_df = trades_df.copy()
+    if period_config:
+        # Ensure dates are datetime
+        if 'exit_date' in filtered_df.columns:
+            if not pd.api.types.is_datetime64_any_dtype(filtered_df['exit_date']):
+                filtered_df['exit_date'] = pd.to_datetime(filtered_df['exit_date'], errors='coerce')
+        
+        start_date = period_config.get('start')
+        end_date = period_config.get('end')
+        
+        # Filter by date range
+        if start_date:
+            start_dt = pd.to_datetime(start_date)
+            filtered_df = filtered_df[filtered_df['exit_date'] >= start_dt]
+        
+        if end_date:
+            end_dt = pd.to_datetime(end_date)
+            filtered_df = filtered_df[filtered_df['exit_date'] <= end_dt]
+        
+        period_key = f"{start_date}_{end_date}"
+    else:
+        period_key = 'full'
+        # Calculate actual start/end from data
+        if 'exit_date' in filtered_df.columns and not filtered_df.empty:
+            if not pd.api.types.is_datetime64_any_dtype(filtered_df['exit_date']):
+                filtered_df['exit_date'] = pd.to_datetime(filtered_df['exit_date'], errors='coerce')
+            start_date = filtered_df['exit_date'].min().strftime('%Y-%m-%d') if pd.notna(filtered_df['exit_date'].min()) else None
+            end_date = filtered_df['exit_date'].max().strftime('%Y-%m-%d') if pd.notna(filtered_df['exit_date'].max()) else None
+            period_config = {'start': start_date, 'end': end_date}
+        else:
+            period_config = {'start': None, 'end': None}
+    
+    trade_count = len(filtered_df)
+    
+    # If no trades in period, return empty metrics
+    if trade_count == 0:
+        return {
+            'periodKey': period_key,
+            'dateRange': period_config,
+            'tradeCount': 0,
+            'metrics': {},
+            'monthlyReturns': []
+        }
+    
+    # Calculate metrics using existing engine
+    benchmark_df_clean = benchmark_df if benchmark_df is not None else pd.DataFrame()
+    metrics, daily_returns = process_strategy_data(filtered_df, benchmark_df_clean, broker_config)
+    
+    # Extract monthly returns if available
+    monthly_returns = []
+    if not daily_returns.empty and len(daily_returns) > 0:
+        try:
+            # daily_returns is a Series, resample to monthly
+            monthly_pnl = daily_returns.resample('M').sum() if hasattr(daily_returns, 'resample') else []
+            monthly_returns = [{'month': idx.strftime('%Y-%m'), 'return': val} for idx,val in monthly_pnl.items()]
+        except:
+            pass
+    
+    return {
+        'periodKey': period_key,
+        'dateRange': period_config,
+        'tradeCount': trade_count,
+        'metrics': metrics,
+        'monthlyReturns': monthly_returns
+    }
+
+
 def get_combinations(arr, min_size, max_size):
     """Generador para todas las combinaciones de un array."""
     for k in range(min_size, max_size + 1):

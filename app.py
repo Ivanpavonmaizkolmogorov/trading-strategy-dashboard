@@ -11,7 +11,7 @@ import numpy as np
 import random
 
 # Importar nuestro nuevo motor de análisis
-from analysis_engine import process_strategy_data, get_combinations, add_to_databank_if_better, count_combinations
+from analysis_engine import process_strategy_data, get_combinations, add_to_databank_if_better, count_combinations, calculate_metrics_for_period
 
 # --- Utils ---
 def sanitize_floats(obj):
@@ -74,6 +74,7 @@ class DatabankParams(BaseModel):
     optimization_goal: str
     correlation_threshold: float
     max_size: int
+    min_size: Optional[int] = 1  # Added: minimum portfolio size
     base_indices: List[int]
     reference_indices: Optional[List[int]] = []
     reference_portfolios: Optional[List[List[int]]] = [] # New: Multi-Satellite support
@@ -89,10 +90,15 @@ class DatabankParams(BaseModel):
     cagr_scaling_metric: Optional[str] = None
     cagr_scaling_operator: Optional[str] = 'multiply'
     re_shuffle_interval: Optional[int] = 5000
+    use_all_dates: Optional[bool] = True  # Added for date filtering
+    start_date: Optional[str] = None      # Added for date filtering
+    end_date: Optional[str] = None        # Added for date filtering
+    creation_filter: Optional[Dict[str, Any]] = None # Added: creation filter pass-through
+
 
 class DatabankRequest(BaseModel):
     strategy_names: List[str] # <-- Añadimos los nombres de las estrategias
-    strategies_data: List[List[Trade]]
+    strategies_data: List[Union[List[Trade], str]]
     benchmark_data: Optional[List[Dict[str, Any]]] = None
     params: DatabankParams
     broker_config: Optional[Dict[str, Any]] = None
@@ -443,13 +449,93 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
         yield f"data: {json.dumps({'status': 'info', 'message': 'Analizando estrategias individuales...'})}\n\n"
 
         try:
-            strategies_data = [[trade.model_dump() for trade in strat if trade.pnl is not None] for strat in request.strategies_data]
+            strategies_data = []
+            import io
+            
+            for strat in request.strategies_data:
+                if isinstance(strat, str):
+                    # CRITICAL DEBUG: Log received string details
+                    if len(strategies_data) < 3:
+                        str_len = len(strat)
+                        preview = strat[:100] if strat else "EMPTY"
+                        print(f"[DEBUG RX] Strat {len(strategies_data)}: Len={str_len}, Preview='{preview}'")
+
+                    if not strat.strip():
+                        print(f"[DEBUG RX] Strat {len(strategies_data)} is WHITESPACE/EMPTY")
+                        strategies_data.append([])
+                        continue
+                        
+                    # Parse CSV string
+                    try:
+                        # Assuming SQ format: Ticket,Symbol,Type,Open Time,Open Price,Size,Close Time,Close Price,Profit,Balance,...
+                        # Map to internal keys: pnl, entry_date, exit_date, etc.
+                        df = pd.read_csv(io.StringIO(strat))
+                        
+                        # Flexible Column Mapping
+                        col_map = {
+                            'Profit': 'pnl',
+                            'Close Time': 'exit_date',
+                            'Open Time': 'entry_date',
+                            'Size': 'size',
+                            'Symbol': 'symbol',
+                            'Type': 'type',
+                            'Comment': 'comment',
+                            'Open Price': 'open_price',
+                            'MagicNumber': 'magic_number'
+                        }
+                        
+                        # Renaming cols that exist
+                        rename_dict = {k: v for k, v in col_map.items() if k in df.columns}
+                        df = df.rename(columns=rename_dict)
+                        
+                        # Convert to records
+                        strategies_data.append(df.to_dict('records'))
+                        
+                    except Exception as e:
+                        print(f"Error parsing CSV strategy data: {e}")
+                        strategies_data.append([])
+                else:
+                    # Existing logic for list of objects
+                    strategies_data.append([trade.model_dump() for trade in strat if trade.pnl is not None])
+
             benchmark_data_df = pd.DataFrame(request.benchmark_data)
             
             # --- DATE FILTERING ---
             use_all_dates = params.use_all_dates if hasattr(params, 'use_all_dates') else True
-            start_date = params.start_date if hasattr(params, 'start_date') else None
-            end_date = params.end_date if hasattr(params, 'end_date') else None
+            
+            # Extract start/end dates, prioritizing creation_filter if present
+            start_date = params.start_date
+            end_date = params.end_date
+            
+            if not start_date and params.creation_filter:
+                start_date = params.creation_filter.get('start')
+            if not end_date and params.creation_filter:
+                end_date = params.creation_filter.get('end')
+            
+            # --- DEBUG LOGGING SETUP (UNCONDITIONAL) ---
+            import logging
+            debug_logger = logging.getLogger("date_debug")
+            if not debug_logger.handlers:
+                fh = logging.FileHandler("server_date_debug.log")
+                fh.setLevel(logging.INFO)
+                debug_logger.addHandler(fh)
+                debug_logger.setLevel(logging.INFO)
+            
+            debug_logger.info("--- [DEBUG NEW REQUEST] ---")
+            debug_logger.info(f"Params: use_all_dates={use_all_dates}, start_date={start_date}, end_date={end_date}")
+            if params.creation_filter:
+                 debug_logger.info(f"Creation Filter: {params.creation_filter}")
+            if strategies_data and len(strategies_data) > 0:
+                sample_strat = strategies_data[0]
+                debug_logger.info(f"Sample Strategy 0 Type: {type(sample_strat)}")
+                if isinstance(sample_strat, list) and len(sample_strat) > 0:
+                    debug_logger.info(f"Sample Trade 0: {sample_strat[0]}")
+                    # Try to log raw dates from first trade
+                    t0 = sample_strat[0]
+                    if isinstance(t0, dict):
+                         debug_logger.info(f"Entry: {t0.get('entry_date')} (Type: {type(t0.get('entry_date'))})")
+                         debug_logger.info(f"Exit: {t0.get('exit_date')} (Type: {type(t0.get('exit_date'))})")
+            # -------------------------------------------
             
             if not use_all_dates and (start_date or end_date):
                 date_msg = f'Aplicando filtro de fechas: {start_date or "inicio"} - {end_date or "fin"}'
@@ -459,22 +545,80 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                 filtered_strategies_data = []
                 for strat_trades in strategies_data:
                     if not strat_trades:
+                        if len(filtered_strategies_data) < 3:
+                            debug_logger.info(f"[EMPTY STRAT] Strategy {len(filtered_strategies_data)} has NO trades!")
+                            print(f"[EMPTY STRAT] Strategy {len(filtered_strategies_data)} is EMPTY (no trades)")
                         filtered_strategies_data.append([])
                         continue
                     
                     df = pd.DataFrame(strat_trades)
+                    
+                    # CRITICAL DEBUG: Log columns for first 3 strategies (UNCONDITIONAL)
+                    if len(filtered_strategies_data) < 3:
+                        debug_logger.info(f"--- [STRAT {len(filtered_strategies_data)} COLUMNS] ---")
+                        debug_logger.info(f"Columns: {list(df.columns)}")
+                        debug_logger.info(f"Has exit_date? {'exit_date' in df.columns}")
+                        print(f"[DEBUG COLS] Strat {len(filtered_strategies_data)}: cols={list(df.columns)[:5]}... exit_date?={'exit_date' in df.columns}")
+                    
                     # Ensure we have a date column (exit_date is our standard)
                     if 'exit_date' in df.columns:
-                        df['exit_date'] = pd.to_datetime(df['exit_date'], errors='coerce')
+                        # LOG RAW DATA BEFORE PARSING (first 3 strategies)
+                        if len(filtered_strategies_data) < 3:
+                            raw_sample = df['exit_date'].iloc[0] if len(df) > 0 else 'EMPTY'
+                            debug_logger.info(f"--- [RAW BEFORE PARSE] Strat {len(filtered_strategies_data)} ---")
+                            debug_logger.info(f"Raw type: {type(raw_sample)}, Value: {raw_sample}")
+                            print(f"[DEBUG RAW] Strat {len(filtered_strategies_data)}: type={type(raw_sample)}, val={raw_sample}")
                         
+                        parse_method = 'unknown'
+                        try:
+                            # CORRECCIÓN DE FECHAS: Priorizar el formato exacto del frontend (YYYY.MM.DD HH:MM:SS)
+                            df['exit_date'] = pd.to_datetime(df['exit_date'], format='%Y.%m.%d %H:%M:%S', errors='raise')
+                            parse_method = 'YYYY.MM.DD HH:MM:SS'
+                        except (ValueError, TypeError) as e1:
+                            try:
+                                df['exit_date'] = pd.to_datetime(df['exit_date'], format='%Y.%m.%d', errors='raise')
+                                parse_method = 'YYYY.MM.DD'
+                            except (ValueError, TypeError) as e2:
+                                try:
+                                    df['exit_date'] = pd.to_datetime(df['exit_date'], dayfirst=True, errors='coerce')
+                                    parse_method = 'dayfirst=True'
+                                except:
+                                    df['exit_date'] = pd.to_datetime(df['exit_date'], errors='coerce')
+                                    parse_method = 'coerce'
+                        
+                        if len(filtered_strategies_data) < 3:
+                            debug_logger.info(f"Parse method used: {parse_method}")
+                            print(f"[DEBUG PARSE] Strat {len(filtered_strategies_data)}: method={parse_method}")
+                        
+                        # DEBUG: Print sample date range of the strategy BEFORE filter (UNCONDITIONAL for first 3)
+                        if len(filtered_strategies_data) < 3:
+                            min_d = df['exit_date'].min()
+                            max_d = df['exit_date'].max()
+                            nat_count = df['exit_date'].isna().sum()
+                            debug_logger.info(f"--- [DEBUG FILTER STRAT {len(filtered_strategies_data)}] ---")
+                            debug_logger.info(f"Parsed Range: {min_d} to {max_d} | NaT count: {nat_count}/{len(df)}")
+                            debug_logger.info(f"Head parsed: {df['exit_date'].head(3).tolist()}")
+                            debug_logger.info(f"Filter window: {start_date} to {end_date}")
+                            print(f"[DEBUG-FILTER] Strat {len(filtered_strategies_data)}: Parsed Range {min_d} to {max_d}, NaT: {nat_count}")
+
                         if start_date:
                             df = df[df['exit_date'] >= pd.to_datetime(start_date)]
                         if end_date:
                             df = df[df['exit_date'] <= pd.to_datetime(end_date)]
                     
+                    count_after = len(df)
+                    if count_after == 0:
+                        print(f"[DEBUG-FILTER] Strat {len(filtered_strategies_data)} became EMPTY after filtering. Original: {len(strat_trades)}")
+                    
                     filtered_strategies_data.append(df.to_dict('records'))
                 
                 strategies_data = filtered_strategies_data
+                
+                # Check if ALL are empty
+                valid_strats = sum(1 for s in strategies_data if len(s) > 0)
+                print(f"[DEBUG-FILTER] Total Valid Strategies after Filter: {valid_strats}/{len(strategies_data)}")
+                if valid_strats < 2:
+                     yield f"data: {json.dumps({'status': 'info', 'message': f'⚠️ Filtro demasiado estricto: Solo {valid_strats} estrategias tienen datos en este rango.'})}\n\n"
 
             individual_analyses = []
             print(f"[DEBUG] Starting individual analysis of {len(strategies_data)} strategies...", flush=True)
@@ -698,7 +842,7 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                 # FIX: Send update on first iteration so user sees "Fixed Strategies" / Context immediately
                 if iteration_counter > 0 and (iteration_counter % 20 == 0 or iteration_counter == 1):
                     # Build detailed stats message
-                    stats_msg = f" | Total: {stats_checked} | Correlación: -{stats_rejected_corr} | SatCorr: -{stats_rejected_sat_corr}"
+                    stats_msg = f" | Total: {stats_checked} | Guardados: {len(databank_portfolios)} | Correlación: -{stats_rejected_corr} | SatCorr: -{stats_rejected_sat_corr}"
                     
                     progress_message = f"Progreso: {iteration_counter}"
                     if not use_monte_carlo:
@@ -853,6 +997,14 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                     except StopIteration:
                         # Búsqueda exhaustiva completada
                         break # Salir del bucle while
+                    
+                    # Build combo from base_indices + combo_indices (same as Monte Carlo)
+                    combo = tuple(sorted(list(base_indices) + list(combo_indices)))
+                    
+                    # Skip if combo equals base (in boost mode)
+                    if params.objective == 'boost' and combo == tuple(sorted(base_indices)):
+                        continue
+
                 
                 try:
                     # Constructed in logic above
@@ -904,6 +1056,8 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                     
                     portfolio_df = pd.DataFrame(portfolio_trades)
                     analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+
+                    stats_checked += 1
 
                     if analysis_result:
                         metrics, _ = analysis_result
@@ -1624,4 +1778,58 @@ async def get_correlation_matrix(request: CorrelationRequest):
     except Exception as e:
         print(f"❌ Error in /analysis/correlation-matrix: {e}")
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Search History / Engines ---
+
+class SearchHistoryRequest(BaseModel):
+    name: str
+    timestamp: str
+    config: Dict[str, Any]
+    base_strategies: List[str] # List of strategy NAMES
+    objective: str
+
+HISTORY_FILE = "search_engines.json"
+
+@app.get("/history/list")
+async def list_search_history():
+    """Returns the list of saved search engines."""
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            data = json.load(f)
+            # Sort by timestamp desc
+            data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            return data
+    except Exception as e:
+        print(f"Error reading history file: {e}")
+        return []
+
+@app.post("/history/save")
+async def save_search_history(req: SearchHistoryRequest):
+    """Saves a search configuration to history."""
+    try:
+        data = []
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, "r") as f:
+                try:
+                    data = json.load(f)
+                except json.JSONDecodeError:
+                    data = []
+        
+        # Add new entry
+        entry = req.dict()
+        data.append(entry)
+        
+        # Limit history size? Let's keep it unlimited for now or cap at 50
+        if len(data) > 50:
+             data = data[-50:]
+
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+            
+        return {"status": "ok", "count": len(data)}
+    except Exception as e:
+        print(f"Error saving search history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
