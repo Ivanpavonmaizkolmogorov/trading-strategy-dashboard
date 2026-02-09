@@ -40,7 +40,8 @@ export const exportAnalysis = () => {
         // Persistence for exterminated localStorage items:
         strategiesTableConfig: strategiesTable ? strategiesTable.getConfig() : null,
         savedPortfoliosTableConfig: getSavedPortfoliosTableConfig ? getSavedPortfoliosTableConfig() : null,
-        linkedStrategiesFilter: state.linkedStrategiesFilter || 'all'
+        linkedStrategiesFilter: state.linkedStrategiesFilter || 'all',
+        tradePnlOverrides: state.tradePnlOverrides || {} // <-- Trade PnL Overrides (manual edits)
     };
 
     const stateString = JSON.stringify(appState);
@@ -126,6 +127,12 @@ const mergeState = async (importedState) => {
         console.log('[ImportExport] Merged Linked Accounts:', state.linkedAccounts.length);
     }
 
+    // 8. Merge Trade PnL Overrides
+    if (importedState.tradePnlOverrides && Object.keys(importedState.tradePnlOverrides).length > 0) {
+        state.tradePnlOverrides = { ...state.tradePnlOverrides, ...importedState.tradePnlOverrides };
+        console.log('[ImportExport] Merged Trade PnL Overrides:', Object.keys(state.tradePnlOverrides).length);
+    }
+
     if (newPortfoliosAdded > 0) {
         alert(`${newPortfoliosAdded} portafolios nuevos han sido fusionados con tu sesión.`);
         // Re-analizar todo para que los nuevos portafolios se muestren correctamente.
@@ -199,11 +206,18 @@ const restoreState = async (importedState) => {
     state.quarantinedStrategyNames = new Set(importedState.quarantinedStrategyNames || []); // Restore Quarantine List
     state.deepScanData = importedState.deepScanData || {}; // Restore Deep Scan Data (Multi-Account)
     state.linkedAccounts = importedState.linkedAccounts || []; // Restore Linked Accounts
+    state.tradePnlOverrides = importedState.tradePnlOverrides || {}; // Restore Trade PnL Overrides
 
     console.log('[ImportExport] Restored deepScanData with', Object.keys(state.deepScanData).length, 'accounts');
+    console.log('[ImportExport] Restored Trade PnL Overrides:', Object.keys(state.tradePnlOverrides).length);
     console.log('[ImportExport] Restored linkedAccounts:', state.linkedAccounts.length);
 
     updateTradesFilesList();
+
+    // Sanitize Magic Number Map (Fix for cross-contamination)
+    import('./magicMapRepair.js').then(({ sanitizeMagicMap }) => {
+        sanitizeMagicMap();
+    });
 
     // Backward compatibility: ignore old benchmark fields if present
     // (Files exported before benchmark removal may still have these fields)

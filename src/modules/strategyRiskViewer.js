@@ -433,7 +433,29 @@ export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
                 </td>
                 <td class="py-2 px-2 font-medium text-white">
                     <div class="flex items-center">
-                        <span>${strat.name} <span class="text-xs text-gray-500 ml-1">(${originalIndex !== -1 ? 'Linked' : 'No Link'})</span></span>
+                        <span>
+                            ${strat.name} 
+                            <span class="text-xs text-gray-500 ml-1">(${originalIndex !== -1 ? 'Linked' : 'No Link'})</span>
+                            ${(() => {
+                    // Robust Magic Number Check
+                    let hasMagic = false;
+                    if (state.magicNumberMap) {
+                        // We don't have the full strategy object here easily, but we have the name
+                        // and we can try to find the ID from state.loadedStrategyFiles if originalIndex is valid
+                        const file = originalIndex !== -1 ? state.loadedStrategyFiles[originalIndex] : null;
+                        const id = file ? file.strategyId : null;
+
+                        const keys = [
+                            id,
+                            strat.name,
+                            strat.name.toLowerCase().replace('.csv', '').trim(),
+                            strat.name.replace(/\.csv$/i, '').trim()
+                        ];
+                        hasMagic = keys.some(k => k && state.magicNumberMap[k]);
+                    }
+                    return hasMagic ? `<span class="inline-flex items-center ml-2 px-1.5 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider bg-indigo-900 text-indigo-200 border border-indigo-600 cursor-help" title="In MT5 (Magic Number Mapped)">⚡ MT5</span>` : '';
+                })()}
+                        </span>
                         <button class="copy-risk-strat-btn ml-2 text-gray-500 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100" data-name="${strat.name}" title="Copy Name">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
                         </button>

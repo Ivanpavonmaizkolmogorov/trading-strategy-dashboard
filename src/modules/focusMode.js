@@ -2,7 +2,9 @@ import { state } from '../state.js';
 import { dom } from '../dom.js';
 import { renderEquityChart, renderScatterChart, renderLorenzChart, renderChartsForTab, renderPortfolioComparisonCharts, renderRealityCheckTab, getRealTradesByName } from '../ui.js';
 import { STRATEGY_COLORS } from '../config.js';
-import { renderSQAnalysis } from './sqAnalysis_v2.js?v=11';
+import { renderSQAnalysis, calculateSQMetrics, filterTradesByDate, parseTradesFromData } from './sqAnalysis_v2.js?v=11';
+import { formatMetricForDisplay, toggleLoading } from '../utils.js';
+import { getFullAnalysisFromBackend } from '../analysis.js';
 
 /**
  * Helper: Search for trades in state.deepScanData by magic number(s)
@@ -87,7 +89,21 @@ export const focusMode = {
     },
 
     enable(item, type, rowElement, options = {}) {
+        // ========== DIAGNOSTIC LOGS ==========
+        console.log('%c[DIAG-FOCUS] ═══════════════════════════════════════', 'color: #ff00ff; font-weight: bold');
+        console.log('%c[DIAG-FOCUS] focusMode.enable CALLED', 'color: #ff00ff; font-weight: bold');
+        console.log('[DIAG-FOCUS] type:', type);
+        console.log('[DIAG-FOCUS] item.name:', item.name);
+        console.log('[DIAG-FOCUS] item.id:', item.id);
+        console.log('[DIAG-FOCUS] item.originalIndex:', item.originalIndex);
+        console.log('[DIAG-FOCUS] item.indices:', item.indices);
+        console.log('[DIAG-FOCUS] state.activeViewMode:', state.activeViewMode);
+        console.log('[DIAG-FOCUS] state.loadedStrategyFiles.length:', state.loadedStrategyFiles?.length);
+        // ========== END DIAGNOSTIC LOGS ==========
+
         console.log('[FocusMode] enable() called. Type:', type, 'Item:', item.name || item.id, 'Options:', options);
+        console.log('[FocusMode] Item Keys:', Object.keys(item));
+        console.log('[FocusMode] Item CreationFilter:', item.creationFilter);
         const id = item.id || item.name; // Use name as fallback ID if needed
 
         // --- FIX: ALWAYS Refresh data from Global State ---
@@ -196,6 +212,198 @@ export const focusMode = {
     },
 
     /**
+     * Helper: Recalculate metrics based on a date range
+     */
+    /**
+     * Helper: Recalculate metrics based on a date range using Standard Engine
+     * @param {Object} analysis - Analysis object (may contain trades)
+     * @param {Object} filter - Date filter {start, end}
+     * @param {Array} [tradesArg] - Optional trades array if not in analysis
+     */
+    async recalculateMetrics(analysis, filter, tradesArg) {
+        // [FIX] Handle asynchronous nature by returning a Promise
+        // But for Curve Fallback, we can return immediately if trades are missing.
+        // Changing to synchronous for curve fallback scenario to ensure immediate UI update
+        // when trades are missing (common in Databank).
+
+        if (!filter || (!filter.start && !filter.end)) return null;
+        if (!filter || (!filter.start && !filter.end)) return null;
+
+        // 1. Resolve Trades
+        const trades = tradesArg || (analysis ? analysis.trades : null);
+
+        if (!trades || !Array.isArray(trades) || trades.length === 0) {
+            console.warn('[FocusMode] ⚠️ recalculateMetrics: No trades available for Engine. Falling back to Curve.');
+            return this.recalculateMetricsFromCurve(analysis, filter);
+        }
+
+        // 2. Filter Trades LOCALLY first to reduce payload size
+        const filteredTrades = filterTradesByDate(trades, filter.start, filter.end);
+
+        if (!filteredTrades || filteredTrades.length === 0) return null;
+
+        console.log(`[FocusMode] ⚙️ Backend Engine Input: ${filteredTrades.length} trades. Fetching...`);
+
+        try {
+            // 3. CALL BACKEND ENGINE (Async)
+            // We verify normalization flags from DOM or state if needed, but for "Optimized View",
+            // we usually just want the raw metrics for the specific date range.
+            // If normalization is active globally, we should respect it.
+            const isRiskNormalized = dom.normalizeRiskCheckbox ? dom.normalizeRiskCheckbox.checked : false;
+            const targetMaxDD = isRiskNormalized ? parseFloat(document.getElementById('target-max-dd').value) : 0;
+
+            // Strategy Name for logging
+            const stratName = (analysis && analysis.name) ? analysis.name : 'OptimizedViewStrategy';
+
+            // Construct payload: ONE strategy (the filtered trades)
+            // Backend expects array of strategies.
+            // getFullAnalysisFromBackend(strategies, portfolios, isRiskNormalized, targetMaxDD)
+            const backendResults = await getFullAnalysisFromBackend([filteredTrades], [], isRiskNormalized, targetMaxDD);
+
+            if (!backendResults || backendResults.length === 0) {
+                console.error('[FocusMode] ❌ Backend returned empty results.');
+                return null;
+            }
+
+            const engineMetrics = backendResults[0]; // First strategy result
+
+            if (!engineMetrics) return null;
+
+            console.log(`[FocusMode] ⚖️ Backend Metrics Received. Profit: ${engineMetrics.totalProfit}, MaxDD: ${engineMetrics.maxDrawdownInDollars}, GFS: ${engineMetrics.gammaFlowScore}`);
+
+            // 4. Return Metrics (Mapping Backend Keys to Frontend Expectations)
+            const scaledMetrics = {
+                ...engineMetrics,
+                // Standardize Keys
+                netProfit: engineMetrics.totalProfit,
+                totalProfit: engineMetrics.totalProfit,
+                maxDrawdownInDollars: engineMetrics.maxDrawdownInDollars || engineMetrics.maxDD, // Backend key might vary
+                maxDD: engineMetrics.maxDrawdownInDollars || engineMetrics.maxDD,
+
+                // Aliases
+                NetProfit: engineMetrics.totalProfit,
+                'Net Profit': engineMetrics.totalProfit,
+                MaxDD: engineMetrics.maxDrawdownInDollars,
+                'Max DD': engineMetrics.maxDrawdownInDollars,
+                TotalTrades: engineMetrics.totalTrades,
+                winningPercentage: engineMetrics.winningPercentage || engineMetrics.winRate, // Backend usually sends winningPercentage? Check.
+                returnDD: engineMetrics.returnDD,
+
+                // Advanced Metrics (Backend specific)
+                gammaFlowScore: engineMetrics.gammaFlowScore,
+                sharpeRatioTrade: engineMetrics.sharpeRatioTrade || engineMetrics.sharpeRatio, // Fallback
+                upi: engineMetrics.upi,
+                sortinoRatio: engineMetrics.sortinoRatio,
+                maxStagnationTrades: engineMetrics.maxStagnationTrades,
+                maxStagnationDays: engineMetrics.maxStagnationDays,
+                maxConsecutiveLosses: engineMetrics.maxConsecutiveLosses
+            };
+
+            return scaledMetrics;
+
+        } catch (e) {
+            console.error('[FocusMode] 💥 Error fetching backend metrics:', e);
+            return null;
+        }
+    },
+
+    /**
+     * Fallback: Recalculate metrics from Equity Curve (Approximation)
+     * Used when trade list is unavailable.
+     */
+    recalculateMetricsFromCurve(analysis, filter) {
+        if (!analysis || !analysis.chartData || !analysis.chartData.equityCurve) return null;
+
+        const startTs = filter.start ? new Date(filter.start).getTime() : -Infinity;
+        const endTs = filter.end ? new Date(filter.end).getTime() + 86399999 : Infinity;
+
+        // Filter Equity Curve
+        const filteredCurve = analysis.chartData.equityCurve.filter(pt => {
+            let t;
+            if (typeof pt === 'object') {
+                if ('x' in pt) t = pt.x;
+                else if ('date' in pt) t = pt.date;
+                else if (Array.isArray(pt)) t = pt[0];
+            }
+            if (typeof t === 'string' && isNaN(t)) t = new Date(t).getTime();
+            return t >= startTs && t <= endTs;
+        });
+
+        if (filteredCurve.length === 0) return null;
+
+        // Apply Denormalization Scaling
+        const initialBalance = (analysis.metrics && analysis.metrics.initial_balance) ? analysis.metrics.initial_balance : 10000;
+        const scale = (val) => {
+            // [ROBUST] Handle undefined or null
+            if (val === undefined || val === null) return 0;
+            // If value is percentage (e.g. 5.5%), convert to dollars: (5.5 / 100) * 10000 = 550
+            return (val / 100.0) * initialBalance;
+        };
+
+        // [ROBUST] Helper to get Y value from point
+        const getVal = (pt) => {
+            if (typeof pt === 'number') return pt;
+            if (Array.isArray(pt)) return pt[1];
+            if (pt && typeof pt === 'object') {
+                if ('y' in pt) return pt.y;
+                if ('value' in pt) return pt.value;
+                if ('balance' in pt) return pt.balance;
+                if ('close' in pt) return pt.close;
+                // Fallback if index 1 exists (tuple-like object with numeric keys?)
+                if (1 in pt) return pt[1];
+            }
+            return 0;
+        };
+
+        // Recalculate
+        const first = getVal(filteredCurve[0]);
+        const last = getVal(filteredCurve[filteredCurve.length - 1]);
+
+        const firstScaled = scale(first);
+        const lastScaled = scale(last);
+
+        // [FIX] Ensure we return Dollars if the curve was Percentage (which it is for Databank portfolios)
+        // If 'maxDD' comes from scaled values, it is in Dollars.
+        // If the original curve was Percentage, 'scale' function handles conversion (Val / 100 * Bal).
+        // So 'profit' and 'maxDD' here are DOLLARS.
+        const profit = lastScaled - firstScaled;
+
+        console.log(`[FocusMode] Recalc Internal: StartRaw=${first}, EndRaw=${last}, StartScaled=${firstScaled}, EndScaled=${lastScaled}, NetProfit=${profit}`);
+
+        // Calc DD
+        let peak = -Infinity;
+        let maxDD = 0;
+
+        filteredCurve.forEach(pt => {
+            const valScaled = scale(getVal(pt));
+            if (valScaled > peak) peak = valScaled;
+            const dd = peak - valScaled;
+            if (dd > maxDD) maxDD = dd;
+        });
+
+        // Log diagnosis
+        // console.log(`[FocusMode] From Curve: Start=${firstScaled}, End=${lastScaled}, Profits=${profit}, DD=${maxDD}`);
+
+        return {
+            ...analysis.metrics, // [FIX] Spread ORIGINAL metrics FIRST
+            netProfit: profit,
+            drawdown: maxDD,
+            totalTrades: filteredCurve.length,
+            NetProfit: profit,
+            'Net Profit': profit,
+            MaxDD: maxDD,
+            'Max DD': maxDD,
+            TotalTrades: filteredCurve.length,
+            // [FIX] Aliases for Table Compatibility
+            totalProfit: profit,
+            maxDrawdownInDollars: maxDD
+        };
+    },
+
+
+
+
+    /**
      * Highlight the focused row
      */
     highlightRow(row, color) {
@@ -218,10 +426,204 @@ export const focusMode = {
     /**
      * Render the floating banner
      */
+    /**
+     * Render the floating banner
+     */
     renderBanner() {
-        // We might not need a banner if the UI is clear enough
-        // For now, let's skip it or implement a subtle indicator
-        this.removeBanner();
+        // Only render if we have at least one focused item.
+        if (this.focusedItems.size < 1) {
+            this.removeBanner();
+            return;
+        }
+
+        const item = this.focusedItems.values().next().value;
+
+        // Create or Get Banner
+        let banner = document.getElementById('focus-mode-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'focus-mode-banner';
+            document.body.appendChild(banner);
+        }
+
+        // [FIX] ALWAYS enforce styles to ensure visibility, even if Tailwind fails
+        // Use inline flex for layout, fixed position, high z-index
+        banner.style.cssText = `
+            position: fixed; 
+            top: 100px; 
+            right: 20px; 
+            z-index: 2147483647; 
+            background-color: #111827; 
+            border: 1px solid #4b5563; 
+            border-radius: 8px; 
+            padding: 16px; 
+            min-width: 320px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
+            color: #f3f4f6;
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: block;
+            backdrop-filter: blur(12px);
+        `;
+
+        // Determine Mode
+        // Default to 'optimized' if filter exists and not set
+        if (!item.viewMode && item.creationFilter) {
+            item.viewMode = 'optimized';
+        }
+        const mode = item.viewMode || 'full';
+        const hasFilter = !!item.creationFilter || mode === 'optimized';
+
+        // Sanitize Name
+        const safeName = item.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+        // Calculate Metrics based on Mode
+        let displayMetrics;
+        if (mode === 'full' && item.analysis && item.analysis.metrics) {
+            displayMetrics = item.analysis.metrics;
+        } else {
+            displayMetrics = item.metrics || (item.analysis ? item.analysis.metrics : {});
+        }
+
+        // [FIX] Resolve Active Filter for Display
+        let activeFilterForDisplay = null;
+        if (mode === 'optimized') {
+            if (item.creationFilter) {
+                activeFilterForDisplay = item.creationFilter;
+            } else if (state.strategyDateRanges) {
+                const sId = item.id || item.name;
+                activeFilterForDisplay = state.strategyDateRanges[sId] || state.strategyDateRanges[item.name];
+            }
+        }
+
+        // Update 'hasFilter' logic to consider global filter
+        // If we found a global filter for display, we indeed have a filter.
+        const effectiveHasFilter = !!activeFilterForDisplay || hasFilter;
+
+        // Define Display & Icons
+        let displayType = 'Full History';
+        let displayIcon = '📉';
+        let actionText = 'SWITCH TO OPTIMIZED'; // Button Action
+
+        if (effectiveHasFilter && mode === 'optimized') {
+            displayType = 'Optimized Period';
+            displayIcon = '🎯';
+            actionText = 'SWITCH TO HISTORY'; // Button Action
+        }
+
+        // --- RENDER HTML ---
+        // We use inline styles for the internal layout to be independent of Tailwind
+        const isOpt = mode === 'optimized';
+        const btnBg = isOpt ? '#d97706' : '#2563eb'; // amber : blue
+        const btnHover = isOpt ? '#b45309' : '#1d4ed8';
+
+        // Helper for metric formatting
+        const m = displayMetrics;
+        const format = (v, k) => formatMetricForDisplay(v, k);
+        const profitColor = (m.netProfit || m.totalProfit) >= 0 ? '#34d399' : '#f87171'; // emerald-400 : red-400
+
+        // HTML Structure with INLINE STYLES
+        banner.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #374151;">
+                <div style="display: flex; flex-direction: column; overflow: hidden; margin-right: 12px;">
+                    <span style="font-weight: bold; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;" title="${safeName}">${safeName}</span>
+                    <span style="font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">${displayType}</span>
+                </div>
+                <button id="focus-toggle-view" 
+                    style="background-color: ${btnBg}; color: white; padding: 6px 14px; border-radius: 6px; font-weight: 700; font-size: 13px; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background-color 0.2s;"
+                    onmouseover="this.style.backgroundColor='${btnHover}'"
+                    onmouseout="this.style.backgroundColor='${btnBg}'">
+                    <span>${displayIcon}</span>
+                    <span>${actionText}</span>
+                </button>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; font-size: 12px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #6b7280;">Net Profit:</span>
+                    <span style="font-family: monospace; font-weight: bold; color: ${profitColor};">${format(m.netProfit || m.totalProfit, 'netProfit')}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #6b7280;">Max DD:</span>
+                    <span style="font-family: monospace; color: #fca5a5;">${format(m.maxDD || m.drawdown, 'maxDD')}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #6b7280;">Sharpe:</span>
+                    <span style="font-family: monospace; color: #93c5fd;">${format(m.sharpeRatio, 'sharpeRatio')}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #6b7280;">Trades:</span>
+                    <span style="font-family: monospace; color: #d1d5db;">${m.totalTrades || m.TotalTrades || 0}</span>
+                </div>
+            </div>
+            ${effectiveHasFilter && mode === 'optimized' && activeFilterForDisplay
+                ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #374151; font-size: 10px; text-align: center; color: #f59e0b; font-family: monospace;">
+                   ${activeFilterForDisplay.start} ➜ ${activeFilterForDisplay.end}
+                   </div>`
+                : ''}
+        `;
+
+        // Attach Listener
+        const btn = banner.querySelector('#focus-toggle-view');
+        if (btn) {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                // Toggle Mode
+                const newMode = (item.viewMode === 'optimized') ? 'full' : 'optimized';
+                item.viewMode = newMode;
+                console.log(`[FocusMode] Toggled View Mode to: ${item.viewMode}`);
+
+                // Automatically ensure filter exists if switching to optimized
+                if (newMode === 'optimized' && !item.creationFilter) {
+                    this.ensureGlobalFilter(item);
+                }
+
+                // Trigger Updates
+                this.renderBanner(); // Re-render self immediately to update button text
+                this.updateCharts(); // Trigger chart update
+
+                // Force Table Update
+                if (typeof window.updateDatabankDisplay === 'function') {
+                    window.updateDatabankDisplay();
+                }
+            };
+        }
+    },
+
+    /**
+     * Helper to ensure global filter exists
+     */
+    ensureGlobalFilter(item) {
+        const sId = item.id || item.name;
+        if (!state.strategyDateRanges) state.strategyDateRanges = {};
+
+        if (!state.strategyDateRanges[sId] && !state.strategyDateRanges[item.name]) {
+            // Default to full range if no global filter exists yet
+            if (item.analysis && item.analysis.trades && item.analysis.trades.length > 0) {
+                const trades = item.analysis.trades;
+                let minD = Infinity;
+                let maxD = -Infinity;
+
+                trades.forEach(t => {
+                    const dStr = t.date || t.exit_date;
+                    if (dStr) {
+                        const d = new Date(dStr).getTime();
+                        if (!isNaN(d)) {
+                            if (d < minD) minD = d;
+                            if (d > maxD) maxD = d;
+                        }
+                    }
+                });
+
+                if (minD !== Infinity) {
+                    const startStr = new Date(minD).toISOString().split('T')[0];
+                    const endStr = new Date(maxD).toISOString().split('T')[0];
+
+                    // Set GLOBAL state
+                    state.strategyDateRanges[sId] = { start: startStr, end: endStr };
+                    console.log(`[FocusMode] Initialized Global Filter for ${sId}: ${startStr} - ${endStr}`);
+                }
+            }
+        }
     },
 
     /**
@@ -235,705 +637,1188 @@ export const focusMode = {
     /**
      * Update charts to show only the focused items
      */
-    updateCharts() {
+    async updateCharts() {
+        // ========== DIAGNOSTIC LOGS ==========
+        console.log('%c[DIAG-PNL] ═══════════════════════════════════════', 'color: #ffff00; font-weight: bold; background: #333');
+        console.log('%c[DIAG-PNL] focusMode.updateCharts CALLED (Async)', 'color: #ffff00; font-weight: bold; background: #333');
+        console.log('[DIAG-PNL] focusedItems.size:', this.focusedItems.size);
+        // ========== END DIAGNOSTIC LOGS ==========
+
         if (this.focusedItems.size === 0) return;
 
-        // In the new layout, we always use the main viewer in the top panel
-        // The canvas ID is 'portfolioEquityChart' for the main equity curve
-
-        // Ensure the main viewer is visible (it should be by default)
-        if (dom.viewerContainer) {
-            dom.viewerContainer.classList.remove('hidden');
+        // Show loading state if we are likely to hit the backend (Optimized view active)
+        const isOptimizedView = Array.from(this.focusedItems.values()).some(i => i.viewMode === 'optimized');
+        if (isOptimizedView) {
+            toggleLoading(true, 'Synchronizing...', 'Fetching exact metrics from Backend Engine');
         }
 
-        // Prepare data for renderPortfolioComparisonCharts
-        const analyses = [];
-        this.focusedItems.forEach(item => {
-            // REFRESH DATA: Ensure we use the latest state (e.g. for Risk Normalization updates)
-            if (item.type === 'saved') {
-                const freshItem = state.savedPortfolios.find(p => p.id === item.id);
-                if (freshItem) {
-                    // Update existing reference with fresh data properties
-                    console.log(`[FocusMode] Refreshing data for ${item.name}. Risk present?`, !!freshItem.riskPerStrategy, freshItem.riskPerStrategy);
-                    item.riskPerStrategy = freshItem.riskPerStrategy;
-                    item.analysis = freshItem.analysis;
-                    item.metrics = freshItem.metrics;
-
-                    // Essential for Reality Check
-                    item.realMetrics = freshItem.realMetrics;
-                    item.linkedAccountId = freshItem.linkedAccountId;
-                    item.linkedAccountId = freshItem.linkedAccountId;
-                    item.linkedAccountName = freshItem.linkedAccountName;
-                    item.strategyNames = freshItem.strategyNames; // CRITICAL: Propagate strategy names to UI
-
-                    // === PORTFOLIO SMART CONNECT ===
-                    // Proactively try to fuzzy-match ALL strategies in this portfolio
-                    // This ensures the portfolio chart (which aggregates strategies) works even if strategies aren't clicked individually
-                    if (item.realMetrics && item.realMetrics._tradesById && state.magicNumberMap) {
-                        const availableKeys = Object.keys(item.realMetrics._tradesById);
-                        let strategyNames = item.strategyNames || [];
-
-                        // If no strategy names, try to resolve from indices if available
-                        if (strategyNames.length === 0 && item.indices && window.analysisResults) {
-                            strategyNames = item.indices.map(i => window.analysisResults[i]?.name).filter(Boolean);
-                        }
-
-                        // CRITICAL: Ensure these names are saved to the item for UI.js to use
-                        if (strategyNames.length > 0) {
-                            item.strategyNames = strategyNames;
-                            console.log(`[FocusMode] 🧠 Pre-scanning ${strategyNames.length} strategies for portfolio '${item.name}'...`);
-                            strategyNames.forEach(stratName => {
-                                // Skip if already mapped
-                                if (state.magicNumberMap[stratName]) return;
-
-                                // findBestMatch now returns an array of matches (strings)
-                                const matches = findBestMatch(stratName, null, availableKeys, item.realMetrics._tradesById);
-
-                                if (matches && matches.length > 0) {
-                                    state.magicNumberMap[stratName] = matches;
-                                    console.log(`[FocusMode] 💾 Auto-mapped (Portfolio Scan): '${stratName}' -> [${matches.join(', ')}]`);
-                                }
-                            });
-                        }
-                    }
-                } else {
-                    console.warn(`[FocusMode] Could not find fresh item for ${item.id}`);
-                }
+        try {
+            // Ensure the main viewer is visible (it should be by default)
+            if (dom.viewerContainer) {
+                dom.viewerContainer.classList.remove('hidden');
             }
 
+            // Prepare data for renderPortfolioComparisonCharts
+            // Use Promise.all to handle async backend calls in parallel
+            const analysesPromises = Array.from(this.focusedItems.values()).map(async (item) => {
+                // REFRESH DATA: Ensure we use the latest state (e.g. for Risk Normalization updates)
+                if (item.type === 'saved') {
+                    const freshItem = state.savedPortfolios.find(p => p.id === item.id);
+                    if (freshItem) {
+                        // Update existing reference with fresh data properties
+                        console.log(`[FocusMode] Refreshing data for ${item.name}. Risk present?`, !!freshItem.riskPerStrategy, freshItem.riskPerStrategy);
+                        item.riskPerStrategy = freshItem.riskPerStrategy;
+                        item.analysis = freshItem.analysis;
+                        item.metrics = freshItem.metrics;
 
-            let analysis = item.analysis || item.metrics;
+                        // Essential for Reality Check
+                        item.realMetrics = freshItem.realMetrics;
+                        item.linkedAccountId = freshItem.linkedAccountId;
+                        item.linkedAccountId = freshItem.linkedAccountId;
+                        item.linkedAccountName = freshItem.linkedAccountName;
+                        item.strategyNames = freshItem.strategyNames; // CRITICAL: Propagate strategy names to UI
 
-            // For DataBank items, compute the portfolio by combining individual strategies
-            if (item.type === 'databank' && !analysis && item.indices) {
-                console.log('[FocusMode] DataBank item detected, computing portfolio from indices:', item.indices);
+                        // === PORTFOLIO SMART CONNECT ===
+                        // Proactively try to fuzzy-match ALL strategies in this portfolio
+                        // This ensures the portfolio chart (which aggregates strategies) works even if strategies aren't clicked individually
+                        if (item.realMetrics && item.realMetrics._tradesById && state.magicNumberMap) {
+                            const availableKeys = Object.keys(item.realMetrics._tradesById);
+                            let strategyNames = item.strategyNames || [];
 
-                // Get individual strategies
-                const strategies = item.indices.map(idx => window.analysisResults[idx]).filter(Boolean);
-
-                if (strategies.length === 0) {
-                    console.error('[FocusMode] ❌ No strategies found for indices:', item.indices);
-                    return;
-                }
-
-                console.log(`[FocusMode] Found ${strategies.length} strategies to combine`);
-
-                // Combine equity curves (simple average for now - could be weighted)
-                const firstStrategy = strategies[0];
-                if (!firstStrategy.analysis?.chartData?.equityCurve) {
-                    console.error('[FocusMode] ❌ First strategy has no equity curve');
-                    return;
-                }
-
-                const numPoints = firstStrategy.analysis.chartData.equityCurve.length;
-                const combinedEquityCurve = [];
-
-                for (let i = 0; i < numPoints; i++) {
-                    let sum = 0;
-                    let count = 0;
-
-                    strategies.forEach(strategy => {
-                        if (strategy.analysis?.chartData?.equityCurve?.[i]) {
-                            sum += strategy.analysis.chartData.equityCurve[i].y;
-                            count++;
-                        }
-                    });
-
-                    if (count > 0) {
-                        combinedEquityCurve.push({
-                            x: firstStrategy.analysis.chartData.equityCurve[i].x,
-                            y: sum / count
-                        });
-                    }
-                }
-
-                // Create a synthetic analysis object
-                analysis = {
-                    chartData: {
-                        equityCurve: combinedEquityCurve
-                    }
-                };
-
-                console.log('[FocusMode] ✅ Successfully computed DataBank portfolio analysis');
-            }
-
-            // For DataBank items, check if the item object itself has the analysis
-            if (item.type === 'databank' && !analysis) {
-                console.log('[FocusMode] DataBank item detected:', item.name);
-                console.log('[FocusMode] Full item structure:', item);
-                console.warn('[FocusMode] ❌ DataBank item has no analysis property!');
-                console.warn('[FocusMode] This means DataBank items need to be retrieved from state.databankPortfolios instead');
-
-                // Try to find in state.databankPortfolios
-                const databankItem = state.databankPortfolios?.find(p => p.name === item.name);
-                if (databankItem && databankItem.analysis) {
-                    analysis = databankItem.analysis;
-                    console.log('[FocusMode] ✅ Found analysis in state.databankPortfolios');
-                } else {
-                    console.error('[FocusMode] ❌ Could not find analysis for DataBank item');
-                    return; // Skip this item
-                }
-            }
-
-            // Determine savedIndex for correct color assignment in UI
-            let savedIndex = item.savedIndex;
-            if (item.type === 'saved' && savedIndex === undefined) {
-                // Try to find index in state based on ID
-                savedIndex = state.savedPortfolios.findIndex(p => p.id === item.id);
-            }
-
-            // REHYDRATION: If strategy item lacks analysis (e.g., Virtual Strategy from Reality Check), try to find it
-            if (item.type === 'strategy' && !item.analysis && window.analysisResults) {
-                // Helper to check if analysis is valid (has actual data)
-                const isValidAnalysis = (r) => {
-                    // Check if analyzing a direct strategy object or a wrapped result
-                    const analysis = r.analysis || r;
-                    return analysis &&
-                        analysis.chartData &&
-                        analysis.chartData.equityCurve &&
-                        analysis.chartData.equityCurve.length > 0;
-                };
-
-                // Try to find by originalIndex first
-                if (item.originalIndex !== undefined && item.originalIndex !== -1 && window.analysisResults[item.originalIndex] && isValidAnalysis(window.analysisResults[item.originalIndex])) {
-                    item.analysis = window.analysisResults[item.originalIndex].analysis;
-                    console.log(`[FocusMode] 💧 Rehydrated analysis from originalIndex: ${item.originalIndex}`);
-                }
-                // Fallback: Find by Name (with fuzzy .csv matching)
-                else if (item.name) {
-                    // Helper for fuzzy match
-                    const isMatch = (target, query) => {
-                        if (!target || !query) return false;
-                        if (target === query) return true;
-                        if (target === query + '.csv') return true;
-                        if (target.replace('.csv', '') === query) return true;
-                        if (query.replace('.csv', '') === target) return true;
-                        return false;
-                    };
-
-                    // 1. Check window.analysisResults
-                    let found = window.analysisResults.find(r => isMatch(r.name, item.name) && isValidAnalysis(r));
-                    let source = 'window.analysisResults';
-
-                    // 2. Check state.strategies
-                    if (!found && state.strategies) {
-                        found = state.strategies.find(s => isMatch(s.name, item.name) && isValidAnalysis(s));
-                        source = 'state.strategies';
-                    }
-
-                    // 3. Check inside Saved Portfolios (Deep Scan)
-                    if (!found && state.savedPortfolios) {
-                        for (const p of state.savedPortfolios) {
-                            if (p.strategies && Array.isArray(p.strategies)) {
-                                const strat = p.strategies.find(s => isMatch(s.name, item.name) && isValidAnalysis(s));
-                                if (strat) {
-                                    found = strat;
-                                    source = `SavedPortfolio(${p.name})`;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (found && found.analysis) {
-                        item.analysis = found.analysis;
-                        // Also hydrate other missing props if available
-                        if (!item.metrics && found.metrics) item.metrics = found.metrics;
-
-                        console.log(`[FocusMode] 💧 Rehydrated analysis from ${source}: ${item.name} -> ${found.name} (${found.analysis.chartData.equityCurve.length} pts)`);
-                    } else {
-                        console.warn(`[FocusMode] ⚠️ Method 'enable' failed to find VALID backtest analysis for: ${item.name}`);
-                    }
-                }
-            }
-
-            // REALITY CHECK FOR STRATEGIES: Attach Real Metrics if available
-            let realMetrics = null;
-
-            // PRIORITY 1: Use pre-calculated realMetrics from the strategy item itself (from strategiesTable Late Binding)
-            if (item.type === 'strategy' && item.realMetrics && item.realMetrics._aggregatedTrades) {
-                console.log(`[FocusMode] ♻️ Using pre-calculated realMetrics from strategy: ${item.name} (${item.realMetrics._aggregatedTrades.length} trades)`);
-                realMetrics = item.realMetrics;
-            }
-            // PRIORITY 2: Fall back to lookup via magicNumberMap
-            else if (item.type === 'strategy' && state.magicNumberMap) {
-                // Resolve Strategy ID
-                let strategyId = item.id;
-                // Try to find ID from loaded files if item has originalIndex
-                if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
-                    const file = state.loadedStrategyFiles[item.originalIndex];
-                    strategyId = file.strategyId || file.name;
-                } else if (!strategyId) {
-                    strategyId = item.name;
-                }
-
-                let magicRaw = state.magicNumberMap[strategyId] || state.magicNumberMap[item.name];
-                console.log(`[FocusMode] 🔍 Looking up real data for strategy: ${item.name} (ID: ${strategyId})`);
-
-                // DEBUG MAP
-                if (state.magicNumberMap) {
-                    // console.log(`[FocusMode] Magic Number Map Keys (First 5): ${Object.keys(state.magicNumberMap).slice(0, 5)}`);
-                    // console.log(`[FocusMode] Direct Lookup '${strategyId}':`, state.magicNumberMap[strategyId]);
-                    // console.log(`[FocusMode] Name Lookup '${item.name}':`, state.magicNumberMap[item.name]);
-                } else {
-                    console.warn('[FocusMode] state.magicNumberMap is undefined!');
-                }
-
-                // FALLBACK: Smart Connection via Linked Portfolios
-                // FALLBACK: Smart Connection via Linked Portfolios
-                if (!magicRaw) {
-                    // Find parent portfolio
-                    const parentPortfolio = state.savedPortfolios.find(p =>
-                        ((p.indices && item.originalIndex !== undefined && item.originalIndex !== -1 && p.indices.includes(item.originalIndex)) ||
-                            (p.strategyNames && p.strategyNames.includes(item.name))) &&
-                        p.realMetrics && p.realMetrics._tradesById
-                    );
-
-                    if (parentPortfolio) {
-                        const availableKeys = Object.keys(parentPortfolio.realMetrics._tradesById);
-
-                        // Use Helper
-                        const bestMatch = findBestMatch(item.name, strategyId, availableKeys, parentPortfolio.realMetrics._tradesById);
-
-                        if (bestMatch) {
-                            console.log(`[FocusMode] 🧠 Smart Connection (Fuzzy): Matched '${item.name}' to '${bestMatch}'`);
-
-                            // CRITICAL: Save to map so UI.js can find it
-                            if (!state.magicNumberMap[item.name]) {
-                                state.magicNumberMap[item.name] = [bestMatch];
-                                console.log(`[FocusMode] 💾 Auto-saved mapping to state.magicNumberMap`);
+                            // If no strategy names, try to resolve from indices if available
+                            if (strategyNames.length === 0 && item.indices && window.analysisResults) {
+                                strategyNames = item.indices.map(i => window.analysisResults[i]?.name).filter(Boolean);
                             }
 
-                            magicRaw = [bestMatch];
-                        } else {
-                            console.log('[FocusMode] 🧠 Smart Connection Failed. Available Keys in Portfolio:', availableKeys);
-                            console.log(`[FocusMode] 🧠 Tried matching against: ${item.name} and ${strategyId}`);
-                        }
-                    }
-                }
+                            // CRITICAL: Ensure these names are saved to the item for UI.js to use
+                            if (strategyNames.length > 0) {
+                                item.strategyNames = strategyNames;
+                                console.log(`[FocusMode] 🧠 Pre-scanning ${strategyNames.length} strategies for portfolio '${item.name}'...`);
+                                strategyNames.forEach(stratName => {
+                                    // Skip if already mapped
+                                    if (state.magicNumberMap[stratName]) return;
 
-                console.log(`[FocusMode] 🔢 Magic Number(s) found: ${magicRaw}`);
+                                    // findBestMatch now returns an array of matches (strings)
+                                    const matches = findBestMatch(stratName, null, availableKeys, item.realMetrics._tradesById);
 
-                if (magicRaw) {
-                    // Handle comma-separated magic numbers or arrays
-                    let magics = [];
-                    if (typeof magicRaw === 'string') {
-                        magics = magicRaw.split(',').map(m => m.trim()).filter(Boolean);
-                    } else if (Array.isArray(magicRaw)) {
-                        magics = magicRaw;
-                    } else {
-                        magics = [String(magicRaw)];
-                    }
-
-                    // Find a portfolio that has real data for ANY of these magic numbers
-                    const portfolioWithData = state.savedPortfolios.find(p =>
-                        p.realMetrics &&
-                        p.realMetrics._tradesById &&
-                        magics.some(m => p.realMetrics._tradesById[m])
-                    );
-
-                    if (portfolioWithData) {
-                        console.log(`[FocusMode] 📂 Found containing portfolio with data: ${portfolioWithData.name}`);
-
-                        // Aggregate trades from all matching magic numbers
-                        let strategyTrades = [];
-                        let tradesById = {};
-                        magics.forEach(m => {
-                            if (portfolioWithData.realMetrics._tradesById[m]) {
-                                const trades = portfolioWithData.realMetrics._tradesById[m];
-                                strategyTrades = strategyTrades.concat(trades);
-                                tradesById[m] = trades; // Preserve structure for UI lookup
-                            }
-                        });
-
-                        console.log(`[FocusMode] 📊 Trades found: ${strategyTrades.length}`);
-
-                        if (strategyTrades.length > 0) {
-                            // Calculate stats from aggregated trades
-                            const profit = strategyTrades.reduce((sum, t) => sum + (t.profit || 0) + (t.swap || 0) + (t.commission || 0), 0);
-
-                            // Simple drawdown calculation for the aggregated trades (approximation)
-                            // For accurate DD, we'd need to simulate the equity curve.
-                            // For now, let's use the sum of profits as a proxy or 0 if complex.
-                            // Better: Calculate max drawdown from the constructed equity curve of these trades.
-
-                            // Let's construct a simple equity curve to find Max DD
-                            strategyTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
-                            let currentEq = 0;
-                            let maxEq = 0;
-                            let maxDD = 0;
-
-                            console.log(`[FocusMode] 📉 Calculating Real DD for ${item.name}`);
-                            console.log(`[FocusMode]    Trades: ${strategyTrades.length}`);
-
-                            strategyTrades.forEach((t, index) => {
-                                const p = (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
-                                currentEq += p;
-                                if (currentEq > maxEq) maxEq = currentEq;
-                                const dd = maxEq - currentEq;
-                                if (dd > maxDD) {
-                                    maxDD = dd;
-                                    console.log(`[FocusMode]    New MaxDD at trade ${index}: ${maxDD} (Eq: ${currentEq}, MaxEq: ${maxEq})`);
-                                }
-                            });
-
-                            console.log(`[FocusMode]    Final MaxDD: ${maxDD}`);
-
-                            realMetrics = {
-                                _tradesById: tradesById, // Use the correctly structured map
-                                profit: profit,
-                                drawdown: maxDD,
-                                trades: strategyTrades.length,
-                                profitFactor: 0, // Hard to calc without gross profit/loss
-                                sharpe: 0, // Complex
-                                lastSync: portfolioWithData.realMetrics.lastSync
-                            };
-                            console.log(`[FocusMode] ✅ Found Real Metrics for strategy ${item.name}`);
-                        } else {
-                            console.warn(`[FocusMode] ⚠️ Portfolio found but no trades for magics: ${magics.join(', ')}`);
-                        }
-                    } else {
-                        // FALLBACK: Search in deepScanData (Multi-Account persistence)
-                        console.log(`[FocusMode] 🔍 No portfolio found, searching in deepScanData...`);
-                        const deepScanResult = findTradesInDeepScanData(magics);
-
-                        if (deepScanResult.found) {
-                            console.log(`[FocusMode] ✅ Found ${deepScanResult.trades.length} trades in deepScanData (${deepScanResult.sourceName})`);
-
-                            const strategyTrades = deepScanResult.trades;
-                            const tradesById = deepScanResult.tradesById;
-
-                            // Calculate stats - ensure numeric conversion for trade values that may be strings
-                            const profit = strategyTrades.reduce((sum, t) => sum + (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0), 0);
-
-                            // Calculate drawdown
-                            strategyTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
-                            let currentEq = 0;
-                            let maxEq = 0;
-                            let maxDD = 0;
-
-                            strategyTrades.forEach(t => {
-                                const p = (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0);
-                                currentEq += p;
-                                if (currentEq > maxEq) maxEq = currentEq;
-                                const dd = maxEq - currentEq;
-                                if (dd > maxDD) maxDD = dd;
-                            });
-
-                            realMetrics = {
-                                _tradesById: tradesById,
-                                profit: profit,
-                                drawdown: maxDD,
-                                trades: strategyTrades.length,
-                                profitFactor: 0,
-                                sharpe: 0,
-                                lastSync: new Date().toISOString()
-                            };
-                            console.log(`[FocusMode] ✅ Real Metrics from deepScanData for ${item.name}: Profit=${parseFloat(profit).toFixed(2)}, DD=${parseFloat(maxDD).toFixed(2)}, Trades=${strategyTrades.length}`);
-                        } else {
-                            console.warn(`[FocusMode] ❌ No trades found in portfolios OR deepScanData for Magics: ${magics.join(', ')}`);
-                            // Debug: Log available IDs in deepScanData
-                            if (state.deepScanData) {
-                                Object.entries(state.deepScanData).forEach(([accId, data]) => {
-                                    if (data.tradesById) {
-                                        console.log(`[FocusMode] deepScanData[${accId}] has IDs: ${Object.keys(data.tradesById).slice(0, 10).join(', ')}...`);
+                                    if (matches && matches.length > 0) {
+                                        state.magicNumberMap[stratName] = matches;
+                                        console.log(`[FocusMode] 💾 Auto-mapped (Portfolio Scan): '${stratName}' -> [${matches.join(', ')}]`);
                                     }
                                 });
                             }
                         }
+                    } else {
+                        console.warn(`[FocusMode] Could not find fresh item for ${item.id}`);
                     }
-                } else {
-                    console.warn(`[FocusMode] ❌ No Magic Number mapped for ${item.name}`);
+                }
 
-                    // FALLBACK: Use getRealTradesByName to find trades (same logic as portfolios)
-                    if (state.activeViewMode === 'reality-check') {
-                        console.log(`[FocusMode] 🔄 Attempting getRealTradesByName fallback for ${item.name}`);
-                        const realTrades = getRealTradesByName(item.name);
-                        if (realTrades && realTrades.length > 0) {
-                            console.log(`[FocusMode] ✅ Found ${realTrades.length} real trades via getRealTradesByName`);
 
-                            // Calculate metrics from trades
-                            const profit = realTrades.reduce((sum, t) => sum + (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0), 0);
+                let analysis = item.analysis || item.metrics;
 
-                            // Calculate drawdown
-                            let currentEq = 0;
-                            let maxEq = 0;
+                // 1. REHYDRATION / RECONSTRUCTION (Must happen BEFORE filtering)
+
+                // For DataBank items, compute the portfolio by combining individual strategies
+                // CRITICAL: This must happen first so we have a base "Full History" analysis to potentially filter later.
+                // We force this if we haven't confirmed it's a full reconstruction yet (flag isFullReconstructed).
+                if (item.type === 'databank' && item.indices && (!analysis || !analysis.isFullReconstructed)) {
+                    console.log('[FocusMode] DataBank item detected, computing portfolio from indices:', item.indices);
+
+                    // Get individual strategies
+                    const strategies = item.indices.map(idx => window.analysisResults[idx]).filter(Boolean);
+
+                    if (strategies.length > 0) {
+                        console.log(`[FocusMode] Found ${strategies.length} strategies to combine`);
+
+                        // Combine equity curves - ROBUST METHOD: Sum of Cumulative PnL (Date-Aligned)
+                        // Averaging balances works poorly if strategies start at different times (causes drops/sinkholes).
+
+                        const pnlMaps = []; // Array of Map<Timestamp, PnL_Value>
+                        const allTimestamps = new Set();
+                        let allTrades = []; // [FIX] Collect all trades for engine
+
+                        strategies.forEach(strat => {
+                            // [FIX] Collect trades (try multiple sources)
+                            // [FIX] Collect trades (Robust)
+                            let stratTrades = [];
+                            if (strat.trades && Array.isArray(strat.trades)) {
+                                stratTrades = strat.trades;
+                            } else if (strat.analysis && strat.analysis.trades) {
+                                stratTrades = strat.analysis.trades;
+                            } else if (state.rawStrategiesData) {
+                                // Try Index
+                                const idx = strat.originalIndex;
+                                if (idx !== undefined && state.rawStrategiesData[idx] && state.rawStrategiesData[idx].trades) {
+                                    stratTrades = state.rawStrategiesData[idx].trades;
+                                }
+                                // Try Name Matching if index fails
+                                else if (state.loadedStrategyFiles) {
+                                    const fileMatch = state.loadedStrategyFiles.find(f => f.name === strat.name);
+                                    if (fileMatch && state.rawStrategiesData[fileMatch.index]?.trades) {
+                                        stratTrades = state.rawStrategiesData[fileMatch.index].trades;
+                                        // console.log(`[FocusMode] 🔦 Found trades via name match for ${strat.name}`);
+                                    } else {
+                                        console.warn(`[FocusMode] ⚠️ Name match failed for ${strat.name}`);
+                                    }
+                                }
+                            }
+
+                            // [FIX] Self-Healing: If still no trades, try parsing raw CSV data directly
+                            if (stratTrades.length === 0 && strat.originalIndex !== undefined && state.rawStrategiesData && state.rawStrategiesData[strat.originalIndex]) {
+                                const rawData = state.rawStrategiesData[strat.originalIndex];
+                                if (typeof rawData === 'string' && rawData.length > 100) {
+                                    try {
+                                        const parsed = parseTradesFromData(rawData);
+                                        if (parsed && parsed.length > 0) {
+                                            stratTrades = parsed;
+                                            console.log(`[FocusMode] 🩹 Self-Healing: Parsed ${stratTrades.length} trades from raw CSV for ${strat.name}`);
+                                        }
+                                    } catch (e) {
+                                        console.error(`[FocusMode] ❌ Self-Healing failed for ${strat.name}:`, e);
+                                    }
+                                }
+                            }
+
+                            if (stratTrades.length > 0) {
+                                console.log(`[FocusMode] ✅ Got ${stratTrades.length} trades for ${strat.name}`);
+                                allTrades = allTrades.concat(stratTrades);
+                            } else {
+                                console.warn(`[FocusMode] ❌ Could not find trades for strategy: ${strat.name}. OrigIdx: ${strat.originalIndex}`);
+                            }
+
+                            if (strat.analysis?.chartData?.equityCurve && strat.analysis.chartData.equityCurve.length > 0) {
+                                const curve = strat.analysis.chartData.equityCurve;
+                                const startBal = curve[0].y; // Assume first point is initial balance
+                                const map = new Map();
+
+                                curve.forEach(pt => {
+                                    let t;
+                                    if (typeof pt.x === 'string') t = new Date(pt.x).getTime();
+                                    else t = pt.x; // Assume timestamp
+
+                                    // Store Cumulative Profit (Balance - StartBalance)
+                                    map.set(t, pt.y - startBal);
+                                    allTimestamps.add(t);
+                                });
+                                pnlMaps.push(map);
+                            }
+                        });
+
+                        // Sort unique timestamps
+                        const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b);
+
+                        // Build Combined Curve
+                        // We simply SUM the Cumulative PnL of all active strategies at each timestamp.
+                        // This assumes "Portfolio Profit" = Sum(Strategy Profits).
+                        // This does NOT account for "closed" strategies properly if they stop reporting data, 
+                        // but for Databank/Backtest, usually data persists to end or we assume last value holds.
+                        // Better: If a strategy has no data at T, assume it contributes its LAST KNOWN PnL (or 0 if not started).
+
+                        const combinedEquityCurve = [];
+                        const lastKnownPnL = new Array(pnlMaps.length).fill(0);
+                        const started = new Array(pnlMaps.length).fill(false); // Track if strategy has started
+
+                        // Base Balance for Portfolio (e.g. 10000)
+                        // We can just plot Profit, or Balance. Let's start at 0 Profit.
+
+                        sortedTimestamps.forEach(t => {
+                            let currentTotalPnL = 0;
+
+                            pnlMaps.forEach((map, idx) => {
+                                if (map.has(t)) {
+                                    lastKnownPnL[idx] = map.get(t);
+                                    started[idx] = true;
+                                } else {
+                                    // If strategy hasn't started yet, its contribution is 0.
+                                    // If it HAS started but has a gap, we hold last value? 
+                                    // For standard "Sum of Curves", holding last value is safer if we assume flat equity during gaps.
+                                    // If we assume gap = 0 PnL change, then holding last Cumulative PnL is correct.
+                                }
+
+                                if (started[idx]) {
+                                    currentTotalPnL += lastKnownPnL[idx];
+                                }
+                            });
+
+                            // Convert to string date/iso if needed, but timestamp is safer for logic
+                            // const isoDate = new Date(t).toISOString();
+
+                            // [FIX] NORMALIZE TO PERCENTAGE
+                            // The UI and Metrics Scaler expect the Equity Curve to be in "Percentage Growth" relative to 10000.
+                            // (Value / 100) * 10000 = Absolute.
+                            // So: (Absolute / 10000) * 100 = Percentage.
+                            // const baseCapital = 10000; // Defined outside loop now
+                            const percentageVal = (currentTotalPnL / 10000) * 100.0;
+
+                            combinedEquityCurve.push({
+                                x: t,
+                                y: percentageVal // Storing as % allows existing scaling logic to work correctly
+                            });
+                        });
+
+                        // Update UI often expects "Balance" curve starting at ~10000.
+                        // But our 'y' is now Percentage.
+                        // The UI chart adapter (ui.js / renderPortfolioComparisonCharts) does:
+                        // scale = (val / 100) * 10000.
+                        // If y=0, scale=0. We want scale=10000 (Initial Balance)?
+                        // Actually, ui.js adds previous balance in some modes, but usually it plots "Profit + 10000" or similar.
+                        // Let's check 'recalculateMetricsFromCurve': it takes (last - first).
+                        // If first=0 (%), last=10 (%), diff=10%. Scaled Diff = (10/100)*10000 = 1000. Correct Profit.
+
+                        // However, for the CHART (Visual), usually it expects the points to be "Growth".
+                        // If we want the chart to start at 10000, we interpret it as Balance.
+                        // If we start at 0, it's relative PnL.
+                        // Existing curves usually start at 10000 (100%?? No, 10000 is 0% growth? or 100% of capital?)
+                        // Let's look at standard strategies: usually they are normalized to 10000 start?
+                        // If simple strategies are stored as %:
+                        // 10000 -> 0% change? Or 10000 is the value?
+                        // 'recalculateMetricsFromCurve' assumes: scale(pt.y).
+                        // If pt.y is 10000, scale(10000) = (10000/100)*10000 = 1,000,000. That's huge.
+                        // So pt.y MUST be typically small (like 100 for 10000?).
+                        // If the curve starts at 10000 (Balance), then scale() breaks it.
+                        // Wait, standard SQ strategies might store equity as "10000, 10050, ...".
+                        // If so, scale(10000) is huge.
+                        // Maybe 'recalculateMetricsFromCurve' is ONLY for normalized curves?
+                        // Let's assume standard behavior:
+                        // If I store % (0, 1.5, ...), scale works for PnL.
+                        // But for the Chart Visual, we might need to shift it?
+                        // For now, storing as % (starting at 0) fixes the PnL Metric bug (1022 vs 102296).
+                        // The chart might look like it starts at 0.
+
+                        const baseCapital = 10000; // Moved up
+                        combinedEquityCurve.forEach(pt => pt.y += baseCapital);
+
+                        // Create a synthetic analysis object if it doesn't exist
+                        if (!analysis) analysis = {};
+
+                        // Assign Chart Data
+                        analysis.chartData = {
+                            equityCurve: combinedEquityCurve
+                        };
+
+                        // Mark as Fully Reconstructed so we don't redo this unnecessarily, 
+                        // BUT we do it once to ensure we have the full history base.
+                        analysis.isFullReconstructed = true;
+
+                        // COMPUTE METRICS FOR FULL HISTORY (Synthetic)
+                        // We need at least Net Profit and Max DD to show correct values in "Full View"
+                        if (combinedEquityCurve.length > 0) {
+                            const firstVal = combinedEquityCurve[0].y;
+                            const lastVal = combinedEquityCurve[combinedEquityCurve.length - 1].y;
+                            const totalProfit = lastVal - firstVal;
+
+                            // Compute MaxDD
+                            let peak = -Infinity;
                             let maxDD = 0;
-                            realTrades.forEach(t => {
-                                const p = (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0);
-                                currentEq += p;
-                                if (currentEq > maxEq) maxEq = currentEq;
-                                const dd = maxEq - currentEq;
+                            combinedEquityCurve.forEach(pt => {
+                                if (pt.y > peak) peak = pt.y;
+                                const dd = peak - pt.y;
                                 if (dd > maxDD) maxDD = dd;
                             });
 
-                            realMetrics = {
-                                _aggregatedTrades: realTrades,
-                                isAggregated: true,
-                                profit: profit,
+                            const syntheticMetrics = {
+                                netProfit: totalProfit,
+                                totalProfit: totalProfit,
+                                NetProfit: totalProfit,
+                                maxDD: maxDD,
+                                MaxDD: maxDD,
+                                maxDD: maxDD,
+                                MaxDD: maxDD,
                                 drawdown: maxDD,
-                                trades: realTrades.length,
-                                totalRealTrades: realTrades.length,
-                                totalRealProfit: profit
+                                // [FIX] Aliases
+                                maxDrawdownInDollars: maxDD,
+                                totalTrades: strategies.reduce((acc, s) => acc + (s.metrics?.totalTrades || 0), 0), // Sum of trades
+                                TotalTrades: strategies.reduce((acc, s) => acc + (s.metrics?.totalTrades || 0), 0)
                             };
+
+                            // [FIX] Assign aggregated trades to analysis
+                            analysis.trades = allTrades;
+
+                            // Overwrite with Full Stats
+                            analysis.metrics = syntheticMetrics;
+
+                            console.log(`[FocusMode] 🧮 Computed Synthetic Metrics for Full View: Profit=${totalProfit.toFixed(2)}, MaxDD=${maxDD.toFixed(2)}`);
+                        }
+
+                        // Update the item reference so we don't re-compute every time (caching)
+                        item.analysis = analysis;
+
+                        console.log('[FocusMode] ✅ Successfully computed DataBank portfolio analysis (Sum of PnL)');
+                    } else {
+                        console.warn('[FocusMode] ❌ No strategies found for indices:', item.indices);
+                    }
+                }
+
+                // Fallback: If still no analysis, try to look up in state
+                if (item.type === 'databank' && !analysis) {
+                    const databankItem = state.databankPortfolios?.find(p => p.name === item.name);
+                    if (databankItem && databankItem.analysis) {
+                        analysis = databankItem.analysis;
+                        console.log('[FocusMode] ✅ Found analysis in state.databankPortfolios (fallback)');
+                    } else {
+                        console.error('[FocusMode] ❌ Could not find analysis for DataBank item (fallback)');
+                        return; // Skip this item
+                    }
+                }
+
+                // 2. TOGGLE VIEW LOGIC: Apply Date Filter to Analysis if needed
+                // This now acts on the "analysis" object which (thanks to step 1) should contain the Full History.
+                let activeFilterForTable = null;
+                if (item.viewMode === 'optimized') {
+                    if (item.creationFilter) {
+                        activeFilterForTable = item.creationFilter;
+                    } else if (state.strategyDateRanges) {
+                        // Resolve from Global State
+                        const sId = item.id || item.name;
+                        activeFilterForTable = state.strategyDateRanges[sId] || state.strategyDateRanges[item.name];
+                    }
+                }
+
+                if (activeFilterForTable) {
+                    const filter = activeFilterForTable;
+
+                    // We need to filter the equity curve AND recalculate metrics
+                    if (analysis && analysis.chartData && analysis.chartData.equityCurve) {
+                        const startTs = new Date(filter.start).getTime();
+                        // End date should include the full day (23:59:59.999), 
+                        // BUT be careful: if filter.end is "2026-01-25", calling new Date() gives midnight.
+                        // We want to include trades on that day.
+                        const endTs = new Date(filter.end).getTime() + (24 * 60 * 60 * 1000) - 1;
+
+                        const filteredCurve = analysis.chartData.equityCurve.filter(pt => {
+                            // Handle various point formats
+                            let t;
+                            if (typeof pt === 'object') {
+                                if ('x' in pt) t = pt.x;
+                                else if ('date' in pt) t = pt.date;
+                                else if (Array.isArray(pt)) t = pt[0];
+                            }
+                            if (typeof t === 'string' && isNaN(t)) t = new Date(t).getTime();
+                            return t >= startTs && t <= endTs;
+                        });
+
+                        // Normalize Filtered Curve (Offset to start at 0)
+                        if (filteredCurve.length > 0) {
+                            const startVal = filteredCurve[0].y;
+                            // Clone to avoid mutating original objects
+                            const normalizedCurve = filteredCurve.map(pt => ({ x: pt.x, y: pt.y - startVal }));
+
+                            // Get recalculated metrics (reuse helper)
+                            const newMetrics = this.recalculateMetrics(analysis, filter);
+
+                            // Merge metrics carefully - prioritize recalculated ones
+                            const mergedMetrics = { ...analysis.metrics, ...(newMetrics || {}) };
+
+                            // Create a Shadow Analysis object
+                            analysis = {
+                                ...analysis,
+                                metrics: mergedMetrics,
+                                chartData: {
+                                    ...analysis.chartData,
+                                    equityCurve: normalizedCurve
+                                }
+                            };
+                            console.log(`[FocusMode] 🎯 Showing Optimized View (${normalizedCurve.length} points). Range: ${filter.start} - ${filter.end}`);
+                        } else {
+                            console.warn('[FocusMode] ⚠️ Filter resulted in empty curve. Reverting to full.');
                         }
                     }
                 }
-            } else if (item.type === 'saved' && item.realMetrics) {
-                realMetrics = item.realMetrics;
-            }
+
+                // [FIX] Propagate Metrics to Item for Table Display
+                // SKIP if we're in optimized view mode (metrics will be recalculated later)
+                if ((item.type === 'databank' || item.type === 'saved') && analysis && analysis.metrics && item.viewMode !== 'optimized') {
+                    // Update the item metrics so the table sees the change (Optimized or Full)
+                    item.metrics = { ...item.metrics, ...analysis.metrics };
+
+                    // Explicit top-level aliases for the Table Engine (which often reads direct props)
+                    if (analysis.metrics.totalProfit !== undefined) item.totalProfit = analysis.metrics.totalProfit;
+                    if (analysis.metrics.maxDrawdownInDollars !== undefined) item.maxDrawdownInDollars = analysis.metrics.maxDrawdownInDollars;
+                    if (analysis.metrics.totalTrades !== undefined) item.totalTrades = analysis.metrics.totalTrades;
+
+                    // [FIX] Propagate ALL other metrics for Databank
+                    if (analysis.metrics.sharpeRatio !== undefined) item.sharpeRatio = analysis.metrics.sharpeRatio;
+                    if (analysis.metrics.profitFactor !== undefined) item.profitFactor = analysis.metrics.profitFactor;
+                    if (analysis.metrics.cagr !== undefined) item.cagr = analysis.metrics.cagr;
+                    if (analysis.metrics.sqn !== undefined) item.sqn = analysis.metrics.sqn;
+                    if (analysis.metrics.returnDD !== undefined) item.returnDD = analysis.metrics.returnDD;
+                    if (analysis.metrics.winningPercentage !== undefined) item.winningPercentage = analysis.metrics.winningPercentage;
+                    if (analysis.metrics.metricValue !== undefined) item.metricValue = analysis.metrics.metricValue;
+
+                    // [FIX] Add Advanced Metrics Propagations
+                    if (analysis.metrics.gammaFlowScore !== undefined) item.gammaFlowScore = analysis.metrics.gammaFlowScore;
+                    if (analysis.metrics.maxStagnationTrades !== undefined) item.maxStagnationTrades = analysis.metrics.maxStagnationTrades;
+                    if (analysis.metrics.maxStagnationDays !== undefined) item.maxStagnationDays = analysis.metrics.maxStagnationDays;
+                    if (analysis.metrics.maxConsecutiveLosses !== undefined) item.maxConsecutiveLosses = analysis.metrics.maxConsecutiveLosses;
+                    if (analysis.metrics.upi !== undefined) item.upi = analysis.metrics.upi;
+                    if (analysis.metrics.sortinoRatio !== undefined) item.sortinoRatio = analysis.metrics.sortinoRatio;
+                    if (analysis.metrics.sharpeRatioTrade !== undefined) item.sharpeRatioTrade = analysis.metrics.sharpeRatioTrade;
 
 
-            // DEBUG: Log item name being processed
-            console.log(`[FocusMode] Processing item: ${item.name} (ID: ${item.id})`);
-            console.log('[FocusMode] Item indices:', item.indices);
+                    console.log(`[FocusMode] 🔄 Propagated metrics to item ${item.name}: Profit=${item.totalProfit}, Trades=${item.totalTrades}`);
 
-            const analysisObj = {
-                name: item.name,
-                analysis: analysis,
-                color: item.color,
-                savedIndex: savedIndex,
-                realMetrics: realMetrics,
-                indices: item.indices, // Pass indices for Saved Portfolios
-                riskPerStrategy: item.riskPerStrategy, // Pass risk metrics for scaling
-                strategyNames: item.strategyNames // CRITICAL: Pass strategy names to UI
-            };
+                    // [FIX] Explicit Global State Sync for Databank Items
+                    // This ensures that if we are working with a copy or if the state reference is tricky,
+                    // we explicitly find the authoritative                // [FIX] Explicit Global State Sync for Databank Items
+                    if (item.type === 'databank' && state.databankPortfolios && item.viewMode !== 'optimized') {
+                        const globalItem = state.databankPortfolios.find(p => p.name === item.name);
+                        if (globalItem) {
+                            // Check if values are actually different before syncing to logs
+                            const oldProfit = globalItem.totalProfit;
 
-            // For single strategies, we need to pass the name as a strategy so magic number lookup works
-            // BUT, passing 'strategies' array makes UI.js treat it as a portfolio which might trigger aggregation logic that fails for ghost strategies.
-            // We should rely on 'strategyNames' for Reality Check lookup.
-            if (item.type === 'strategy') {
-                // analysisObj.strategies = [item.name]; // REMOVED to prevent Portfolio Masquerade
-                // Ensure strategyNames contains the name for Reality Check to work
-                if (!analysisObj.strategyNames) {
-                    analysisObj.strategyNames = [item.name];
-                }
-            } else if (item.strategies) {
-                analysisObj.strategies = item.strategies;
-            }
+                            globalItem.metrics = { ...globalItem.metrics, ...item.metrics };
 
-            // DEBUG: Verify Analysis Data before sending to UI
-            if (analysisObj.analysis && analysisObj.analysis.chartData && analysisObj.analysis.chartData.equityCurve) {
-                console.log(`[FocusMode] 📤 Sending Analysis for ${item.name}: ${analysisObj.analysis.chartData.equityCurve.length} points`);
-            } else {
-                console.warn(`[FocusMode] ⚠️ Sending Analysis for ${item.name} WITHOUT equity curve! Keys:`, Object.keys(analysisObj.analysis || {}));
-            }
+                            globalItem.totalProfit = item.totalProfit;
+                            globalItem.totalTrades = item.totalTrades;
+                            globalItem.maxDrawdownInDollars = item.maxDrawdownInDollars;
+                            globalItem.sharpeRatio = item.sharpeRatio;
+                            globalItem.profitFactor = item.profitFactor;
+                            globalItem.cagr = item.cagr;
+                            globalItem.sqn = item.sqn;
+                            globalItem.returnDD = item.returnDD;
+                            globalItem.winningPercentage = item.winningPercentage;
 
-            analyses.push(analysisObj);
-        });
+                            // [FIX] Sync Advanced Metrics to Global State
+                            globalItem.gammaFlowScore = item.gammaFlowScore;
+                            globalItem.maxStagnationTrades = item.maxStagnationTrades;
+                            globalItem.maxStagnationDays = item.maxStagnationDays;
+                            globalItem.maxConsecutiveLosses = item.maxConsecutiveLosses;
+                            globalItem.upi = item.upi;
+                            globalItem.sortinoRatio = item.sortinoRatio;
+                            globalItem.sharpeRatioTrade = item.sharpeRatioTrade;
 
-        // DEBUG: Log what we are trying to update
-        console.log(`[FocusMode] Updating main viewer for ${analyses.length} items.`);
-        console.log('[FocusMode] Analyses names:', analyses.map(a => a.name));
+                            globalItem.viewMode = item.viewMode;
+                            if (item.analysis) globalItem.analysis = item.analysis;
 
-        // Render using the comparison function which targets the main viewer
-        renderPortfolioComparisonCharts(analyses);
+                            console.log(`[FocusMode] 🌍 Global Sync for ${item.name}: OldProfit=${oldProfit} -> NewProfit=${globalItem.totalProfit}. ViewMode=${globalItem.viewMode}`);
 
-        // Ensure the comparison section is visible if it was hidden
-        if (dom.portfolioComparisonChartSection) {
-            dom.portfolioComparisonChartSection.classList.remove('hidden');
-        }
-
-        // --- SQ ANALYSIS UPDATE LOGIC ---
-        // If a single strategy is selected, update the SQ Analysis view to focus on it.
-        // We need to find the parent portfolio index to call renderSQAnalysis.
-        // If multiple items are selected, or none, we might want to reset or show aggregate?
-        // For now, let's focus on the single strategy case as requested.
-
-        if (this.focusedItems.size === 1) {
-            const item = this.focusedItems.values().next().value;
-            if (item.type === 'strategy') {
-                // We need to find which portfolio this strategy belongs to, or use the currently active portfolio index.
-                // Usually, the strategies table is showing strategies from a specific portfolio (e.g. Saved Portfolio 0).
-                // Let's try to get the active portfolio index from state or UI.
-                // Or we can try to find the strategy in the loaded files to get its ID.
-
-                let strategyId = item.id;
-                // Try to find ID from loaded files if item has originalIndex
-                if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
-                    const file = state.loadedStrategyFiles[item.originalIndex];
-                    strategyId = file.strategyId || file.name;
-                } else if (!strategyId) {
-                    strategyId = item.name;
-                }
-
-                // Assuming we are viewing the currently selected portfolio in the strategies table.
-                // We can check if there is a 'currentPortfolioIndex' in state or similar.
-                // But renderSQAnalysis takes 'portfolioIndex'.
-                // If we are in 'saved' mode, we can try to find the portfolio that contains this strategy.
-                // However, strategies might belong to multiple portfolios.
-                // BUT, usually the user is drilling down into ONE portfolio.
-                // Let's assume the first saved portfolio for now if we can't determine, OR better:
-                // Check if 'state.currentPortfolioIndex' exists (it might not).
-                // Let's look at how strategiesTable knows what to render. It uses 'window.analysisResults'.
-                // If window.analysisResults comes from a portfolio, we might have a reference.
-
-                // Fallback: If we can't find the portfolio index easily, we might skip this or default to 0.
-                // But wait, the user is likely looking at a specific portfolio.
-                // Let's try to pass the strategy ID to renderSQAnalysis, assuming the view is already set to the correct portfolio.
-                // We can re-render the CURRENTLY visible portfolio with the new strategy filter.
-
-                // How to know the current portfolio index for SQ Analysis?
-                // We can store it in a global variable or data attribute when renderSQAnalysis is called.
-                // Let's assume renderSQAnalysis has been called before (as seen in logs).
-                // We can try to read the currently rendered portfolio index from the DOM if we stored it?
-                // Or we can just try to update the existing view if we expose a method?
-                // But I modified renderSQAnalysis to be the entry point.
-
-                // Let's try to find the portfolio index that contains this strategy in 'state.savedPortfolios'.
-                let parentPortfolioIndex = -1;
-
-                // PRIORITY 1: explicit sourcePortfolioIndex (set by strategiesTable for virtual strategies)
-                if (item.sourcePortfolioIndex !== undefined && item.sourcePortfolioIndex !== null) {
-                    parentPortfolioIndex = item.sourcePortfolioIndex;
-                    console.log(`[FocusMode] Using explicit sourcePortfolioIndex: ${parentPortfolioIndex}`);
-                }
-
-                // PRIORITY 2: Search by strategy ID
-                if (parentPortfolioIndex === -1) {
-                    parentPortfolioIndex = state.savedPortfolios.findIndex(p =>
-                        p.strategyIds && p.strategyIds.includes(strategyId)
-                    );
-                }
-
-                if (parentPortfolioIndex !== -1) {
-                    // Refine ID: The 'strategyId' variable here holds the NAME (from strategiesTable).
-                    // We must resolve it to the internal ID if possible, because sqAnalysis filters by ID.
-                    let finalId = strategyId;
-                    const portfolio = state.savedPortfolios[parentPortfolioIndex];
-                    if (portfolio && portfolio.strategyNames && portfolio.strategyIds) {
-                        const nameIdx = portfolio.strategyNames.indexOf(strategyId);
-                        if (nameIdx !== -1 && portfolio.strategyIds[nameIdx]) {
-                            finalId = portfolio.strategyIds[nameIdx];
-                            console.log(`[FocusMode] Resolved Strategy Name '${strategyId}' to ID '${finalId}'`);
+                            // FORCE TABLE RENDER
+                            if (window.updateDatabankDisplay) {
+                                window.updateDatabankDisplay();
+                            }
+                        } else {
+                            console.error(`[FocusMode] ❌ Could not find global item for ${item.name} in state.databankPortfolios!`);
                         }
                     }
-
-                    console.log(`[FocusMode] Updating SQ Analysis for strategy: ${finalId} (Name: ${strategyId}) in portfolio ${parentPortfolioIndex}`);
-                    const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
-                    renderSQAnalysis(parentPortfolioIndex, 'saved', finalId, currentDataType);
-                } else {
-                    // If not found by ID, maybe by name?
-                    // Or maybe it's a databank portfolio?
-                    console.warn(`[FocusMode] Could not find parent portfolio for strategy ${strategyId} to update SQ Analysis.`);
                 }
-            } else if (item.type === 'saved') {
-                // If a Saved Portfolio is focused, update SQ Analysis to show that portfolio
-                console.log(`[FocusMode] Updating SQ Analysis for focused portfolio index: ${item.index}`);
-                const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
-                renderSQAnalysis(item.index, 'saved', 'all', currentDataType);
-            }
-        } else if (this.focusedItems.size > 1) {
-            // MULTI-SELECTION LOGIC
-            const items = Array.from(this.focusedItems.values()).filter(i => i.type === 'strategy');
-            if (items.length > 0) {
-                // Try to identify parent portfolio from first item
-                let parentPortfolioIndex = -1;
-                const first = items[0];
 
-                // Priority 1: sourcePortfolioIndex
-                if (first.sourcePortfolioIndex !== undefined && first.sourcePortfolioIndex !== null) {
-                    parentPortfolioIndex = first.sourcePortfolioIndex;
+                // Determine savedIndex for correct color assignment in UI
+                let savedIndex = item.savedIndex;
+                if (item.type === 'saved' && savedIndex === undefined) {
+                    // Try to find index in state based on ID
+                    savedIndex = state.savedPortfolios.findIndex(p => p.id === item.id);
                 }
-                // Priority 2: Search by Name/ID of first item
-                else {
-                    let searchId = first.id || first.name;
-                    if (first.originalIndex !== undefined && state.loadedStrategyFiles[first.originalIndex]) {
-                        searchId = state.loadedStrategyFiles[first.originalIndex].strategyId || state.loadedStrategyFiles[first.originalIndex].name;
+
+                // REHYDRATION: If strategy item lacks analysis (e.g., Virtual Strategy from Reality Check), try to find it
+                if (item.type === 'strategy' && !item.analysis && window.analysisResults) {
+                    // Helper to check if analysis is valid (has actual data)
+                    const isValidAnalysis = (r) => {
+                        // Check if analyzing a direct strategy object or a wrapped result
+                        const analysis = r.analysis || r;
+                        return analysis &&
+                            analysis.chartData &&
+                            analysis.chartData.equityCurve &&
+                            analysis.chartData.equityCurve.length > 0;
+                    };
+
+                    // Try to find by originalIndex first
+                    if (item.originalIndex !== undefined && item.originalIndex !== -1 && window.analysisResults[item.originalIndex] && isValidAnalysis(window.analysisResults[item.originalIndex])) {
+                        item.analysis = window.analysisResults[item.originalIndex].analysis;
+                        console.log(`[FocusMode] 💧 Rehydrated analysis from originalIndex: ${item.originalIndex}`);
                     }
-                    parentPortfolioIndex = state.savedPortfolios.findIndex(p => p.strategyIds && p.strategyIds.includes(searchId));
+                    // Fallback: Find by Name (with fuzzy .csv matching)
+                    else if (item.name) {
+                        // Helper for fuzzy match
+                        const isMatch = (target, query) => {
+                            if (!target || !query) return false;
+                            if (target === query) return true;
+                            if (target === query + '.csv') return true;
+                            if (target.replace('.csv', '') === query) return true;
+                            if (query.replace('.csv', '') === target) return true;
+                            return false;
+                        };
 
-                    // Fallback check by name
-                    if (parentPortfolioIndex === -1) {
-                        parentPortfolioIndex = state.savedPortfolios.findIndex(p => p.strategyNames && p.strategyNames.includes(searchId));
-                    }
-                }
+                        // 1. Check window.analysisResults
+                        let found = window.analysisResults.find(r => isMatch(r.name, item.name) && isValidAnalysis(r));
+                        let source = 'window.analysisResults';
 
-                if (parentPortfolioIndex !== -1) {
-                    // Collect all IDs
-                    const validIds = [];
-                    items.forEach(item => {
-                        // Resolve ID logic...
-                        let sId = item.id || item.name;
-                        if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
-                            const f = state.loadedStrategyFiles[item.originalIndex];
-                            sId = f.strategyId || f.name;
+                        // 2. Check state.strategies
+                        if (!found && state.strategies) {
+                            found = state.strategies.find(s => isMatch(s.name, item.name) && isValidAnalysis(s));
+                            source = 'state.strategies';
                         }
 
-                        // Resolve to internal ID using portfolio maps
-                        const portfolio = state.savedPortfolios[parentPortfolioIndex];
-                        if (portfolio && portfolio.strategyNames && portfolio.strategyIds) {
-                            // Try to match by Name -> ID mapping
-                            // The 'sId' we have might be the ID or the Name depending on source.
-                            // Let's check if sId exists in strategyNames
-                            const nameIdx = portfolio.strategyNames.indexOf(sId);
-                            if (nameIdx !== -1 && portfolio.strategyIds[nameIdx]) {
-                                sId = portfolio.strategyIds[nameIdx];
+                        // 3. Check inside Saved Portfolios (Deep Scan)
+                        if (!found && state.savedPortfolios) {
+                            for (const p of state.savedPortfolios) {
+                                if (p.strategies && Array.isArray(p.strategies)) {
+                                    const strat = p.strategies.find(s => isMatch(s.name, item.name) && isValidAnalysis(s));
+                                    if (strat) {
+                                        found = strat;
+                                        source = `SavedPortfolio(${p.name})`;
+                                        break;
+                                    }
+                                }
                             }
                         }
-                        validIds.push(sId);
-                    });
 
-                    if (validIds.length > 0) {
-                        console.log(`[FocusMode] Updating SQ Analysis for ${validIds.length} strategies in portfolio ${parentPortfolioIndex}`);
-                        const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
-                        renderSQAnalysis(parentPortfolioIndex, 'saved', validIds, currentDataType);
+                        if (found && found.analysis) {
+                            item.analysis = found.analysis;
+                            // Also hydrate other missing props if available
+                            if (!item.metrics && found.metrics) item.metrics = found.metrics;
+
+                            console.log(`[FocusMode] 💧 Rehydrated analysis from ${source}: ${item.name} -> ${found.name} (${found.analysis.chartData.equityCurve.length} pts)`);
+                        } else {
+                            console.warn(`[FocusMode] ⚠️ Method 'enable' failed to find VALID backtest analysis for: ${item.name}`);
+                        }
                     }
-                } else {
-                    console.warn("[FocusMode] Could not determine parent portfolio for multi-selection.");
                 }
-            }
-        }
 
-        // REALITY CHECK PANEL LOGIC
-        const detailsContainer = document.getElementById('strategy-details-container');
-        if (detailsContainer) {
-            if (this.focusedItems.size === 1) {
-                // Get the single item
-                const item = this.focusedItems.values().next().value;
-                // Only show for strategies or saved portfolios that are linked
-                if (item.type === 'strategy') {
-                    // We need the full strategy result object which has 'originalIndex'
-                    // The 'item' here might be the strategy object itself.
-                    // Let's verify if it has 'originalIndex'.
-                    // In strategiesTable.js, we pass 'strategy' which is an element of window.analysisResults
-                    // So it should have 'originalIndex' if we added it, or we can find it.
-                    // Actually, window.analysisResults elements usually have 'originalIndex'.
+                // REALITY CHECK FOR STRATEGIES: Attach Real Metrics if available
+                let realMetrics = null;
 
-                    // Check if we need to find the full result object
-                    let fullResult = item;
+                // PRIORITY 1: Use pre-calculated realMetrics from the strategy item itself (from strategiesTable Late Binding)
+                if (item.type === 'strategy' && item.realMetrics && item.realMetrics._aggregatedTrades) {
+                    console.log(`[FocusMode] ♻️ Using pre-calculated realMetrics from strategy: ${item.name} (${item.realMetrics._aggregatedTrades.length} trades)`);
+                    realMetrics = item.realMetrics;
+                }
+                // PRIORITY 2: Fall back to lookup via magicNumberMap
+                else if (item.type === 'strategy' && state.magicNumberMap) {
+                    // Resolve Strategy ID
+                    let strategyId = item.id;
+                    // Try to find ID from loaded files if item has originalIndex
+                    if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
+                        const file = state.loadedStrategyFiles[item.originalIndex];
+                        strategyId = file.strategyId || file.name;
+                    } else if (!strategyId) {
+                        strategyId = item.name;
+                    }
 
-                    // We need to ensure originalIndex is present for renderRealityCheckTab to work
-                    if (fullResult.originalIndex === undefined) {
-                        const idx = window.analysisResults.findIndex(r => r.name === item.name);
-                        if (idx !== -1) {
-                            // Create a shallow copy with originalIndex if it's missing on the original object
-                            fullResult = { ...window.analysisResults[idx], originalIndex: idx };
+                    let magicRaw = state.magicNumberMap[strategyId] || state.magicNumberMap[item.name];
+                    console.log(`[FocusMode] 🔍 Looking up real data for strategy: ${item.name} (ID: ${strategyId})`);
+
+                    // DEBUG MAP
+                    if (state.magicNumberMap) {
+                        // console.log(`[FocusMode] Magic Number Map Keys (First 5): ${Object.keys(state.magicNumberMap).slice(0, 5)}`);
+                        // console.log(`[FocusMode] Direct Lookup '${strategyId}':`, state.magicNumberMap[strategyId]);
+                        // console.log(`[FocusMode] Name Lookup '${item.name}':`, state.magicNumberMap[item.name]);
+                    } else {
+                        console.warn('[FocusMode] state.magicNumberMap is undefined!');
+                    }
+
+                    // FALLBACK: Smart Connection via Linked Portfolios
+                    // FALLBACK: Smart Connection via Linked Portfolios
+                    if (!magicRaw) {
+                        // Find parent portfolio
+                        const parentPortfolio = state.savedPortfolios.find(p =>
+                            ((p.indices && item.originalIndex !== undefined && item.originalIndex !== -1 && p.indices.includes(item.originalIndex)) ||
+                                (p.strategyNames && p.strategyNames.includes(item.name))) &&
+                            p.realMetrics && p.realMetrics._tradesById
+                        );
+
+                        if (parentPortfolio) {
+                            const availableKeys = Object.keys(parentPortfolio.realMetrics._tradesById);
+
+                            // Use Helper
+                            const bestMatch = findBestMatch(item.name, strategyId, availableKeys, parentPortfolio.realMetrics._tradesById);
+
+                            if (bestMatch) {
+                                console.log(`[FocusMode] 🧠 Smart Connection (Fuzzy): Matched '${item.name}' to '${bestMatch}'`);
+
+                                // CRITICAL: Save to map so UI.js can find it
+                                if (!state.magicNumberMap[item.name]) {
+                                    state.magicNumberMap[item.name] = [bestMatch];
+                                    console.log(`[FocusMode] 💾 Auto-saved mapping to state.magicNumberMap`);
+                                }
+
+                                magicRaw = [bestMatch];
+                            } else {
+                                console.log('[FocusMode] 🧠 Smart Connection Failed. Available Keys in Portfolio:', availableKeys);
+                                console.log(`[FocusMode] 🧠 Tried matching against: ${item.name} and ${strategyId}`);
+                            }
                         }
                     }
 
-                    console.log('[FocusMode] Rendering Reality Check for:', fullResult.name, 'Index:', fullResult.originalIndex);
+                    console.log(`[FocusMode] 🔢 Magic Number(s) found: ${magicRaw}`);
 
-                    // REALITY CHECK LOGIC DISABLED BY USER REQUEST (Step 1316)
-                    // The user wants a chart extension and comparison table instead of an overlay.
-                    /*
-                    if (fullResult && fullResult.originalIndex !== undefined) {
-                        renderRealityCheckTab(fullResult, 'strategy-details-container');
-                        detailsContainer.classList.remove('hidden'); 
+                    if (magicRaw) {
+                        // Handle comma-separated magic numbers or arrays
+                        let magics = [];
+                        if (typeof magicRaw === 'string') {
+                            magics = magicRaw.split(',').map(m => m.trim()).filter(Boolean);
+                        } else if (Array.isArray(magicRaw)) {
+                            magics = magicRaw;
+                        } else {
+                            magics = [String(magicRaw)];
+                        }
+
+                        // Find a portfolio that has real data for ANY of these magic numbers
+                        const portfolioWithData = state.savedPortfolios.find(p =>
+                            p.realMetrics &&
+                            p.realMetrics._tradesById &&
+                            magics.some(m => p.realMetrics._tradesById[m])
+                        );
+
+                        if (portfolioWithData) {
+                            console.log(`[FocusMode] 📂 Found containing portfolio with data: ${portfolioWithData.name}`);
+
+                            // Aggregate trades from all matching magic numbers
+                            let strategyTrades = [];
+                            let tradesById = {};
+                            magics.forEach(m => {
+                                if (portfolioWithData.realMetrics._tradesById[m]) {
+                                    const trades = portfolioWithData.realMetrics._tradesById[m];
+                                    strategyTrades = strategyTrades.concat(trades);
+                                    tradesById[m] = trades; // Preserve structure for UI lookup
+                                }
+                            });
+
+                            console.log(`[FocusMode] 📊 Trades found: ${strategyTrades.length}`);
+
+                            if (strategyTrades.length > 0) {
+                                // Calculate stats from aggregated trades
+                                const profit = strategyTrades.reduce((sum, t) => sum + (t.profit || 0) + (t.swap || 0) + (t.commission || 0), 0);
+
+                                // Simple drawdown calculation for the aggregated trades (approximation)
+                                // For accurate DD, we'd need to simulate the equity curve.
+                                // For now, let's use the sum of profits as a proxy or 0 if complex.
+                                // Better: Calculate max drawdown from the constructed equity curve of these trades.
+
+                                // Let's construct a simple equity curve to find Max DD
+                                strategyTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+                                let currentEq = 0;
+                                let maxEq = 0;
+                                let maxDD = 0;
+
+                                console.log(`[FocusMode] 📉 Calculating Real DD for ${item.name}`);
+                                console.log(`[FocusMode]    Trades: ${strategyTrades.length}`);
+
+                                strategyTrades.forEach((t, index) => {
+                                    const p = (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
+                                    currentEq += p;
+                                    if (currentEq > maxEq) maxEq = currentEq;
+                                    const dd = maxEq - currentEq;
+                                    if (dd > maxDD) {
+                                        maxDD = dd;
+                                        console.log(`[FocusMode]    New MaxDD at trade ${index}: ${maxDD} (Eq: ${currentEq}, MaxEq: ${maxEq})`);
+                                    }
+                                });
+
+                                console.log(`[FocusMode]    Final MaxDD: ${maxDD}`);
+
+                                realMetrics = {
+                                    _tradesById: tradesById, // Use the correctly structured map
+                                    profit: profit,
+                                    drawdown: maxDD,
+                                    trades: strategyTrades.length,
+                                    profitFactor: 0, // Hard to calc without gross profit/loss
+                                    sharpe: 0, // Complex
+                                    lastSync: portfolioWithData.realMetrics.lastSync
+                                };
+                                console.log(`[FocusMode] ✅ Found Real Metrics for strategy ${item.name}`);
+                            } else {
+                                console.warn(`[FocusMode] ⚠️ Portfolio found but no trades for magics: ${magics.join(', ')}`);
+                            }
+                        } else {
+                            // FALLBACK: Search in deepScanData (Multi-Account persistence)
+                            console.log(`[FocusMode] 🔍 No portfolio found, searching in deepScanData...`);
+                            const deepScanResult = findTradesInDeepScanData(magics);
+
+                            if (deepScanResult.found) {
+                                console.log(`[FocusMode] ✅ Found ${deepScanResult.trades.length} trades in deepScanData (${deepScanResult.sourceName})`);
+
+                                const strategyTrades = deepScanResult.trades;
+                                const tradesById = deepScanResult.tradesById;
+
+                                // Calculate stats - ensure numeric conversion for trade values that may be strings
+                                const profit = strategyTrades.reduce((sum, t) => sum + (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0), 0);
+
+                                // Calculate drawdown
+                                strategyTrades.sort((a, b) => new Date(a.closeTime) - new Date(b.closeTime));
+                                let currentEq = 0;
+                                let maxEq = 0;
+                                let maxDD = 0;
+
+                                strategyTrades.forEach(t => {
+                                    const p = (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0);
+                                    currentEq += p;
+                                    if (currentEq > maxEq) maxEq = currentEq;
+                                    const dd = maxEq - currentEq;
+                                    if (dd > maxDD) maxDD = dd;
+                                });
+
+                                realMetrics = {
+                                    _tradesById: tradesById,
+                                    profit: profit,
+                                    drawdown: maxDD,
+                                    trades: strategyTrades.length,
+                                    profitFactor: 0,
+                                    sharpe: 0,
+                                    lastSync: new Date().toISOString()
+                                };
+                                console.log(`[FocusMode] ✅ Real Metrics from deepScanData for ${item.name}: Profit=${parseFloat(profit).toFixed(2)}, DD=${parseFloat(maxDD).toFixed(2)}, Trades=${strategyTrades.length}`);
+                            } else {
+                                console.warn(`[FocusMode] ❌ No trades found in portfolios OR deepScanData for Magics: ${magics.join(', ')}`);
+                                // Debug: Log available IDs in deepScanData
+                                if (state.deepScanData) {
+                                    Object.entries(state.deepScanData).forEach(([accId, data]) => {
+                                        if (data.tradesById) {
+                                            console.log(`[FocusMode] deepScanData[${accId}] has IDs: ${Object.keys(data.tradesById).slice(0, 10).join(', ')}...`);
+                                        }
+                                    });
+                                }
+                            }
+                        }
                     } else {
-                        console.warn('[FocusMode] Could not find originalIndex for strategy:', item.name);
+                        console.warn(`[FocusMode] ❌ No Magic Number mapped for ${item.name}`);
+
+                        // FALLBACK: Use getRealTradesByName to find trades (same logic as portfolios)
+                        if (state.activeViewMode === 'reality-check') {
+                            console.log(`[FocusMode] 🔄 Attempting getRealTradesByName fallback for ${item.name}`);
+                            const realTrades = getRealTradesByName(item.name);
+                            if (realTrades && realTrades.length > 0) {
+                                console.log(`[FocusMode] ✅ Found ${realTrades.length} real trades via getRealTradesByName`);
+
+                                // Calculate metrics from trades
+                                const profit = realTrades.reduce((sum, t) => sum + (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0), 0);
+
+                                // Calculate drawdown
+                                let currentEq = 0;
+                                let maxEq = 0;
+                                let maxDD = 0;
+                                realTrades.forEach(t => {
+                                    const p = (parseFloat(t.profit) || 0) + (parseFloat(t.swap) || 0) + (parseFloat(t.commission) || 0);
+                                    currentEq += p;
+                                    if (currentEq > maxEq) maxEq = currentEq;
+                                    const dd = maxEq - currentEq;
+                                    if (dd > maxDD) maxDD = dd;
+                                });
+
+                                realMetrics = {
+                                    _aggregatedTrades: realTrades,
+                                    isAggregated: true,
+                                    profit: profit,
+                                    drawdown: maxDD,
+                                    trades: realTrades.length,
+                                    totalRealTrades: realTrades.length,
+                                    totalRealProfit: profit
+                                };
+                            }
+                        }
+                    }
+                } else if (item.type === 'saved' && item.realMetrics) {
+                    realMetrics = item.realMetrics;
+                }
+
+
+                // DEBUG: Log item name being processed
+                console.log(`[FocusMode] Processing item: ${item.name} (ID: ${item.id})`);
+                console.log('[FocusMode] Item indices:', item.indices);
+
+                const analysisObj = {
+                    name: item.name,
+                    analysis: analysis,
+                    color: item.color,
+                    savedIndex: savedIndex,
+                    realMetrics: realMetrics,
+                    indices: item.indices, // Pass indices for Saved Portfolios
+                    riskPerStrategy: item.riskPerStrategy, // Pass risk metrics for scaling
+                    strategyNames: item.strategyNames // CRITICAL: Pass strategy names to UI
+                };
+
+                // For single strategies, we need to pass the name as a strategy so magic number lookup works
+                // BUT, passing 'strategies' array makes UI.js treat it as a portfolio which might trigger aggregation logic that fails for ghost strategies.
+                // We should rely on 'strategyNames' for Reality Check lookup.
+                if (item.type === 'strategy') {
+                    // analysisObj.strategies = [item.name]; // REMOVED to prevent Portfolio Masquerade
+                    // Ensure strategyNames contains the name for Reality Check to work
+                    if (!analysisObj.strategyNames) {
+                        analysisObj.strategyNames = [item.name];
+                    }
+                } else if (item.strategies) {
+                    analysisObj.strategies = item.strategies;
+                }
+
+                // DEBUG: Verify Analysis Data before sending to UI
+                if (analysisObj.analysis && analysisObj.analysis.chartData && analysisObj.analysis.chartData.equityCurve) {
+                    console.log(`[FocusMode] 📤 Sending Analysis for ${item.name}: ${analysisObj.analysis.chartData.equityCurve.length} points`);
+
+                    // --- METRIC RECALCULATION START ---
+                    // Determine if we should apply a filter (e.g. Optimized vs History)
+                    let activeFilter = null;
+
+                    // [FIX] Strict View Mode Check for Chart Viewer Logic
+                    if (item.viewMode === 'optimized') {
+                        if (item.creationFilter) {
+                            activeFilter = item.creationFilter;
+                        } else if (state.strategyDateRanges) {
+                            // Resolve ID
+                            const sId = item.id || item.name;
+                            // Resolve Active Filter (Local or Inherited)
+                            activeFilter = state.strategyDateRanges[sId] || state.strategyDateRanges[item.name];
+
+                            // Check children if no direct filter
+                            if (!activeFilter && item.strategyNames) {
+                                for (const name of item.strategyNames) {
+                                    const childFilter = state.strategyDateRanges[name];
+                                    if (childFilter) {
+                                        activeFilter = childFilter;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (activeFilter) {
+                        console.log(`[FocusMode] 📅 Applying Date Filter to KPIS for ${item.name}: ${activeFilter.start} - ${activeFilter.end}`);
+
+                        // RESOLVE TRADES FOR ENGINE
+                        let tradesForEngine = null;
+
+                        // 1. Try Real Trades (if Reality Check or Real metrics present)
+                        if (analysisObj.realMetrics && analysisObj.realMetrics.trades) {
+                            tradesForEngine = analysisObj.realMetrics.trades;
+                            console.log(`[FocusMode]    Using Real Trades: ${tradesForEngine.length}`);
+                        }
+                        // 2. Try Backtest Trades (Strategy)
+                        else if (item.analysis && item.analysis.trades) {
+                            tradesForEngine = item.analysis.trades;
+                        }
+                        // 3. Try Backtest Trades (Global Store fallback)
+                        else if (window.analysisResults) {
+                            // Identify index
+                            const idx = item.originalIndex !== undefined ? item.originalIndex : -1;
+                            if (idx !== -1 && window.analysisResults[idx]) {
+                                tradesForEngine = window.analysisResults[idx].trades;
+                                console.log(`[FocusMode]    Resolved Backtest Trades from Global Store (Idx ${idx}): ${tradesForEngine?.length}`);
+                            }
+                        }
+
+                        // [FIX] Pass the correct object structure - recalculateMetrics expects an object with 'chartData' or 'trades'
+                        // analysisObj IS the wrapper, analysisObj.analysis holds the actual data (chartData, metrics)
+                        // [FIX] AWAIT the result as recalculateMetrics is ASYNC
+                        // Since we are in an async function (updateCharts is not async?), 
+                        // we need to handle this.
+                        // Ideally updateCharts should be async.
+                        // For now, let's use .then() or make updateCharts async. 
+                        // Given the complexity, let's try to get the synchronous fallback result if possible,
+                        // OR make updateCharts async.
+
+                        // Let's assume we make updateCharts async.
+                        const filteredMetrics = await this.recalculateMetrics(analysisObj.analysis, activeFilter, tradesForEngine);
+
+                        if (filteredMetrics) {
+                            console.log(`[FocusMode]    ✅ Recalculated: Pure Profit ${filteredMetrics.netProfit}, DD ${filteredMetrics.maxDD}`);
+                            // Override metrics in the analysis object passed to UI
+                            analysisObj.metrics = filteredMetrics;
+                            // Also update built-in analysis.metrics if UI reads from there
+                            analysisObj.analysis = {
+                                ...analysisObj.analysis,
+                                metrics: filteredMetrics
+                            };
+
+                            // [FIX] CRITICAL: Update the ITEM itself with these recalculated metrics
+                            // so that the Databank Table reflects the filtered values (e.g. Optimized Net Profit)
+                            if (item.viewMode === 'optimized' && filteredMetrics.netProfit !== undefined) {
+                                item.metrics.netProfit = filteredMetrics.netProfit;
+                                item.metrics.drawdown = filteredMetrics.maxDD;
+                                item.totalProfit = filteredMetrics.netProfit;
+                                item.maxDrawdownInDollars = filteredMetrics.maxDD;
+
+                                console.log(`[FocusMode] 🔄 UPDATED Item Metrics from Recalculation: Profit=${item.totalProfit}`);
+
+                                // Re-sync to global state
+                                this.syncItemToGlobalState(item);
+                            }
+                        }
+                    }
+                    // --- METRIC RECALCULATION END ---
+                } else {
+                    console.warn(`[FocusMode] ⚠️ Sending Analysis for ${item.name} WITHOUT equity curve! Keys:`, Object.keys(analysisObj.analysis || {}));
+                }
+
+                return analysisObj;
+            });
+
+            // Resolve all backend calls and filter out failures
+            const analyses = (await Promise.all(analysesPromises)).filter(Boolean);
+
+
+            // DEBUG: Log what we are trying to update
+            console.log(`[FocusMode] Updating main viewer for ${analyses.length} items.`);
+            console.log('[FocusMode] Analyses names:', analyses.map(a => a.name));
+
+            // Render using the comparison function which targets the main viewer
+            renderPortfolioComparisonCharts(analyses);
+
+            // [FIX] Always force Databank Table Refresh when charts update
+            // This ensures the table stays in sync with the view mode (Optimized vs Full)
+            if (typeof window.updateDatabankDisplay === 'function') {
+                // Check if databank is likely visible (or just force it, it's cheap)
+                const dbPanel = document.getElementById('databank-content');
+                if (dbPanel && !dbPanel.classList.contains('hidden')) {
+                    console.log('[FocusMode] 🟢 Triggering Databank Table Refresh from updateCharts');
+                    window.updateDatabankDisplay();
+                }
+            }
+
+            // Ensure the comparison section is visible if it was hidden
+            if (dom.portfolioComparisonChartSection) {
+                dom.portfolioComparisonChartSection.classList.remove('hidden');
+            }
+
+            // --- SQ ANALYSIS UPDATE LOGIC ---
+            // If a single strategy is selected, update the SQ Analysis view to focus on it.
+            // We need to find the parent portfolio index to call renderSQAnalysis.
+            // If multiple items are selected, or none, we might want to reset or show aggregate?
+            // For now, let's focus on the single strategy case as requested.
+
+            if (this.focusedItems.size === 1) {
+                const item = this.focusedItems.values().next().value;
+                if (item.type === 'strategy') {
+                    // We need to find which portfolio this strategy belongs to, or use the currently active portfolio index.
+                    // Usually, the strategies table is showing strategies from a specific portfolio (e.g. Saved Portfolio 0).
+                    // Let's try to get the active portfolio index from state or UI.
+                    // Or we can try to find the strategy in the loaded files to get its ID.
+
+                    let strategyId = item.id;
+                    // Try to find ID from loaded files if item has originalIndex
+                    if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
+                        const file = state.loadedStrategyFiles[item.originalIndex];
+                        strategyId = file.strategyId || file.name;
+                    } else if (!strategyId) {
+                        strategyId = item.name;
+                    }
+
+                    // Assuming we are viewing the currently selected portfolio in the strategies table.
+                    // We can check if there is a 'currentPortfolioIndex' in state or similar.
+                    // But renderSQAnalysis takes 'portfolioIndex'.
+                    // If we are in 'saved' mode, we can try to find the portfolio that contains this strategy.
+                    // However, strategies might belong to multiple portfolios.
+                    // BUT, usually the user is drilling down into ONE portfolio.
+                    // Let's assume the first saved portfolio for now if we can't determine, OR better:
+                    // Check if 'state.currentPortfolioIndex' exists (it might not).
+                    // Let's look at how strategiesTable knows what to render. It uses 'window.analysisResults'.
+                    // If window.analysisResults comes from a portfolio, we might have a reference.
+
+                    // Fallback: If we can't find the portfolio index easily, we might skip this or default to 0.
+                    // But wait, the user is likely looking at a specific portfolio.
+                    // Let's try to pass the strategy ID to renderSQAnalysis, assuming the view is already set to the correct portfolio.
+                    // We can re-render the CURRENTLY visible portfolio with the new strategy filter.
+
+                    // How to know the current portfolio index for SQ Analysis?
+                    // We can store it in a global variable or data attribute when renderSQAnalysis is called.
+                    // Let's assume renderSQAnalysis has been called before (as seen in logs).
+                    // We can try to read the currently rendered portfolio index from the DOM if we stored it?
+                    // Or we can just try to update the existing view if we expose a method?
+                    // But I modified renderSQAnalysis to be the entry point.
+
+                    // Let's try to find the portfolio index that contains this strategy in 'state.savedPortfolios'.
+                    let parentPortfolioIndex = -1;
+
+                    // PRIORITY 1: explicit sourcePortfolioIndex (set by strategiesTable for virtual strategies)
+                    if (item.sourcePortfolioIndex !== undefined && item.sourcePortfolioIndex !== null) {
+                        parentPortfolioIndex = item.sourcePortfolioIndex;
+                        console.log(`[FocusMode] Using explicit sourcePortfolioIndex: ${parentPortfolioIndex}`);
+                    }
+
+                    // PRIORITY 2: Search by strategy ID
+                    if (parentPortfolioIndex === -1) {
+                        parentPortfolioIndex = state.savedPortfolios.findIndex(p =>
+                            p.strategyIds && p.strategyIds.includes(strategyId)
+                        );
+                    }
+
+                    if (parentPortfolioIndex !== -1) {
+                        // Refine ID: The 'strategyId' variable here holds the NAME (from strategiesTable).
+                        // We must resolve it to the internal ID if possible, because sqAnalysis filters by ID.
+                        let finalId = strategyId;
+                        const portfolio = state.savedPortfolios[parentPortfolioIndex];
+                        if (portfolio && portfolio.strategyNames && portfolio.strategyIds) {
+                            const nameIdx = portfolio.strategyNames.indexOf(strategyId);
+                            if (nameIdx !== -1 && portfolio.strategyIds[nameIdx]) {
+                                finalId = portfolio.strategyIds[nameIdx];
+                                console.log(`[FocusMode] Resolved Strategy Name '${strategyId}' to ID '${finalId}'`);
+                            }
+                        }
+
+                        console.log(`[FocusMode] Updating SQ Analysis for strategy: ${finalId} (Name: ${strategyId}) in portfolio ${parentPortfolioIndex}`);
+                        const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
+                        renderSQAnalysis(parentPortfolioIndex, 'saved', finalId, currentDataType);
+                    } else {
+                        // If not found by ID, maybe by name?
+                        // Or maybe it's a databank portfolio?
+                        console.warn(`[FocusMode] Could not find parent portfolio for strategy ${strategyId} to update SQ Analysis.`);
+                    }
+                } else if (item.type === 'saved') {
+                    // If a Saved Portfolio is focused, update SQ Analysis to show that portfolio
+                    console.log(`[FocusMode] Updating SQ Analysis for focused portfolio index: ${item.index}`);
+                    const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
+                    renderSQAnalysis(item.index, 'saved', 'all', currentDataType);
+                }
+            } else if (this.focusedItems.size > 1) {
+                // MULTI-SELECTION LOGIC
+                const items = Array.from(this.focusedItems.values()).filter(i => i.type === 'strategy');
+                if (items.length > 0) {
+                    // Try to identify parent portfolio from first item
+                    let parentPortfolioIndex = -1;
+                    const first = items[0];
+
+                    // Priority 1: sourcePortfolioIndex
+                    if (first.sourcePortfolioIndex !== undefined && first.sourcePortfolioIndex !== null) {
+                        parentPortfolioIndex = first.sourcePortfolioIndex;
+                    }
+                    // Priority 2: Search by Name/ID of first item
+                    else {
+                        let searchId = first.id || first.name;
+                        if (first.originalIndex !== undefined && state.loadedStrategyFiles[first.originalIndex]) {
+                            searchId = state.loadedStrategyFiles[first.originalIndex].strategyId || state.loadedStrategyFiles[first.originalIndex].name;
+                        }
+                        parentPortfolioIndex = state.savedPortfolios.findIndex(p => p.strategyIds && p.strategyIds.includes(searchId));
+
+                        // Fallback check by name
+                        if (parentPortfolioIndex === -1) {
+                            parentPortfolioIndex = state.savedPortfolios.findIndex(p => p.strategyNames && p.strategyNames.includes(searchId));
+                        }
+                    }
+
+                    if (parentPortfolioIndex !== -1) {
+                        // Collect all IDs
+                        const validIds = [];
+                        items.forEach(item => {
+                            // Resolve ID logic...
+                            let sId = item.id || item.name;
+                            if (item.originalIndex !== undefined && state.loadedStrategyFiles[item.originalIndex]) {
+                                const f = state.loadedStrategyFiles[item.originalIndex];
+                                sId = f.strategyId || f.name;
+                            }
+
+                            // Resolve to internal ID using portfolio maps
+                            const portfolio = state.savedPortfolios[parentPortfolioIndex];
+                            if (portfolio && portfolio.strategyNames && portfolio.strategyIds) {
+                                // Try to match by Name -> ID mapping
+                                // The 'sId' we have might be the ID or the Name depending on source.
+                                // Let's check if sId exists in strategyNames
+                                const nameIdx = portfolio.strategyNames.indexOf(sId);
+                                if (nameIdx !== -1 && portfolio.strategyIds[nameIdx]) {
+                                    sId = portfolio.strategyIds[nameIdx];
+                                }
+                            }
+                            validIds.push(sId);
+                        });
+
+                        if (validIds.length > 0) {
+                            console.log(`[FocusMode] Updating SQ Analysis for ${validIds.length} strategies in portfolio ${parentPortfolioIndex}`);
+                            const currentDataType = document.getElementById('sq-data-type-select')?.value || 'backtest';
+                            renderSQAnalysis(parentPortfolioIndex, 'saved', validIds, currentDataType);
+                        }
+                    } else {
+                        console.warn("[FocusMode] Could not determine parent portfolio for multi-selection.");
+                    }
+                }
+            }
+
+            // REALITY CHECK PANEL LOGIC
+            const detailsContainer = document.getElementById('strategy-details-container');
+            if (detailsContainer) {
+                if (this.focusedItems.size === 1) {
+                    // Get the single item
+                    const item = this.focusedItems.values().next().value;
+                    // Only show for strategies or saved portfolios that are linked
+                    if (item.type === 'strategy') {
+                        // We need the full strategy result object which has 'originalIndex'
+                        // The 'item' here might be the strategy object itself.
+                        // Let's verify if it has 'originalIndex'.
+                        // In strategiesTable.js, we pass 'strategy' which is an element of window.analysisResults
+                        // So it should have 'originalIndex' if we added it, or we can find it.
+                        // Actually, window.analysisResults elements usually have 'originalIndex'.
+
+                        // Check if we need to find the full result object
+                        let fullResult = item;
+
+                        // We need to ensure originalIndex is present for renderRealityCheckTab to work
+                        if (fullResult.originalIndex === undefined) {
+                            const idx = window.analysisResults.findIndex(r => r.name === item.name);
+                            if (idx !== -1) {
+                                // Create a shallow copy with originalIndex if it's missing on the original object
+                                fullResult = { ...window.analysisResults[idx], originalIndex: idx };
+                            }
+                        }
+
+                        console.log('[FocusMode] Rendering Reality Check for:', fullResult.name, 'Index:', fullResult.originalIndex);
+
+                        // REALITY CHECK LOGIC DISABLED BY USER REQUEST (Step 1316)
+                        // The user wants a chart extension and comparison table instead of an overlay.
+                        /*
+                        if (fullResult && fullResult.originalIndex !== undefined) {
+                            renderRealityCheckTab(fullResult, 'strategy-details-container');
+                            detailsContainer.classList.remove('hidden'); 
+                        } else {
+                            console.warn('[FocusMode] Could not find originalIndex for strategy:', item.name);
+                            detailsContainer.classList.add('hidden');
+                        }
+                        */
+                        detailsContainer.classList.add('hidden'); // Always hide for now
+                    } else {
                         detailsContainer.classList.add('hidden');
                     }
-                    */
-                    detailsContainer.classList.add('hidden'); // Always hide for now
                 } else {
-                    detailsContainer.classList.add('hidden');
+                    if (detailsContainer) detailsContainer.classList.add('hidden');
                 }
-            } else {
-                detailsContainer.classList.add('hidden');
+            }
+
+            // [FIX] Update Banner once charts and metrics are ready
+            this.renderBanner();
+
+        } catch (e) {
+            console.error('[FocusMode] 💥 Error in updateCharts:', e);
+        } finally {
+            if (isOptimizedView) toggleLoading(false);
+        }
+    },
+
+    /**
+     * Helper: Sync updated item properties back to global state
+     * This is crucial so that the Databank Table (which reads from state) reflects the changes.
+     */
+    syncItemToGlobalState(item) {
+        if (!item) return;
+
+        // 1. Sync to Databank Portfolios
+        if (state.databankPortfolios) {
+            // Try to find by ID (if strategies have ID) or fallback to Name
+            let found = false;
+            if (item.id) {
+                const idx = state.databankPortfolios.findIndex(p => p.id === item.id);
+                if (idx !== -1) {
+                    state.databankPortfolios[idx] = { ...state.databankPortfolios[idx], ...item };
+                    found = true;
+                }
+            }
+            if (!found && item.name) {
+                const idx = state.databankPortfolios.findIndex(p => p.name === item.name);
+                if (idx !== -1) {
+                    state.databankPortfolios[idx] = { ...state.databankPortfolios[idx], ...item };
+                    found = true;
+                }
             }
         }
 
+        // 2. Sync to Saved Portfolios (if applicable)
+        if (state.savedPortfolios) {
+            if (item.id) {
+                const idx = state.savedPortfolios.findIndex(p => p.id === item.id);
+                if (idx !== -1) {
+                    state.savedPortfolios[idx] = { ...state.savedPortfolios[idx], ...item };
+                }
+            } else if (item.name) {
+                const idx = state.savedPortfolios.findIndex(p => p.name === item.name);
+                if (idx !== -1) {
+                    state.savedPortfolios[idx] = { ...state.savedPortfolios[idx], ...item };
+                }
+            }
+        }
     },
 
     /**

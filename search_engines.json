@@ -1,0 +1,450 @@
+[
+    {
+        "name": "BOOST - 1/24/2026",
+        "timestamp": "2026-01-24T17:12:39.820Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/24/2026",
+        "timestamp": "2026-01-24T17:13:58.489Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/24/2026",
+        "timestamp": "2026-01-24T17:20:42.703Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/24/2026",
+        "timestamp": "2026-01-24T17:24:29.924Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-24T23:19:40.682Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-24T23:23:26.543Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-24T23:43:10.970Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T01:02:58.009Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T02:04:21.087Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T02:17:47.967Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "EVOLUTION - 1/25/2026",
+        "timestamp": "2026-01-25T09:54:44.248Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [
+            "Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv",
+            "Xausdjpy.Long.H1.9.9.20(1) - Improved 0.0.csv",
+            "usdjpyBuyStopPlusV5.H1. 8.8.22(1) - Improved 0.3.csv",
+            "usdjpyBuyStopPlusV5.H1. 1.5.23 - Improved 0.6.csv",
+            "gbpjpyLongBuyStopH1V34.1.26 Improved 0.9.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.13.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.11.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.5.csv",
+            "usdjpyBuyStopV3.H1.3.3.26 Improved 0.6.csv",
+            "usdjpyBuyStopPlusV5.H1. 8.9.18 - Improved 0.3.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 8.6.16 - Improved 0.11.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 8.6.16 - Improved 0.2.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 6.5.22 - Improved 0.10.csv",
+            "WS30.V1.Tickmill.RMBySp.H1.Strategy 8.3.25 - Improved 0.7.csv",
+            "WS30.V1.Tickmill.RMBySp.H1.Strategy 5.2.18 - Improved 0.3.csv"
+        ],
+        "objective": "evolution"
+    },
+    {
+        "name": "EVOLUTION - 1/25/2026",
+        "timestamp": "2026-01-25T11:06:50.780Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [
+            "Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv",
+            "Xausdjpy.Long.H1.9.9.20(1) - Improved 0.0.csv",
+            "usdjpyBuyStopPlusV5.H1. 8.8.22(1) - Improved 0.3.csv",
+            "usdjpyBuyStopPlusV5.H1. 1.5.23 - Improved 0.6.csv",
+            "gbpjpyLongBuyStopH1V34.1.26 Improved 0.9.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.13.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.11.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.5.csv",
+            "usdjpyBuyStopV3.H1.3.3.26 Improved 0.6.csv",
+            "usdjpyBuyStopPlusV5.H1. 8.9.18 - Improved 0.3.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 8.6.16 - Improved 0.11.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 8.6.16 - Improved 0.2.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 6.5.22 - Improved 0.10.csv",
+            "WS30.V1.Tickmill.RMBySp.H1.Strategy 8.3.25 - Improved 0.7.csv",
+            "WS30.V1.Tickmill.RMBySp.H1.Strategy 5.2.18 - Improved 0.3.csv"
+        ],
+        "objective": "evolution"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T11:08:13.772Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "EVOLUTION - 1/25/2026",
+        "timestamp": "2026-01-25T13:45:52.642Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.3,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [
+            "Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv",
+            "Xausdjpy.Long.H1.9.9.20(1) - Improved 0.0.csv",
+            "usdjpyBuyStopPlusV5.H1. 8.8.22(1) - Improved 0.3.csv",
+            "usdjpyBuyStopPlusV5.H1. 1.5.23 - Improved 0.6.csv",
+            "gbpjpyLongBuyStopH1V34.1.26 Improved 0.9.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.13.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.11.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.9.csv",
+            "XauUsdjpyLong.H1. 3.1.24 - Improved 0.5.csv",
+            "usdjpyBuyStopV3.H1.3.3.26 Improved 0.6.csv",
+            "usdjpyBuyStopPlusV5.H1. 8.9.18 - Improved 0.3.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 8.6.16 - Improved 0.11.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 8.6.16 - Improved 0.2.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 8.6.16 - Improved 0.1.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 6.5.22 - Improved 0.10.csv",
+            "WS30_v3BKSellTickMill.H1. Strategy 6.5.22 - Improved 0.2.sqx.csv",
+            "WS30.V1.Tickmill.RMBySp.H1.Strategy 8.3.25 - Improved 0.7.csv",
+            "WS30.V1.Tickmill.RMBySp.H1.Strategy 5.2.18 - Improved 0.3.csv",
+            "WS30_v2BKBySp_H1.Strategy 8.8.14(1) - Improved 0.1.csv"
+        ],
+        "objective": "evolution"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T17:23:44.379Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.34,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [
+            "Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv",
+            "Xausdjpy.Long.H1.9.9.20(1) - Improved 0.0.csv",
+            "gbpjpyLongBuyStopH1V34.1.26 Improved 0.9.csv",
+            "usdjpyBuyStopPlusV5.H1. 1.5.23 - Improved 0.6.csv",
+            "usdjpyBuyStopPlusV5.H1. 8.8.22(1) - Improved 0.3.csv"
+        ],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T17:24:45.963Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 5,
+            "correlationThreshold": 0.34,
+            "metric": "upi",
+            "goal": "maximize",
+            "useAllDates": true,
+            "searchMethod": "auto",
+            "normalizationEnabled": true,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30,
+            "normalizationTarget": 2000
+        },
+        "base_strategies": [
+            "Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv",
+            "Xausdjpy.Long.H1.9.9.20(1) - Improved 0.0.csv",
+            "usdjpyBuyStopPlusV5.H1. 8.8.22(1) - Improved 0.3.csv",
+            "usdjpyBuyStopPlusV5.H1. 1.5.23 - Improved 0.6.csv",
+            "gbpjpyLongBuyStopH1V34.1.26 Improved 0.9.csv"
+        ],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T19:42:36.859Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 7,
+            "correlationThreshold": 0.3,
+            "metric": "profitMaxDD_Ratio",
+            "goal": "maximize",
+            "useAllDates": false,
+            "startDate": "2020-01-25",
+            "endDate": "2026-01-25",
+            "searchMethod": "auto",
+            "normalizationEnabled": false,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T19:48:41.925Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 7,
+            "correlationThreshold": 0.3,
+            "metric": "profitMaxDD_Ratio",
+            "goal": "maximize",
+            "useAllDates": false,
+            "startDate": "2020-01-25",
+            "endDate": "2026-01-25",
+            "searchMethod": "auto",
+            "normalizationEnabled": false,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T19:54:48.860Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 7,
+            "correlationThreshold": 0.3,
+            "metric": "profitMaxDD_Ratio",
+            "goal": "maximize",
+            "useAllDates": true,
+            "startDate": null,
+            "endDate": null,
+            "searchMethod": "auto",
+            "normalizationEnabled": false,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    },
+    {
+        "name": "BOOST - 1/25/2026",
+        "timestamp": "2026-01-25T19:55:37.882Z",
+        "config": {
+            "minSize": 1,
+            "maxSize": 7,
+            "correlationThreshold": 0.3,
+            "metric": "profitMaxDD_Ratio",
+            "goal": "maximize",
+            "useAllDates": false,
+            "startDate": "2025-08-12",
+            "endDate": "2026-01-25",
+            "searchMethod": "auto",
+            "normalizationEnabled": false,
+            "satelliteCorrelationThreshold": 0.9,
+            "reShuffleInterval": 30
+        },
+        "base_strategies": [],
+        "objective": "boost"
+    }
+]

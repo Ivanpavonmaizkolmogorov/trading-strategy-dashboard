@@ -33,7 +33,7 @@ const METRIC_CONFIG = {
 export { METRIC_CONFIG };
 
 // Wizard State
-let wizardState = {
+export let wizardState = {
     step: 1,
     objective: null, // 'boost', 'satellite', 'lab'
     baseStrategies: [], // Array of { index, name, checked, isFixed }
@@ -95,23 +95,14 @@ export const openSearchConfigModal = (selectedIndices = []) => {
 };
 
 const resolveMultiPortfolioBaseStrategies = (portfolioIndices) => {
-    console.log('[SearchConfig] Resolving Multi-Portfolio Strategies for indices:', portfolioIndices);
     const strategyIndices = new Set();
     portfolioIndices.forEach(pIdx => {
         const portfolio = state.savedPortfolios[pIdx];
-        if (portfolio) {
-            console.log(`[SearchConfig] Portfolio ${pIdx} indices:`, portfolio.indices);
-            if (portfolio.indices) {
-                portfolio.indices.forEach(idx => strategyIndices.add(idx));
-            }
-        } else {
-            console.warn(`[SearchConfig] Portfolio ${pIdx} NOT found in state.`);
+        if (portfolio?.indices) {
+            portfolio.indices.forEach(idx => strategyIndices.add(idx));
         }
     });
-
-    const result = Array.from(strategyIndices).map(index => mapStrategy(index, true));
-    console.log('[SearchConfig] Resolved unique strategies:', result.length);
-    return result;
+    return Array.from(strategyIndices).map(index => mapStrategy(index, true));
 };
 
 const resolveBaseStrategies = (selectedIndices) => {
@@ -131,32 +122,98 @@ const resolveBaseStrategies = (selectedIndices) => {
 
 const mapStrategy = (index, isFixedDefault) => {
     const file = state.loadedStrategyFiles[index];
-    return {
+    const result = {
         index: index,
+        originalIndex: index, // Added: renderContextChecklist uses originalIndex for checkbox data-index
         name: file ? (file.name || `Estrategia #${index}`) : `Estrategia #${index}`,
         checked: true,
         isFixed: isFixedDefault
     };
+
+    // DIAGNOSTIC: Log if file not found
+    if (!file) {
+        console.warn(`[DIAG-WIZARD] ⚠️ mapStrategy: Index ${index} has NO file in loadedStrategyFiles!`);
+    }
+
+    return result;
 };
 
-const getDefaultConfig = () => ({
-    minSize: 1,
-    maxSize: 7,
-    correlationThreshold: 0.3,
-    metric: 'profitMaxDD_Ratio',
-    goal: 'maximize',
-    useAllDates: true,
-    searchMethod: 'auto',
-    searchMethod: 'auto',
-    normalizationEnabled: false,
-    satelliteCorrelationThreshold: 0.90,
-    reShuffleInterval: 30
-});
-
 /**
- * Main Render Loop
+ * Scans all loaded strategies to find the earliest entry date and latest exit date.
+ * @returns {{ startDate: string|null, endDate: string|null }} ISO date strings (YYYY-MM-DD) or null
  */
-const renderWizard = () => {
+const getDataDateBounds = () => {
+    let minDate = null;
+    let maxDate = null;
+
+    if (!state.rawStrategiesData || state.rawStrategiesData.length === 0) {
+        return { startDate: null, endDate: null };
+    }
+
+    for (const strategyTrades of state.rawStrategiesData) {
+        if (!strategyTrades || strategyTrades.length === 0) continue;
+
+        for (const trade of strategyTrades) {
+            // Parse entry_date
+            if (trade.entry_date) {
+                try {
+                    // Handle YYYY.MM.DD HH:MM:SS format
+                    const entryStr = String(trade.entry_date).replace(/\./g, '-').split(' ')[0];
+                    const entryDate = new Date(entryStr);
+                    if (!isNaN(entryDate.getTime())) {
+                        if (!minDate || entryDate < minDate) minDate = entryDate;
+                    }
+                } catch (e) { /* ignore parsing errors */ }
+            }
+            // Parse exit_date
+            if (trade.exit_date) {
+                try {
+                    const exitStr = String(trade.exit_date).replace(/\./g, '-').split(' ')[0];
+                    const exitDate = new Date(exitStr);
+                    if (!isNaN(exitDate.getTime())) {
+                        if (!maxDate || exitDate > maxDate) maxDate = exitDate;
+                    }
+                } catch (e) { /* ignore parsing errors */ }
+            }
+        }
+    }
+
+    // Format as YYYY-MM-DD for input[type=date]
+    const formatDate = (d) => {
+        if (!d) return null;
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    return {
+        startDate: formatDate(minDate),
+        endDate: formatDate(maxDate)
+    };
+};
+
+const getDefaultConfig = () => {
+    const dateBounds = getDataDateBounds();
+    return {
+        minSize: 1,
+        maxSize: 7,
+        correlationThreshold: 0.3,
+        metric: 'profitMaxDD_Ratio',
+        goal: 'maximize',
+        // Default to using the actual data range if available
+        useAllDates: !(dateBounds.startDate && dateBounds.endDate),
+        startDate: dateBounds.startDate,
+        endDate: dateBounds.endDate,
+        searchMethod: 'auto',
+        normalizationEnabled: false,
+        satelliteCorrelationThreshold: 0.90,
+        reShuffleInterval: 30
+    };
+};
+
+// Main Render Loop
+export const renderWizard = () => {
     // Create Modal if not exists
     if (!wizardState.modalElement) {
         wizardState.modalElement = document.createElement('div');
@@ -341,6 +398,7 @@ const renderWizard = () => {
                         <div>
                             <div class="text-xs text-gray-500 uppercase">Pool de Minería</div>
                             <div class="text-xl font-mono text-green-400">${totalLoaded} Estrategias</div>
+                            ${state.quarantinedStrategyNames.size > 0 ? `<div class="text-[10px] text-red-400 font-bold mt-1">⚠️ ${state.quarantinedStrategyNames.size} en Cuarentena</div>` : ''}
                         </div>
                         <div>
                             <div class="text-xs text-gray-500 uppercase">Base de Referencia</div>
@@ -498,7 +556,12 @@ const renderContextChecklist = (instruction) => {
             </div>
             <div class="flex justify-between text-xs text-gray-500 px-1">
                 <span id="wiz-selection-count">${wizardState.baseStrategies.filter(s => s.checked && !state.quarantinedStrategyNames.has(s.name)).length} seleccionadas</span>
-                <button id="wiz-toggle-all" class="text-sky-500 hover:text-sky-400">Marcar/Desmarcar Todo</button>
+                <div class="flex gap-2">
+                     <button id="wiz-check-corr" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 transition-colors">
+                        📊 Analizar Correlación
+                    </button>
+                    <button id="wiz-toggle-all" class="text-sky-500 hover:text-sky-400">Marcar/Desmarcar Todo</button>
+                </div>
             </div>
         </div>
     `;
@@ -568,10 +631,25 @@ const renderParametersForm = () => {
                 <div class="space-y-4">
                     <div>
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Rango de Datos</label>
-                        <label class="flex items-center gap-2 p-2 bg-gray-800 border border-gray-600 rounded-lg cursor-pointer">
-                            <input type="checkbox" id="wiz-dates" class="form-checkbox h-4 w-4 text-blue-500 bg-gray-700 border-gray-500 rounded" ${config.useAllDates ? 'checked' : ''}>
-                            <span class="text-xs text-gray-300">Usar Todo el Historial</span>
-                        </label>
+                        <div class="space-y-2">
+                             <label class="flex items-center gap-2 p-2 bg-gray-800 border border-gray-600 rounded-lg cursor-pointer">
+                                <input type="checkbox" id="wiz-dates" class="form-checkbox h-4 w-4 text-blue-500 bg-gray-700 border-gray-500 rounded" ${config.useAllDates ? 'checked' : ''}>
+                                <span class="text-xs text-gray-300">Usar Todo el Historial</span>
+                            </label>
+                            
+                            <div id="wiz-date-inputs" class="${config.useAllDates ? 'hidden' : 'flex'} gap-2 animate-fade-in">
+                                <div class="flex-1">
+                                    <label class="text-[10px] text-gray-500 uppercase">Inicio</label>
+                                    <input type="date" id="wiz-date-start" value="${config.startDate || ''}" 
+                                        class="w-full bg-gray-800 border border-gray-600 text-white text-xs rounded p-1.5 focus:border-blue-500 max-w-[120px]">
+                                </div>
+                                <div class="flex-1">
+                                    <label class="text-[10px] text-gray-500 uppercase">Fin</label>
+                                    <input type="date" id="wiz-date-end" value="${config.endDate || ''}" 
+                                        class="w-full bg-gray-800 border border-gray-600 text-white text-xs rounded p-1.5 focus:border-blue-500 max-w-[120px]">
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     ${wizardState.objective === 'lab' || wizardState.objective === 'hybrid' ? `
@@ -747,6 +825,114 @@ const attachWizardEvents = () => {
         });
     }
 
+    // NEW: Auto-Check Function
+    const checkAndWarnCorrelation = async () => {
+        // Only relevant for Boost/Hybrid where Base is used
+        if (wizardState.objective === 'satellite') return;
+
+        const strategies = [];
+        const selectedContextIndices = [];
+
+        wizardState.baseStrategies.forEach(s => {
+            const isQuarantined = state.quarantinedStrategyNames.has(s.name);
+            if (s.checked && !isQuarantined && state.loadedStrategyFiles[s.originalIndex]) {
+                strategies.push(state.loadedStrategyFiles[s.originalIndex]);
+                selectedContextIndices.push(s.originalIndex);
+            }
+        });
+
+        if (strategies.length < 2) return;
+
+        try {
+            // Use existing warning container or create one
+            let warnContainer = document.getElementById('wiz-corr-warning');
+            if (!warnContainer) {
+                // Try to find Step 3 container
+                const step3Container = document.getElementById('wiz-corr')?.closest('.grid');
+                if (step3Container) {
+                    warnContainer = document.createElement('div');
+                    warnContainer.id = 'wiz-corr-warning';
+                    warnContainer.className = 'col-span-2 hidden mt-2 p-3 bg-red-900/30 border border-red-700/50 rounded-lg flex items-start gap-3 animate-fade-in';
+                    // Insert after the grid
+                    step3Container.parentNode.insertBefore(warnContainer, step3Container.nextSibling);
+                } else {
+                    // Fallback for Step 2 if user goes back (keep finding checkbox list)
+                    const checklist = wizardState.modalElement.querySelector('.wiz-context-checkbox')?.closest('.space-y-3');
+                    if (checklist) {
+                        warnContainer = document.createElement('div');
+                        warnContainer.id = 'wiz-corr-warning';
+                        warnContainer.className = 'hidden mt-2 p-3 bg-red-900/30 border border-red-700/50 rounded-lg flex items-start gap-3 animate-fade-in';
+                        checklist.appendChild(warnContainer);
+                    }
+                }
+            }
+
+            if (warnContainer) warnContainer.classList.add('hidden'); // Reset
+
+            const payload = {
+                portfolio_indices: selectedContextIndices,
+                strategies_data: selectedContextIndices.map(i => state.rawStrategiesData[i])
+            };
+
+            const response = await fetch('/analysis/correlation-matrix', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) return;
+            const result = await response.json();
+            const matrix = result.matrix;
+            const threshold = wizardState.config.correlationThreshold || 0.30;
+
+            let conflicts = [];
+            for (let i = 0; i < matrix.length; i++) {
+                for (let j = i + 1; j < matrix.length; j++) {
+                    if (matrix[i][j] > threshold) {
+                        conflicts.push({
+                            s1: state.loadedStrategyFiles[selectedContextIndices[i]].name,
+                            s2: state.loadedStrategyFiles[selectedContextIndices[j]].name,
+                            val: matrix[i][j]
+                        });
+                    }
+                }
+            }
+
+            if (conflicts.length > 0) {
+                if (warnContainer) {
+                    // Sort conflicts by severity
+                    conflicts.sort((a, b) => b.val - a.val);
+                    const topConflict = conflicts[0];
+
+                    warnContainer.innerHTML = `
+                        <div class="text-2xl">⚠️</div>
+                        <div class="flex-1">
+                            <h4 class="text-sm font-bold text-red-400">Conflicto de Correlación Detectado</h4>
+                            <p class="text-xs text-gray-300 mt-1">
+                                Has seleccionado ${conflicts.length} pares de estrategias que superan el límite (${threshold}).
+                                <br>El algoritmo <strong>NO podrá iniciar</strong> si mantienes estas estrategias fijas.
+                            </p>
+                            <div class="mt-2 text-[10px] text-gray-400 bg-gray-900/50 p-2 rounded border border-gray-700">
+                                <strong>Mayor conflicto:</strong> ${topConflict.val.toFixed(2)}<br>
+                                • ${topConflict.s1}<br>
+                                • ${topConflict.s2}
+                            </div>
+                            <button id="wiz-fix-corr" class="mt-2 text-xs text-red-300 underline hover:text-white">Ver Matriz Completa</button>
+                        </div>
+                     `;
+                    warnContainer.classList.remove('hidden');
+
+                    const fixBtn = warnContainer.querySelector('#wiz-fix-corr');
+                    if (fixBtn) fixBtn.onclick = () => document.getElementById('wiz-check-corr').click();
+                }
+            }
+
+        } catch (e) {
+            console.error("Auto-corr check fail", e);
+        }
+    };
+
+
     // STEP 2: Context
     if (wizardState.step === 2) {
         const backBtn = modal.querySelector('#wiz-back');
@@ -765,6 +951,7 @@ const attachWizardEvents = () => {
                 // Update count text
                 const countEl = modal.querySelector('#wiz-selection-count');
                 if (countEl) countEl.textContent = `${wizardState.baseStrategies.filter(s => s.checked).length} seleccionadas`;
+
             };
         });
 
@@ -774,6 +961,73 @@ const attachWizardEvents = () => {
                 const allChecked = wizardState.baseStrategies.every(s => s.checked);
                 wizardState.baseStrategies.forEach(s => s.checked = !allChecked);
                 renderWizard(); // Re-render to update UI
+            };
+        }
+
+        // --- NEW: Correlation Analysis Button ---
+        const corrBtn = modal.querySelector('#wiz-check-corr');
+        if (corrBtn) {
+            corrBtn.onclick = async () => {
+                const { showPortfolioCorrelationModal } = await import('./portfolioCorrelation.js');
+
+                // Gather checked strategies (excluding quarantined)
+                const strategies = [];
+                const selectedContextIndices = [];
+
+                wizardState.baseStrategies.forEach(s => {
+                    const isQuarantined = state.quarantinedStrategyNames.has(s.name);
+                    if (s.checked && !isQuarantined && state.loadedStrategyFiles[s.originalIndex]) {
+                        strategies.push(state.loadedStrategyFiles[s.originalIndex]);
+                        selectedContextIndices.push(s.originalIndex);
+                    }
+                });
+
+                if (strategies.length < 2) {
+                    showToast('Selecciona al menos 2 estrategias válidas para correlacionar', 'warning');
+                    return;
+                }
+
+                showToast('Calculando correlación...', 'info');
+                try {
+                    // 1. Fetch Correlation Matrix from Backend
+                    // We use the same backend endpoint that handles raw strategy data
+                    const payload = {
+                        portfolio_indices: selectedContextIndices,
+                        strategies_data: selectedContextIndices.map(i => state.rawStrategiesData[i])
+                    };
+
+                    const response = await fetch('/analysis/correlation-matrix', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error('Error en cálculo');
+                    const result = await response.json();
+
+                    // 2. Adapt data for the existing Correlation Modal (portfolioCorrelation.js)
+                    // The modal expects: { labels: [], matrix: [[...]] }
+                    // Note: The modal might expect 'portfolios' array for tooltips, 
+                    // so we create mock objects to satisfy it if needed.
+
+                    const labels = selectedContextIndices.map(i => state.loadedStrategyFiles[i].name);
+
+                    // Mock objects to ensure tooltip headers identify them as strategies
+                    const mockPortfolios = labels.map(name => ({ name: name }));
+
+                    const adaptedData = {
+                        names: labels,
+                        matrix: result.matrix,
+                        portfolios: mockPortfolios
+                    };
+
+                    // 3. Show Modal
+                    showPortfolioCorrelationModal(adaptedData);
+
+                } catch (e) {
+                    console.error(e);
+                    showToast('Error al calcular correlación: ' + e.message, 'error');
+                }
             };
         }
     }
@@ -793,8 +1047,59 @@ const attachWizardEvents = () => {
         const backBtn = modal.querySelector('#wiz-back');
         if (backBtn) backBtn.onclick = () => { wizardState.step = 2; renderWizard(); };
 
+        // Date Toggle Logic
+        const dateToggle = document.getElementById('wiz-dates');
+        const dateInputs = document.getElementById('wiz-date-inputs');
+        if (dateToggle && dateInputs) {
+            dateToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    dateInputs.classList.add('hidden');
+                    dateInputs.classList.remove('flex');
+                } else {
+                    dateInputs.classList.remove('hidden');
+                    dateInputs.classList.add('flex');
+                }
+            });
+        }
+
         const startBtn = modal.querySelector('#wiz-start');
-        if (startBtn) startBtn.onclick = executeSearch;
+        if (startBtn) {
+            // Clone to remove old listeners (quick hack)
+            const newBtn = startBtn.cloneNode(true);
+            startBtn.parentNode.replaceChild(newBtn, startBtn);
+
+            newBtn.onclick = (e) => {
+                // CRITICAL CHECK: Is the button actually visible?
+                if (newBtn.offsetParent === null) {
+                    return;
+                }
+
+                // Read config
+                wizardState.config.metric = document.getElementById('wiz-metric').value;
+                wizardState.config.goal = document.getElementById('wiz-goal').value;
+                wizardState.config.minSize = parseInt(document.getElementById('wiz-size-min').value);
+                wizardState.config.maxSize = parseInt(document.getElementById('wiz-size-max').value);
+                wizardState.config.correlationThreshold = parseFloat(document.getElementById('wiz-corr').value);
+
+                // Dates
+                const useAllDates = document.getElementById('wiz-dates').checked;
+                wizardState.config.useAllDates = useAllDates;
+                if (!useAllDates) {
+                    const s = document.getElementById('wiz-date-start').value;
+                    const eDate = document.getElementById('wiz-date-end').value;
+
+                    if (!s || !eDate) {
+                        alert("⚠️ Por favor selecciona Fechas de Inicio y Fin, o marca 'Usar Todo el Historial'.");
+                        return;
+                    }
+
+                    wizardState.config.startDate = s;
+                    wizardState.config.endDate = eDate;
+                }
+
+                executeSearch();
+            };
+        }
 
         // Metric Logic
         const metricSelect = modal.querySelector('#wiz-metric');
@@ -822,7 +1127,13 @@ const attachWizardEvents = () => {
             wizardState.config.maxSize = parseInt(e.target.value) || 7;
         });
         modal.querySelector('#wiz-goal')?.addEventListener('change', (e) => wizardState.config.goal = e.target.value);
-        modal.querySelector('#wiz-corr')?.addEventListener('input', (e) => wizardState.config.correlationThreshold = parseFloat(e.target.value));
+        modal.querySelector('#wiz-goal')?.addEventListener('change', (e) => wizardState.config.goal = e.target.value);
+        modal.querySelector('#wiz-corr')?.addEventListener('input', (e) => {
+            wizardState.config.correlationThreshold = parseFloat(e.target.value);
+            // Dynamic Check on Input Change
+            if (window._corrCheckTimeout) clearTimeout(window._corrCheckTimeout);
+            window._corrCheckTimeout = setTimeout(checkAndWarnCorrelation, 800);
+        });
         modal.querySelector('#wiz-dates')?.addEventListener('change', (e) => wizardState.config.useAllDates = e.target.checked);
         modal.querySelectorAll('input[name="wiz-method"]').forEach(r => {
             r.addEventListener('change', (e) => wizardState.config.searchMethod = e.target.value);
@@ -853,10 +1164,27 @@ const attachWizardEvents = () => {
         });
         modal.querySelector('#wiz-norm-metric')?.addEventListener('change', (e) => wizardState.config.normalizationMetric = e.target.value);
         modal.querySelector('#wiz-norm-target')?.addEventListener('input', (e) => wizardState.config.normalizationTarget = parseFloat(e.target.value));
+
+        // Trigger Check on Step Load (using default or carried-over threshold)
+        setTimeout(() => {
+            checkAndWarnCorrelation();
+        }, 500);
+
     }
 }; // End of attachWizardEvents
 
+
 const executeSearch = () => {
+    // ========== DIAGNOSTIC LOGS ==========
+    console.log('%c[DIAG-WIZARD] ═══════════════════════════════════════', 'color: #ff9900; font-weight: bold');
+    console.log('%c[DIAG-WIZARD] executeSearch CALLED', 'color: #ff9900; font-weight: bold');
+    console.trace("[DIAG-WIZARD] Trace for executeSearch call:");
+    console.log('[DIAG-WIZARD] wizardState.objective:', wizardState.objective);
+    console.log('[DIAG-WIZARD] wizardState.baseStrategies.length:', wizardState.baseStrategies.length);
+    console.log('[DIAG-WIZARD] state.loadedStrategyFiles.length:', state.loadedStrategyFiles?.length);
+    console.log('[DIAG-WIZARD] state.rawStrategiesData.length:', state.rawStrategiesData?.length);
+    // ========== END DIAGNOSTIC LOGS ==========
+
     // 1. Identify Strategies to BAN (Unchecked in UI)
     const uncheckedIndices = new Set(
         wizardState.baseStrategies
@@ -882,55 +1210,31 @@ const executeSearch = () => {
         // Mining Mode: Use ALL loaded strategies as the pool
         const totalStrategiesCount = state.loadedStrategyFiles.length;
         allowedIndicesToSend = Array.from({ length: totalStrategiesCount }, (_, i) => i);
+        console.log('[DIAG-WIZARD] Lab/Boost/Hybrid: allowedIndices set to ALL:', totalStrategiesCount);
     } else if (wizardState.objective === 'evolution') {
         // Evolution Mode: Feed from Databank
-        // We do NOT pre-calculate seeds here anymore, because the Evolution Loop in databank.js
-        // will dynamically extract them at the start of each generation.
-
         backendObjective = 'evolution';
-
-        // Pass the user preference for Top N.
-        // We also need to send *all* strategies as allowed, because the Loop might switch 
-        // to 'Mutation' (Hybrid) or 'Seeding' (Random) phases which use global pools.
-        const totalStrategiesCount = state.loadedStrategyFiles.length;
-        allowedIndicesToSend = Array.from({ length: totalStrategiesCount }, (_, i) => i);
-        fixedIndicesToSend = []; // Will be determined dynamically by the loop
-
-        console.log("[SearchConfig] Evolution Mode Initialized. Deferring seed selection to Databank Dynamic Loop.");
-    } else if (wizardState.objective === 'hybrid_satellite') {
-        // Hybrid: Evolution Loop + Reference Constraints
-        backendObjective = 'evolution'; // Uses Evolution Loop Manager
-
-        // Pass all strategies as allowed (Mutation needs them)
         const totalStrategiesCount = state.loadedStrategyFiles.length;
         allowedIndicesToSend = Array.from({ length: totalStrategiesCount }, (_, i) => i);
         fixedIndicesToSend = [];
-
-        console.log("[SearchConfig] Hybrid Satellite Mode Initialized.");
+        console.log("[DIAG-WIZARD] Evolution Mode Initialized.");
+    } else if (wizardState.objective === 'hybrid_satellite') {
+        backendObjective = 'evolution';
+        const totalStrategiesCount = state.loadedStrategyFiles.length;
+        allowedIndicesToSend = Array.from({ length: totalStrategiesCount }, (_, i) => i);
+        fixedIndicesToSend = [];
+        console.log("[DIAG-WIZARD] Hybrid Satellite Mode Initialized.");
     }
 
     // --- GLOBAL BAN LOGIC ---
-    // Remove ANY unchecked strategy from allowedIndicesToSend
     let wizardBannedCount = 0;
     if (uncheckedIndices.size > 0) {
         allowedIndicesToSend = allowedIndicesToSend.filter(idx => !uncheckedIndices.has(idx));
-
-        // --- FEEDBACK LOGS ---
-        const bannedNames = wizardState.baseStrategies
-            .filter(s => !s.checked)
-            .map(s => s.name)
-            .join(', ');
-
-        console.log(`[SearchConfig] Global Ban Enforcement:`);
-        console.log(`   - Banned Count: ${uncheckedIndices.size}`);
-        console.log(`   - Banned Names: ${bannedNames}`);
-
-        // VISIBLE FEEDBACK
         showToast(`⛔ Exclusión Global: ${uncheckedIndices.size} estrategias prohibidas.`, 'warning');
         wizardBannedCount = uncheckedIndices.size;
     }
 
-    // --- QUARANTINE ENFORCEMENT (Previous + Permanent) ---
+    // --- QUARANTINE ENFORCEMENT ---
     if (state.quarantinedStrategyNames.size > 0) {
         const strategies = state.loadedStrategyFiles;
         const initialLen = allowedIndicesToSend.length;
@@ -938,98 +1242,157 @@ const executeSearch = () => {
             const name = strategies[idx] ? strategies[idx].name : '';
             return !state.quarantinedStrategyNames.has(name);
         });
-        const quarantinedRemoved = initialLen - allowedIndicesToSend.length;
 
+        // Also filter fixed
+        fixedIndicesToSend = fixedIndicesToSend.filter(idx => {
+            const name = strategies[idx] ? strategies[idx].name : '';
+            return !state.quarantinedStrategyNames.has(name);
+        });
+
+        const quarantinedRemoved = initialLen - allowedIndicesToSend.length;
         if (quarantinedRemoved > 0) {
-            console.log(`[SearchConfig] Quarantine Enforcement: Removed ${quarantinedRemoved} permanently banned strategies.`);
             showToast(`☣️ Cuarentena: ${quarantinedRemoved} estrategias eliminadas del pool.`, 'error');
         }
-
         state.bannedStrategiesCount = wizardBannedCount + quarantinedRemoved;
     } else {
         state.bannedStrategiesCount = wizardBannedCount;
     }
 
-    if (state.bannedStrategiesCount === 0) {
-        console.log(`[SearchConfig] No Global Exclusions applied. All ${allowedIndicesToSend.length} strategies allowed.`);
+    // --- VALIDATION: Prevent "Locked" Search in Boost/Hybrid Mode ---
+    if ((wizardState.objective === 'boost' || wizardState.objective === 'hybrid') && fixedIndicesToSend.length >= wizardState.config.maxSize) {
+        showToast(`⚠️ Conflicto: Has fijado ${fixedIndicesToSend.length} estrategias y el tamaño máximo es ${wizardState.config.maxSize}.<br>Sube el Máximo o desmarca estrategias.`, 'error', 8000);
+        return;
     }
 
-    // --- PAYLOAD CONSTRUCTION ---
-    // Note: We must match the keys expected by findDatabankPortfolios (databank.js)
-    const payload = {
-        objective: backendObjective,
-        searchMethod: wizardState.config.searchMethod,
-        metric: wizardState.config.metric,
-        goal: wizardState.config.goal,
-        minSize: wizardState.config.minSize || 1,
-        maxSize: wizardState.config.maxSize,
-        correlationThreshold: wizardState.config.correlationThreshold,
-        satelliteCorrelationThreshold: wizardState.config.satelliteCorrelationThreshold,
-        reShuffleInterval: wizardState.config.reShuffleInterval || 30,
+    // 4. PRE-PROCESSING: Shadow Data for Date Filtering
+    let shadowStrategiesData = null;
+    let creationFilter = null;
 
-        // Strategy Source Pool
-        sourceUnused: wizardState.config.sourceUnused !== undefined ? wizardState.config.sourceUnused : true,
-        sourceLinked: wizardState.config.sourceLinked !== undefined ? wizardState.config.sourceLinked : true,
+    if (!wizardState.config.useAllDates && wizardState.config.startDate && wizardState.config.endDate) {
+        console.log(`[ExecuteSearch] 📅 Date Filter Active: ${wizardState.config.startDate} to ${wizardState.config.endDate}`);
 
-        // Base Strategies (for Lab/Boost)
-        fixedIndices: fixedIndicesToSend,
-        allowedIndices: allowedIndicesToSend,
+        creationFilter = {
+            start: wizardState.config.startDate,
+            end: wizardState.config.endDate
+        };
+    }
 
-        // Multi-Satellite Reference
-        referencePortfolios: [],
-        referenceIndices: []
-    };
+    // 5. Trigger Search
+    import('./databank.js').then(async ({ findDatabankPortfolios }) => {
+        let strategiesDataOverride = null;
 
-    if (wizardState.isMultiPortfolioMode) {
-        // Multi-Portfolio: Send references for both Satellite (Uncorrelation) and Lab (Min-Threshold Calculation)
-        // FILTER: Exclude unchecked strategies from reference
-        payload.referencePortfolios = wizardState.selectedPortfolioIndices.map(idx => {
-            const p = state.savedPortfolios[idx];
-            if (!p || !p.indices) return [];
-            return p.indices.filter(i => !uncheckedIndices.has(i));
-        });
-    } else {
-        // Single Portfolio Cases
-        if (state.searchBasePortfolioIndex !== null) {
-            const p = state.savedPortfolios[state.searchBasePortfolioIndex];
-            // For Satellite OR Hybrid, we need referenceIndices to check correlation against the base
-            if (p && (wizardState.objective === 'satellite' || wizardState.objective === 'hybrid' || wizardState.objective === 'hybrid_satellite')) {
-                // FILTER: Exclude unchecked strategies from reference
-                const indices = p.indices || [];
-                payload.referenceIndices = indices.filter(i => !uncheckedIndices.has(i));
+        // Shadow Data Generation (Async safe here)
+        if (creationFilter) {
+            // Bump version to force reload of patched file
+            const { filterTradesByDate, parseTradesFromData, tradesToCSV } = await import('./sqAnalysis_v2.js?v=13');
+            console.log('[ExecuteSearch] ⏳ Generating Shadow Data (CSV) for filtered period...');
+
+            // Filter and convert back to CSV to keep payload small and ensure backend receives valid list of strings
+            strategiesDataOverride = state.rawStrategiesData.map((raw, idx) => {
+                if (!raw) return "";
+
+                const trades = parseTradesFromData(raw);
+                const filteredTrades = filterTradesByDate(trades, creationFilter);
+
+                // DEBUG: Log first few strategies to see what's happening
+                if (idx < 3) {
+                    console.log(`[SHADOW-DEBUG] Strat ${idx}: Raw Length: ${raw.length}`);
+                    if (trades.length === 0) {
+                        console.warn(`[SHADOW-DEBUG] Strat ${idx} parsed 0 trades! First 200 chars of raw data:`, raw.substring(0, 200));
+                    }
+                    console.log(`[SHADOW-DEBUG] Strat ${idx}: Raw Trades Parsed: ${trades.length}, Filtered: ${filteredTrades.length}`);
+
+                    if (trades.length > 0) {
+                        console.log(`[SHADOW-DEBUG] Strat ${idx} Sample Trade 0:`, trades[0]);
+                        console.log(`[SHADOW-DEBUG] Filter:`, creationFilter);
+                    }
+                }
+
+                // Map back to CSV String (Compact & Valid for Backend)
+                return tradesToCSV(filteredTrades);
+            });
+            console.log(`[ExecuteSearch] ✅ Shadow Data Ready (CSV Format).`);
+        } else {
+            // Explicitly nullify if no filter, to allow GC
+            strategiesDataOverride = null;
+        }
+
+        // Construct Payload/Config for findDatabankPortfolios
+        const config = {
+            objective: backendObjective,
+            searchMethod: wizardState.config.searchMethod,
+            metric: wizardState.config.metric,
+            goal: wizardState.config.goal,
+            minSize: wizardState.config.minSize || 1,
+            maxSize: wizardState.config.maxSize,
+            correlationThreshold: wizardState.config.correlationThreshold,
+            satelliteCorrelationThreshold: wizardState.config.satelliteCorrelationThreshold,
+            reShuffleInterval: wizardState.config.reShuffleInterval || 30,
+
+            // Date Filter
+            useAllDates: wizardState.config.useAllDates,
+
+            // Strategy Source Pool
+            sourceUnused: wizardState.config.sourceUnused !== undefined ? wizardState.config.sourceUnused : true,
+            sourceLinked: wizardState.config.sourceLinked !== undefined ? wizardState.config.sourceLinked : true,
+
+            // Base Strategies (for Lab/Boost)
+            fixedIndices: fixedIndicesToSend,
+            allowedIndices: allowedIndicesToSend,
+
+            // Multi-Satellite Reference
+            referencePortfolios: [],
+            referenceIndices: [],
+
+            // Normalization
+            normalizationEnabled: wizardState.config.normalizationEnabled || false,
+            normalizationMetric: wizardState.config.normalizationMetric || 'max_dd',
+            normalizationTarget: wizardState.config.normalizationTarget || 1000,
+
+            // Context
+            evolutionTopN: wizardState.evolutionTopN,
+
+            // NEW: Shadow Data & Filter Metadata
+            strategiesDataOverride: strategiesDataOverride,
+            creationFilter: creationFilter
+        };
+
+        if (wizardState.isMultiPortfolioMode) {
+            config.referencePortfolios = wizardState.selectedPortfolioIndices.map(idx => {
+                const p = state.savedPortfolios[idx];
+                if (!p || !p.indices) return [];
+                return p.indices.filter(i => !uncheckedIndices.has(i));
+            });
+        } else {
+            if (state.searchBasePortfolioIndex !== null) {
+                const p = state.savedPortfolios[state.searchBasePortfolioIndex];
+                if (p && (wizardState.objective === 'satellite' || wizardState.objective === 'hybrid' || wizardState.objective === 'hybrid_satellite')) {
+                    const indices = p.indices || [];
+                    config.referenceIndices = indices.filter(i => !uncheckedIndices.has(i));
+                }
             }
         }
-    }
 
-    // Add normalization parameters to payload
-    payload.normalizationEnabled = wizardState.config.normalizationEnabled || false;
-    payload.normalizationMetric = wizardState.config.normalizationMetric || 'max_dd';
-    payload.normalizationTarget = wizardState.config.normalizationTarget || 1000;
+        // DEBUG PAYLOAD - DIAGNOSING DATE FILTER ISSUE
+        console.log(`[ExecuteSearch-PAYLOAD-DEBUG] creationFilter:`, config.creationFilter);
+        console.log(`[ExecuteSearch-PAYLOAD-DEBUG] strategiesDataOverride TYPE:`, typeof config.strategiesDataOverride);
+        if (Array.isArray(config.strategiesDataOverride)) {
+            console.log(`[ExecuteSearch-PAYLOAD-DEBUG] strategiesDataOverride LENGTH:`, config.strategiesDataOverride.length);
+            const firstItem = config.strategiesDataOverride[0];
+            const firstItemLen = firstItem ? firstItem.length : 0;
+            console.log(`[ExecuteSearch-PAYLOAD-DEBUG] First item len:`, firstItemLen);
+            console.log(`[ExecuteSearch-PAYLOAD-DEBUG] First item preview:`, firstItem ? firstItem.substring(0, 100) : "EMPTY");
+        } else {
+            console.log(`[ExecuteSearch-PAYLOAD-DEBUG] strategiesDataOverride IS NULL/UNDEFINED`);
+        }
 
-    // Add context info for Execution Feedback
-    payload.objectiveLabel = {
-        'boost': 'Mejorando Portafolio',
-        'satellite': 'Buscando Satélite',
-        'lab': 'Exploración de Laboratorio',
-        'hybrid': 'Satélite Híbrido (Triple Filtro)',
-        'hybrid': 'Satélite Híbrido (Triple Filtro)',
-        'hybrid_satellite': `Satélite Evolutivo (Top ${wizardState.evolutionTopN || 10})`,
-        'evolution': `Evolución Genética (Top ${wizardState.evolutionTopN || 10})`
-    }[wizardState.objective] || 'Búsqueda Estándar';
+        findDatabankPortfolios(config);
 
-    if (wizardState.objective === 'evolution') {
-        payload.evolutionTopN = wizardState.evolutionTopN || 10;
-    }
-
-    // Close Modal
-    if (wizardState.modalElement) wizardState.modalElement.remove();
-    wizardState.modalElement = null;
-
-    // Start
-    console.log('[SearchConfig] Executing search with config:', JSON.stringify(payload, null, 2));
-    findDatabankPortfolios(payload);
+        // Close wizard
+        if (wizardState.modalElement) wizardState.modalElement.remove();
+        wizardState.modalElement = null;
+    });
 };
-
 const startSearch = (config) => {
     // 1. Switch to DataBank tab
     const databankTabBtn = document.querySelector('button[data-target="databank-content"]');

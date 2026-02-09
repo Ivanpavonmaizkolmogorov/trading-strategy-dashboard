@@ -5,7 +5,7 @@ import { CustomizableTable } from './tableEngine.js';
 import { openSearchConfigModal } from './searchConfig.js';
 import { analyzeCustomPortfolio } from './portfolioBuilder.js?v=2';
 import { showToast } from './notifications.js';
-import { calculateSQMetrics } from './sqAnalysis_v2.js?v=11';
+import { calculateSQMetrics, filterTradesByDate } from './sqAnalysis_v2.js?v=11'; // [MOD] Added filterTradesByDate import
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -60,8 +60,144 @@ export const selectedStrategies = new Set();
 // Floating action bar state
 let floatingActionBar = null;
 
+// --- ADVANCED FILTER PANEL ---
+const renderAdvancedFilterPanel = () => {
+    const container = document.getElementById('strategies-content');
+    if (!container) return;
+
+    // Safety Init
+    if (!state.advancedFilters) {
+        state.advancedFilters = { searchText: '', mt5Only: false, linkedOnly: false, selectedPortfolioId: 'all', showQuarantined: false };
+    }
+
+    let panel = document.getElementById('strategies-advanced-filters');
+    if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'strategies-advanced-filters';
+        panel.className = 'bg-gray-800 p-4 border-b border-gray-700 flex flex-wrap gap-4 items-center justify-between shrink-0';
+
+        // Insert before the table controls or table wrapper
+        const tableControls = document.getElementById('strategies-table-controls');
+        if (tableControls) {
+            container.insertBefore(panel, tableControls);
+        } else {
+            container.prepend(panel);
+        }
+    }
+
+    // Determine values from state
+    const searchText = state.advancedFilters.searchText || '';
+    const mt5Active = state.advancedFilters.mt5Only;
+    const linkedActive = state.advancedFilters.linkedOnly;
+    const quarantineActive = state.advancedFilters.showQuarantined;
+    const selectedPortfolio = state.advancedFilters.selectedPortfolioId || 'all';
+
+    // Build Portfolio Options
+    let portfolioOptions = '<option value="all">Todos los Portafolios</option>';
+    if (state.savedPortfolios) {
+        state.savedPortfolios.forEach((p, idx) => {
+            const isSel = selectedPortfolio === String(idx) ? 'selected' : '';
+            portfolioOptions += `<option value="${idx}" ${isSel}>${p.name}</option>`;
+        });
+    }
+
+    // Render Inner HTML
+    panel.innerHTML = `
+        <div class="flex items-center gap-4 flex-1">
+            <!-- Search -->
+            <div class="relative flex-1 max-w-md">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </span>
+                <input type="text" id="adv-filter-search" value="${searchText}" placeholder="Buscar estrategia..." 
+                    class="w-full bg-gray-900 border border-gray-600 rounded-lg py-1.5 pl-10 pr-4 text-sm text-gray-200 focus:border-blue-500 focus:outline-none placeholder-gray-500">
+            </div>
+
+            <!-- MT5 Filter -->
+            <button id="adv-filter-mt5" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${mt5Active ? 'bg-indigo-900/60 border-indigo-500 text-indigo-200 shadow-sm shadow-indigo-900/20' : 'bg-gray-700 border-gray-600 text-gray-400 hover:text-gray-200'}">
+                <span class="text-xs font-bold">⚡ MT5</span>
+            </button>
+
+            <!-- Magic Missing Filter (Linked but No Magic) -->
+            <button id="adv-filter-magic-missing" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${state.advancedFilters.magicMissingOnly ? 'bg-yellow-900/60 border-yellow-500 text-yellow-200 shadow-sm shadow-yellow-900/20' : 'bg-gray-700 border-gray-600 text-gray-400 hover:text-gray-200'}">
+                <span class="text-xs font-bold">⚠️ Sin Magic</span>
+            </button>
+            
+            <!-- Linked / Portfolio Filter Group -->
+            <div class="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg border border-gray-700/50">
+                <select id="adv-filter-portfolio" class="bg-transparent border-none text-xs text-gray-300 focus:ring-0 cursor-pointer py-1">
+                    ${portfolioOptions}
+                </select>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3 border-l border-gray-700 pl-4">
+             <!-- Quarantine Toggle -->
+             <label class="flex items-center gap-2 cursor-pointer group">
+                <div class="relative">
+                    <input type="checkbox" id="adv-filter-quarantine" class="sr-only" ${quarantineActive ? 'checked' : ''}>
+                    <div class="block bg-gray-700 w-8 h-5 rounded-full border border-gray-600 group-hover:border-gray-500 transition-colors"></div>
+                    <div class="dot absolute left-1 top-1 bg-gray-400 w-3 h-3 rounded-full transition ${quarantineActive ? 'translate-x-full bg-red-400' : ''}"></div>
+                </div>
+                <span class="text-xs text-gray-400 group-hover:text-red-300 transition-colors">Ver Cuarentena</span>
+            </label>
+        </div>
+    `;
+
+    // Bind Events
+    // 1. Search (Debounced)
+    const searchInput = document.getElementById('adv-filter-search');
+    searchInput.addEventListener('input', (e) => {
+        state.advancedFilters.searchText = e.target.value;
+        renderStrategiesTable(); // Re-render triggers filter logic
+    });
+    searchInput.focus(); // Maintain focus ? No, rerender kills it.
+    // FIX: Don't re-render the whole panel on input, just the table? 
+    // Actually, calling renderStrategiesTable re-runs the logic. 
+    // We should separate panel rendering from table rendering to avoid losing focus.
+
+    // 2. MT5 Toggle
+    const mt5Btn = document.getElementById('adv-filter-mt5');
+    if (mt5Btn) {
+        mt5Btn.addEventListener('click', () => {
+            state.advancedFilters.mt5Only = !state.advancedFilters.mt5Only;
+            renderAdvancedFilterPanel(); // Update button state
+            renderStrategiesTable();
+        });
+    }
+
+    // 3. Magic Missing Toggle
+    const magicMissingBtn = document.getElementById('adv-filter-magic-missing');
+    if (magicMissingBtn) {
+        magicMissingBtn.addEventListener('click', () => {
+            state.advancedFilters.magicMissingOnly = !state.advancedFilters.magicMissingOnly;
+            // Mutually exclusive with MT5 Only?? Not necessarily, but logically yes.
+            // If MT5 Only is ON, showing "Missing Magic" yields 0 results. 
+            // We won't enforce UI exclusion, user will just see empty table if both on.
+            renderAdvancedFilterPanel(); // Update button state
+            renderStrategiesTable();
+        });
+    }
+
+    // 3. Portfolio Select
+    document.getElementById('adv-filter-portfolio').addEventListener('change', (e) => {
+        state.advancedFilters.selectedPortfolioId = e.target.value;
+        // If specific portfolio selected, imply 'linkedOnly' logic or specific logic
+        renderStrategiesTable();
+    });
+
+    // 4. Quarantine Toggle
+    document.getElementById('adv-filter-quarantine').addEventListener('change', (e) => {
+        state.advancedFilters.showQuarantined = e.target.checked;
+        renderAdvancedFilterPanel(); // Update toggle visual
+        renderStrategiesTable();
+    });
+};
+
 export const initStrategiesTable = () => {
     strategiesTable.init();
+    // Initialize Panel
+    renderAdvancedFilterPanel();
 };
 
 export const renderStrategiesTable = () => {
@@ -285,12 +421,42 @@ export const renderStrategiesTable = () => {
     tableBody.innerHTML = '';
 
     if (!window.analysisResults || window.analysisResults.length === 0) {
+        // Self-Healing: If we have raw data but no analysis results, trigger re-analysis
+        if (state.rawStrategiesData && state.rawStrategiesData.length > 0) {
+            console.warn('[StrategiesTable] ⚠️ Missing analysisResults but raw data exists. Triggering Self-Healing...');
+            const colSpan = config.visibleColumns.length + 1;
+
+            // Show Loading State
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="${colSpan}" class="p-8 text-center text-gray-400">
+                        <div class="flex flex-col items-center justify-center animate-pulse">
+                            <div class="h-8 w-8 mb-4 border-4 border-t-blue-500 border-gray-700 rounded-full animate-spin"></div>
+                            <p class="font-medium text-blue-400">Recuperando resultados de análisis...</p>
+                            <p class="text-xs text-gray-500 mt-2">Sincronizando métricas globales</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+
+            // Dynamic import to avoid circular dependency (StrategiesTable -> Analysis -> UI -> StrategiesTable)
+            import('../analysis.js').then(({ reAnalyzeAllData }) => {
+                reAnalyzeAllData();
+            }).catch(err => console.error("[StrategiesTable] Self-healing failed:", err));
+
+            return;
+        }
+
         const colSpan = config.visibleColumns.length + 1;
         tableBody.innerHTML = `<tr><td colspan="${colSpan}" class="p-4 text-center text-gray-500">No hay resultados de análisis disponibles.</td></tr>`;
         return;
     }
 
     let strategies = [];
+
+    // --- MOCK INJECTION FOR VERIFICATION start (Forced Early) ---
+    // REMOVED
+    // --- MOCK INJECTION FOR VERIFICATION end ---
 
     // MODIFICATION: Source strategies from Saved Portfolios in Reality Check mode
     // This supports showing the ACTUAL strategies (Xausdjpy...) instead of global defaults (BTC...)
@@ -467,95 +633,12 @@ export const renderStrategiesTable = () => {
                             // We keep 'closeTime' (for UI) as null so it correctly shows as Open ("-").
                             const effectiveExit = parsedClose || parsedOpen;
 
-                            // --- REALITY CHECK GLOBAL LOOKUP (UNCONDITIONAL) ---
-                            // User Directive: Do not check for linked portfolios. Always look up real data if available.
-                            if (state.activeViewMode === 'reality-check') {
-                                const normalize = s => (s || '').replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
-
-                                // 1. Identify Strategy Name/ID
-                                let rawName = stratObj.name; // Use stratObj.name as it's the current strategy being processed
-                                let sId = stratObj.strategyId || stratObj.name; // Assuming stratObj might have strategyId
-
-                                // If it's a "STRAT_" ID, try to find a real name from loaded files
-                                if (sId.startsWith('STR_')) { // Corrected from STRAT_ to STR_ based on common usage
-                                    const file = state.loadedStrategyFiles.find(f => f.strategyId === sId);
-                                    if (file) rawName = file.name;
-                                }
-
-                                console.log(`[RealKPI] Processing Strategy: ${rawName} (ID: ${sId})`);
-
-                                const cleanName = rawName.replace(/\.csv$/i, '').trim();
-                                const normalizedName = normalize(rawName);
-
-                                // 2. Resolve Mapped Keys (Robust Lookup)
-                                // Priority: Name (Strict) > Clean Name > ID > Normalized
-                                const mapByName = state.magicNumberMap[rawName];
-                                const mapByClean = state.magicNumberMap[cleanName];
-                                const mapById = state.magicNumberMap[sId];
-                                const mapByNorm = state.magicNumberMap[normalizedName];
-
-                                let magics = [];
-
-                                // A. Name-based lookup
-                                if (state.magicNumberMap[normalizedName]) magics = magics.concat(state.magicNumberMap[normalizedName]);
-
-                                // B. Clean Name lookup
-                                const normalizedClean = normalize(cleanName);
-                                if (state.magicNumberMap[normalizedClean]) magics = magics.concat(state.magicNumberMap[normalizedClean]);
-
-                                // C. ID-based lookup
-                                if (state.magicNumberMap[sId]) magics = magics.concat(state.magicNumberMap[sId]);
-
-                                // Allow for string/number mismatch in map keys
-                                const numericId = Number(sId);
-                                if (!isNaN(numericId) && state.magicNumberMap[numericId]) magics = magics.concat(state.magicNumberMap[numericId]);
-
-                                // Dedup
-                                magics = [...new Set(magics)];
-
-                                console.log(`[RealKPI] Resolved Magics for ${rawName}:`, magics);
-
-                                // 3. Fetch Trades from DeepScanData (Global Cache)
-                                let allRealTrades = [];
-                                if (state.deepScanData) {
-                                    // Debug deepScanData keys once to avoid spam, or check if specific keys exist
-                                    console.log('[RealKPI] deepScanData Keys:', Object.keys(state.deepScanData));
-
-                                    if (magics.length > 0) {
-                                        Object.values(state.deepScanData).forEach(accountData => {
-                                            if (!accountData._tradesById) {
-                                                console.warn('[RealKPI] Account Data missing _tradesById:', accountData);
-                                                return;
-                                            }
-                                            magics.forEach(m => {
-                                                const magicStr = String(m).trim();
-                                                // Try finding by magicStr directly or within the keys
-                                                if (accountData._tradesById[magicStr]) {
-                                                    allRealTrades = allRealTrades.concat(accountData._tradesById[magicStr]);
-                                                }
-                                            });
-                                        });
-                                    }
-                                } else {
-                                    console.warn('[RealKPI] state.deepScanData is undefined or null');
-                                }
-
-                                console.log(`[RealKPI] Found ${allRealTrades.length} trades for ${rawName}`);
-
-                                // 4. Calculate & Assign Metrics
-                                if (allRealTrades.length > 0) {
-                                    const metrics = calculateSQMetrics(allRealTrades, 10000); // Assuming 10k start balance for KPI
-                                    stratObj.realMetrics = metrics;
-                                    stratObj.realMetrics.trades = allRealTrades.length;
-                                    stratObj.realMetrics.profit = metrics.totalNetProfit;
-                                    stratObj.realMetrics.drawdown = metrics.maxDrawdownInDollars;
-                                } else {
-                                    // console.warn(`[StrategiesTable] ⚠️ No Real Trades found for '${rawName}' (Magics: ${magics})`);
-                                }
-                            } else {
-                                // Debug why it failed
-                                // console.warn(`[StrategiesTable] ⚠️ No Real Metrics found for '${name}' (Clean: '${cleanName}') in portfolio '${p.name}'. MapEntry: ${JSON.stringify(mapEntry)}`);
-                            }
+                            // --- REALITY CHECK GLOBAL LOOKUP REMOVED (Redundant/Buggy) ---
+                            // ui.js already hydrates the portfolio with global data, and the primary loop
+                            // in this function correctly finds those trades. The removed block was:
+                            // 1. Running O(N) times (inside map)
+                            // 2. Using strict _tradesById check which failed
+                            // 3. Trying to write stratObj.realMetrics which gets overwritten anyway
 
                             return {
                                 ...t,
@@ -818,7 +901,9 @@ export const renderStrategiesTable = () => {
 
                         // Normalize and Calculate
                         if (allRealTrades.length > 0) {
-                            const normalizedTrades = allRealTrades.map(trade => {
+                            // [NEW] FILTER PIPELINE START
+                            // 1. Initial Normalization (Dates/Values)
+                            const initialNormalized = allRealTrades.map(trade => {
                                 // Basic normalization for engine
                                 const p = parseFloat(trade.profit) || 0;
                                 const s = parseFloat(trade.swap) || 0;
@@ -826,10 +911,6 @@ export const renderStrategiesTable = () => {
                                 const pnl = p + s + c;
                                 let closeDate = trade.closeTime ? new Date(trade.closeTime) : null;
                                 if (trade.closeDate) closeDate = new Date(trade.closeDate); // Fallback
-                                // If invalid date, try to parse string "DD.MM.YYYY HH:mm"
-                                if (!closeDate || isNaN(closeDate.getTime())) {
-                                    // Assuming ISO for now or handled by Date()
-                                }
 
                                 return {
                                     ...trade,
@@ -837,22 +918,36 @@ export const renderStrategiesTable = () => {
                                     closeTime: closeDate,
                                     exitTime: closeDate // for engine
                                 };
-                            }).filter(t => t.exitTime && !isNaN(t.pnl)); // Filter invalid
+                            }).filter(t => t.exitTime && !isNaN(t.pnl));
 
-                            const metrics = calculateSQMetrics(normalizedTrades, 10000); // 10k dummy balance
+                            // 2. [NEW] Date Range Filter
+                            // Check local state map (Strategy-Specific or Global)
+                            let filteredTrades = initialNormalized;
+                            let dateRangeApplied = false;
+
+                            if (state.strategyDateRanges && state.strategyDateRanges[id]) {
+                                const range = state.strategyDateRanges[id];
+                                filteredTrades = filterTradesByDate(initialNormalized, range.start, range.end);
+                                dateRangeApplied = true;
+                                strategy._dateRange = range; // Tag for UI
+                            } else if (state.strategyDateRanges && state.strategyDateRanges[strategy.name]) {
+                                // Name fallback
+                                const range = state.strategyDateRanges[strategy.name];
+                                filteredTrades = filterTradesByDate(initialNormalized, range.start, range.end);
+                                dateRangeApplied = true;
+                                strategy._dateRange = range;
+                            }
+
+                            // 3. Metric Calculation
+                            const metrics = calculateSQMetrics(filteredTrades, 10000);
                             strategy.realMetrics = metrics;
-                            strategy.realMetrics.trades = normalizedTrades.length;
-                            strategy.realMetrics._aggregatedTrades = normalizedTrades; // Store for chart generation
-                            strategy.realMetrics.isAggregated = true; // Mark as aggregated data
-                            // Fix Max DD Persistence: Map generic maxDD to table column ID
+                            strategy.realMetrics.trades = filteredTrades.length;
+                            strategy.realMetrics._aggregatedTrades = filteredTrades; // Store filtered for charts
+                            strategy.realMetrics.isAggregated = true;
+                            // Fix Max DD Persistence
                             strategy.realMetrics.maxDrawdownInDollars = metrics.maxDD;
-                            strategy.realMetrics.profit = metrics.totalNetProfit; // Aliasing just in case
-                            // We don't overwrite profit/drawdown here to keep Backtest metrics visible?
-                            // User wants Real KPIs "populated".
-                            // So we SHOULD overwrite for display in columns that use generic keys, 
-                            // OR reliance on `getMetricValue` handling `realMetrics`.
-                            // `getMetricValue` prioritizes `realMetrics` if activeViewMode is reality-check.
-                            // So just attaching `realMetrics` is enough.
+                            strategy.realMetrics.profit = metrics.totalNetProfit;
+                            strategy.realMetrics.isDateFiltered = dateRangeApplied; // Tag for UI
                         }
                     }
                 } catch (err) {
@@ -868,28 +963,135 @@ export const renderStrategiesTable = () => {
     console.log(`[StrategiesTable]    - Linked Map Size: ${linkedStrategiesMap.size}`);
     console.log(`[StrategiesTable]    - Linked Names Size: ${linkedStrategyNamesMap.size}`);
 
-    if (state.linkedStrategiesFilter === 'hide') {
-        strategies = strategies.filter(s => {
+    // UNIFIED FILTERING PIPELINE
+    // Applies filters in sequence: Quarantine -> Search -> MT5 -> Portfolio -> Linked Status
+
+    // --- ADVANCED FILTERING LOGIC ---
+    const { searchText, mt5Only, magicMissingOnly, showQuarantined, selectedPortfolioId } = state.advancedFilters;
+    const startCount = strategies.length;
+
+    strategies = strategies.filter(s => {
+        // 1. Quarantine Check (Priority)
+        const isQuarantined = state.quarantinedStrategyNames.has(s.name);
+
+        // Logic: Match MT5 Filter Logic.
+        // - Toggle OFF: Show EVERYTHING (Quarantined + Non-Quarantined mixed).
+        // - Toggle ON: Show ONLY Quarantined.
+        if (showQuarantined) {
+            if (!isQuarantined) return false;
+        }
+        // If OFF, we show isQuarantined too (mixed).
+
+        // 2. Text Search (Fuzzy)
+        if (searchText) {
+            const searchLower = searchText.toLowerCase();
+            const nameMatch = s.name.toLowerCase().includes(searchLower);
+            const idMatch = s.id && s.id.toLowerCase().includes(searchLower);
+            if (!nameMatch && !idMatch) return false;
+        }
+
+        // 3. MT5 Only
+        if (mt5Only) {
+            const hasMagic = state.magicNumberMap && (
+                state.magicNumberMap[s.name] ||
+                state.magicNumberMap[normalizeName(s.name)] ||
+                state.magicNumberMap[s.id]
+            );
+            if (!hasMagic) return false;
+        }
+
+        // 3.5 Magic Missing Only (Linked but NO Magic)
+        if (magicMissingOnly) {
+            const hasMagic = state.magicNumberMap && (
+                state.magicNumberMap[s.name] ||
+                state.magicNumberMap[normalizeName(s.name)] ||
+                state.magicNumberMap[s.id]
+            );
+
+            // Debug Log for first few items
+            if (strategies.indexOf(s) < 5) {
+                console.log(`[FilterDebug] Strat: ${s.name} | HasMagic: ${!!hasMagic} | IsLinkedIdx: ${linkedStrategiesMap.has(s.originalIndex)} | IsLinkedName: ${linkedStrategyNamesMap.has(s.name)}`);
+            }
+
+            // Must NOT have magic
+            if (hasMagic) return false;
+
+            // Must BE Linked to some portfolio
+            // Use our calculated maps (s.originalIndex or s.name OR NORMALIZED NAME)
+            const isLinked = linkedStrategiesMap.has(s.originalIndex) ||
+                linkedStrategyNamesMap.has(s.name) ||
+                linkedStrategyNormalizedNamesMap.has(normalizeName(s.name));
+
+            if (!isLinked) return false;
+        }
+
+        // 4. Portfolio Filter (Enhanced Linked)
+        if (selectedPortfolioId !== 'all') {
+            const pIndex = parseInt(selectedPortfolioId);
+            const portfolio = state.savedPortfolios[pIndex];
+            if (portfolio) {
+                // ROBUST MATCHING
+                const norm = normalizeName(s.name);
+                const cleanName = s.name.replace(/\.csv$/i, '').trim();
+
+                // PRIORITY 1: Strategy IDs (Most Reliable)
+                if (portfolio.strategyIds && portfolio.strategyIds.length > 0) {
+                    if (s.id && portfolio.strategyIds.includes(s.id)) return true;
+                    // If IDs are present but no match, DO NOT fallback to weak indices.
+                    // However, we might check names in case ID is missing on strategy object?
+                    // Let's allow Name matching as secondary check if IDs exist but don't match (migration),
+                    // but definitely NOT indices.
+                }
+
+                // PRIORITY 2: Strategy Names (Reliable if file names unchanged)
+                if (portfolio.strategyNames && portfolio.strategyNames.length > 0) {
+                    const match = portfolio.strategyNames.some(pn => {
+                        const normPn = normalizeName(pn);
+                        return normPn === norm || pn.replace(/\.csv$/i, '').trim() === cleanName || pn === s.name;
+                    });
+                    if (match) return true;
+
+                    // If names loop finishes without match, and we had names, return false (don't use indices).
+                    // BUT only if we didn't have IDs. If we had IDs and failed, we should have returned false already?
+                    // Let's simplify: If either IDs or Names exist, we use them and IGNORE indices.
+                    if ((portfolio.strategyIds && portfolio.strategyIds.length > 0) || (portfolio.strategyNames && portfolio.strategyNames.length > 0)) {
+                        return false;
+                    }
+                }
+
+                // PRIORITY 3: Indices (Legacy/Fallback - Volatile across sessions)
+                // Only used if NO IDs and NO Names are stored in portfolio.
+                if (portfolio.indices && portfolio.indices.length > 0) {
+                    if (portfolio.indices.includes(s.originalIndex)) return true;
+                }
+
+                return false;
+
+                return false;
+            }
+        }
+
+        // 5. Linked Strategies Filter (Legacy/UI Toggle)
+        if (state.linkedStrategiesFilter === 'hide') {
             const norm = normalizeName(s.name);
-            return !linkedStrategiesMap.has(s.originalIndex) &&
-                !linkedStrategyNamesMap.has(s.name) &&
-                !linkedStrategyNormalizedNamesMap.has(norm);
-        });
-    } else if (state.linkedStrategiesFilter === 'only') {
-        strategies = strategies.filter(s => {
-            const norm = normalizeName(s.name);
-            const isLiked = linkedStrategiesMap.has(s.originalIndex) ||
+            const isLinked = linkedStrategiesMap.has(s.originalIndex) ||
                 linkedStrategyNamesMap.has(s.name) ||
                 linkedStrategyNormalizedNamesMap.has(norm);
+            if (isLinked) return false;
+        } else if (state.linkedStrategiesFilter === 'only' || (selectedPortfolioId === 'all' && state.advancedFilters.linkedOnly)) { // Fallback for header toggle
+            const norm = normalizeName(s.name);
+            const isLinked = linkedStrategiesMap.has(s.originalIndex) ||
+                linkedStrategyNamesMap.has(s.name) ||
+                linkedStrategyNormalizedNamesMap.has(norm);
+            if (!isLinked) return false;
+        }
 
-            // Debug failure slightly
-            // if (!isLiked && strategies.length < 100) console.log(`[Filter] Failed: ${s.name} -> Norm: ${norm}`);
-            return isLiked;
-        });
-    } else {
-        console.log(`[StrategiesTable]    - Showing ALL.`);
+        return true;
+    });
+
+    if (strategies.length < startCount) {
+        console.log(`[StrategiesTable] 🔍 Advanced Filter Active. Dropped ${startCount - strategies.length} items.`);
     }
-    console.log(`[StrategiesTable]    - Total After: ${strategies.length}`);
 
     // FILTER: Reality Check Mode (Only if NOT sourced from portfolios directly)
     // If we sourced from portfolios, we already have the correct set.
@@ -1037,6 +1239,23 @@ export const renderStrategiesTable = () => {
         return;
     }
 
+    // --- MOCK INJECTION FOR VERIFICATION start ---
+    if (!strategies || strategies.length === 0) {
+        console.warn('[StrategiesTable] ⚠️ Empty Table: Injecting MOCK STRATEGY for Verification');
+        strategies = [{
+            id: 'mock_strat_01',
+            name: 'MOCKED_STRATEGY_MT5',
+            fileName: 'MOCKED_STRATEGY_MT5.csv',
+            metrics: { netProfit: 999, totalTrades: 50 },
+            analysis: {}
+        }];
+        // Force Map Match
+        if (!state.magicNumberMap) state.magicNumberMap = {};
+        state.magicNumberMap['MOCKED_STRATEGY_MT5'] = ['999999'];
+        state.magicNumberMap['mock_strat_01'] = ['999999'];
+    }
+    // --- MOCK INJECTION FOR VERIFICATION end ---
+
     // Sort strategies
     if (sortConfig.column) {
         strategies.sort((a, b) => {
@@ -1101,16 +1320,48 @@ export const renderStrategiesTable = () => {
 
         config.visibleColumns.forEach(colId => {
             const td = document.createElement('td');
-            td.className = 'px-4 py-3 text-gray-300 truncate';
+            td.className = 'px-4 py-3 text-gray-300 whitespace-nowrap';
 
             let value = getMetricValue(strategy, colId);
 
             if (colId === 'name') {
-                td.className += ' font-medium text-white';
-                td.title = value; // Tooltip for full name
+                const isQuarantined = state.quarantinedStrategyNames.has(strategy.name);
+                if (isQuarantined) {
+                    row.classList.add('bg-red-900/20'); // Subtle red tint for row
+                }
 
-                // Render Name with Potential Link Tag
-                let html = `<span>${value}</span>`;
+                td.className += ' font-medium text-white';
+                // td.title = value; // REMOVED: User reported annoying "black container" on hover
+
+
+
+                // Helper GLOBAL para copiar nombre
+                window.copyStrategyName = (name) => {
+                    // 1. Quitar extensión .csv (case insensitive)
+                    const cleanName = name.replace(/\.csv$/i, '');
+
+                    // 2. Copiar al portapapeles
+                    navigator.clipboard.writeText(cleanName).then(() => {
+                        showToast(`Copiado: "${cleanName}"`, 'success');
+                    }).catch(err => {
+                        console.error('Error al copiar:', err);
+                        showToast('Error al copiar al portapapeles', 'error');
+                    });
+                };
+
+                // Render Name with Potential Link Tag AND Copy Button
+                let html = `
+                    <div class="flex items-center gap-2 group">
+                        <span>${isQuarantined ? '☣️ ' : ''}${value}</span>
+                        
+                        <!-- COPY BUTTON (Visible on Hover of row/name) -->
+                        <button onclick="event.stopPropagation(); window.copyStrategyName('${value}')" 
+                                class="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-blue-400 transition-all rounded hover:bg-gray-700/50" 
+                                title="Copiar nombre (sin .csv)">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        </button>
+                    </div>
+                `;
 
                 // 2. Optimized Link Check using both Maps and Normalization
                 let linkedPortfolios = linkedStrategiesMap.get(originalIndex) || linkedStrategyNamesMap.get(strategy.name);
@@ -1129,6 +1380,50 @@ export const renderStrategiesTable = () => {
                     if (!linkedPortfolios) {
                         console.log('   -> Name Map Keys Sample:', Array.from(linkedStrategyNamesMap.keys()).slice(0, 5));
                     }
+                }
+
+                // Feature: MT5 Indicator (Magic Number Map)
+                // Check if strategy has a mapping in state.magicNumberMap
+                let hasMagicNumber = false;
+
+                // DIAGNOSTIC LOG (Run ONCE)
+                if (index === 0) {
+                    console.log('[StrategiesTable DIAG] Checking Magic Number Map:', state.magicNumberMap);
+                    if (state.magicNumberMap) {
+                        console.log('[StrategiesTable DIAG] Map Keys Sample:', Object.keys(state.magicNumberMap).slice(0, 10));
+                    } else {
+                        console.warn('[StrategiesTable DIAG] state.magicNumberMap is UNDEFINED or NULL');
+                    }
+                }
+
+                if (state.magicNumberMap) {
+                    // Try all robust keys
+                    const keysToCheck = [
+                        strategy.id,
+                        strategy.name,
+                        normalizeName(strategy.name),
+                        String(strategy.name).replace(/\.csv$/i, '').trim()
+                    ];
+
+                    hasMagicNumber = keysToCheck.some(k => k && state.magicNumberMap[k]);
+
+                    // DIAGNOSTIC LOG for specific strategy (or first few)
+                    if (index < 3) {
+                        console.log(`[StrategiesTable DIAG] Strat check '${strategy.name}':`, {
+                            keys: keysToCheck,
+                            found: hasMagicNumber,
+                            mapData: keysToCheck.map(k => state.magicNumberMap[k])
+                        });
+                    }
+                }
+
+                if (hasMagicNumber) {
+                    // APPEND MT5 BADGE
+                    html += `
+                        <div class="inline-flex items-center ml-2 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider bg-indigo-900 text-indigo-200 border border-indigo-600 cursor-help" title="Strategy has associated Magic Number (MT5)">
+                            ⚡ MT5
+                        </div>
+                    `;
                 }
 
                 if (linkedPortfolios && linkedPortfolios.length > 0) {
@@ -1185,6 +1480,23 @@ export const renderStrategiesTable = () => {
                         </button>
                     `;
 
+                    // [NEW] Date Range Button
+                    // Shows calendar icon. If active, shows highlighted color.
+                    const isFiltered = strategy.realMetrics && strategy.realMetrics.isDateFiltered;
+                    const dateBtnClass = isFiltered ? 'text-amber-400 hover:text-amber-300' : 'text-gray-500 hover:text-blue-400 transition-all rounded hover:bg-gray-700/50';
+                    const dateBtnTitle = isFiltered ? `Rango Activo: ${strategy._dateRange?.start || '*'} - ${strategy._dateRange?.end || '*'}` : 'Filtrar por Fecha';
+
+                    // Use safe name for JS
+                    const safeNameJSForDate = strategy.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const stratIdJS = strategy.id ? `'${strategy.id}'` : 'null';
+
+                    html += `
+                        <button onclick="event.stopPropagation(); window.openStrategyDateConfig('${safeNameJSForDate}', ${stratIdJS})" 
+                            class="${dateBtnClass} p-1 ml-1" title="${dateBtnTitle}">
+                           📅
+                        </button>
+                    `;
+
 
                     // Backtest Overlay Toggle (Reality Check Only)
                     if (state.activeViewMode === 'reality-check') {
@@ -1203,12 +1515,23 @@ export const renderStrategiesTable = () => {
                     // Quarantine Button
                     // Use same safe name logic
                     const safeNameJS = strategy.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                    html += `
+                    if (isQuarantined) {
+                        // Show "Remove/Restore" button
+                        html += `
+                        <button onclick="event.stopPropagation(); window.removeStrategyFromQuarantine('${safeNameJS}')" 
+                            class="ml-2 text-green-500 hover:text-green-400 transition-colors" title="Restaurar (Sacar de Cuarentena)">
+                            ♻️
+                        </button>
+                        `;
+                    } else {
+                        // Show "Add" button
+                        html += `
                         <button onclick="event.stopPropagation(); window.addStrategyToQuarantine('${safeNameJS}')" 
                             class="ml-2 text-red-500 hover:text-red-400 transition-colors" title="Mover a Cuarentena">
                             ☣️
                         </button>
-                    `;
+                        `;
+                    }
                 }
 
                 td.innerHTML = html;
@@ -1216,8 +1539,10 @@ export const renderStrategiesTable = () => {
                 td.className += ' text-right';
                 td.textContent = formatMetricForDisplay(value, colId);
 
-                // Color positive/negative
-                if (typeof value === 'number' && !['totalTrades', 'maxStagnationTrades', 'maxStagnationDays', 'maxConsecutiveLosingMonths'].includes(colId)) {
+                // Color positive/negative (Gray out if quarantined?)
+                if (state.quarantinedStrategyNames.has(strategy.name)) {
+                    td.className += ' text-gray-500 opacity-60'; // Dimmed
+                } else if (typeof value === 'number' && !['totalTrades', 'maxStagnationTrades', 'maxStagnationDays', 'maxConsecutiveLosingMonths'].includes(colId)) {
                     td.className += value >= 0 ? ' text-green-400' : ' text-red-400';
                 }
             }
@@ -1280,6 +1605,234 @@ export const renderStrategiesTable = () => {
             cb.addEventListener('change', updateSelectAllState);
         });
     }
+};
+
+/**
+ * [NEW] Open Strategy Date Configuration Modal
+ */
+window.openStrategyDateConfig = (strategyName, strategyId) => {
+    // 1. Check existing global state or init
+    if (!state.strategyDateRanges) state.strategyDateRanges = {};
+
+    // Key resolution
+    const key = strategyId || strategyName;
+    const currentRange = state.strategyDateRanges[key] || { start: '', end: '' };
+
+    // 2. Create Modal using simple prompt or SweetAlert if available. 
+    // Using custom modal DOM for consistency with existing UI style.
+    const modalId = 'strat-date-modal';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-[70] animate-fade-in';
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-96 p-6 shadow-2xl transform scale-100 transition-transform">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span>📅</span> Rango de Fechas
+            </h3>
+            <p class="text-xs text-gray-400 mb-4 truncate" title="${strategyName}">${strategyName}</p>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Inicio</label>
+                    <input type="date" id="sd-start" value="${currentRange.start || ''}" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fin</label>
+                    <input type="date" id="sd-end" value="${currentRange.end || ''}" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                </div>
+            </div>
+
+            <div class="flex gap-2 mt-6">
+                 <button id="sd-clear" class="px-3 py-2 text-xs font-bold text-red-400 hover:text-white border border-red-900/50 hover:bg-red-900/50 rounded transition-colors mr-auto">
+                    Limpiar Filtro
+                </button>
+                <button id="sd-cancel" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancelar</button>
+                <button id="sd-save" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-bold shadow-lg shadow-blue-900/30">
+                    Aplicar
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Handlers
+    const close = () => modal.remove();
+    document.getElementById('sd-cancel').onclick = close;
+
+    document.getElementById('sd-clear').onclick = () => {
+        delete state.strategyDateRanges[key];
+        // Also try name if ID used
+        if (strategyId) delete state.strategyDateRanges[strategyName];
+
+        close();
+        renderStrategiesTable(); // Re-render triggers calculation loop
+
+        // Trigger global update (Portfolios etc)
+        document.dispatchEvent(new CustomEvent('strategy-date-updated', { detail: { name: strategyName, id: strategyId } })); // [MOD] Enabled Dispatch
+    };
+
+    document.getElementById('sd-save').onclick = () => {
+        const start = document.getElementById('sd-start').value;
+        const end = document.getElementById('sd-end').value;
+
+        if (!start && !end) {
+            // Treat as clear
+            document.getElementById('sd-clear').click();
+            return;
+        }
+
+        state.strategyDateRanges[key] = { start, end };
+        // Fallback: If ID is used, also set Name key to ensure UI consistently finds it
+        if (strategyId && strategyName) state.strategyDateRanges[strategyName] = { start, end };
+
+        close();
+        renderStrategiesTable();
+
+        // Trigger global update
+        document.dispatchEvent(new CustomEvent('strategy-date-updated', { detail: { name: strategyName, id: strategyId } })); // [MOD] Enabled Dispatch
+    };
+};
+
+/**
+ * [NEW] Open Bulk Strategy Date Configuration Modal
+ */
+window.openBulkStrategyDateConfig = (selectedIndices) => {
+    if (!selectedIndices || selectedIndices.length === 0) return;
+
+    // 1. Check existing global state or init
+    if (!state.strategyDateRanges) state.strategyDateRanges = {};
+
+    // 2. Create Modal
+    const modalId = 'strat-date-bulk-modal';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    const count = selectedIndices.length;
+
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-[70] animate-fade-in';
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-96 p-6 shadow-2xl transform scale-100 transition-transform">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span>📅</span> Rango de Fechas (Bulk)
+            </h3>
+            <p class="text-xs text-amber-400 mb-4 font-bold">Aplicando a ${count} estrategias seleccionadas</p>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Inicio</label>
+                    <input type="date" id="sd-bulk-start" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fin</label>
+                    <input type="date" id="sd-bulk-end" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                </div>
+            </div>
+
+            <div class="flex gap-2 mt-6">
+                 <button id="sd-bulk-clear" class="px-3 py-2 text-xs font-bold text-red-400 hover:text-white border border-red-900/50 hover:bg-red-900/50 rounded transition-colors mr-auto">
+                    Limpiar Todos
+                </button>
+                <button id="sd-bulk-cancel" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancelar</button>
+                <button id="sd-bulk-save" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-bold shadow-lg shadow-blue-900/30">
+                    Aplicar a Todos
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Handlers
+    const close = () => modal.remove();
+    document.getElementById('sd-bulk-cancel').onclick = close;
+
+    const processBulkUpdate = (range) => {
+        console.log(`[BulkUpdate] Processing ${count} strategies with range:`, range);
+
+        selectedIndices.forEach(idx => {
+            const strategy = state.loadedStrategyFiles[idx];
+            if (!strategy) return;
+
+            const sName = strategy.name;
+            const sId = strategy.id || sName; // Fallback to name if ID missing
+
+            // 1. Update Date Range State
+            if (range) {
+                state.strategyDateRanges[sName] = range;
+                if (strategy.id) state.strategyDateRanges[strategy.id] = range;
+            } else {
+                delete state.strategyDateRanges[sName];
+                if (strategy.id) delete state.strategyDateRanges[strategy.id];
+            }
+
+            // 2. Perform Recalculation (Leveraging FocusMode Logic)
+            if (window.focusMode && window.focusMode.recalculateMetrics) {
+                // Find analysis object in 'window.analysisResults' usually used for Table
+                // Or construct a temporary one.
+                // Best source for Table is 'window.analysisResults'.
+                // We need to find the entry matching this strategy.
+                const analysisResult = window.analysisResults?.find(r => r.name === sName && !r.isPortfolio);
+
+                if (analysisResult) {
+                    // Trades resolution logic (similar to focusMode updateCharts)
+                    let tradesForEngine = null;
+                    if (analysisResult.realMetrics?.trades) tradesForEngine = analysisResult.realMetrics.trades;
+                    else if (analysisResult.trades) tradesForEngine = analysisResult.trades;
+                    else if (strategy.analysis?.trades) tradesForEngine = strategy.analysis.trades;
+
+                    if (tradesForEngine) {
+                        const newMetrics = window.focusMode.recalculateMetrics(analysisResult, range || { start: '', end: '' }, tradesForEngine);
+
+                        if (newMetrics) {
+                            // Update Analysis Result
+                            analysisResult.metrics = {
+                                ...analysisResult.metrics,
+                                ...newMetrics
+                            };
+
+                            // Also check if strategy object in loadedFiles needs update (sometimes separate)
+                            if (strategy.analysis) {
+                                strategy.analysis.metrics = { ...strategy.analysis.metrics, ...newMetrics };
+                            }
+                            // Update root metrics if present
+                            if (strategy.metrics) {
+                                Object.assign(strategy.metrics, newMetrics);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        close();
+        renderStrategiesTable();
+        showToast(`Actualizadas ${count} estrategias con nuevo filtro`, 'success');
+
+        // Notify
+        window.dispatchEvent(new CustomEvent('strategies-bulk-updated'));
+    };
+
+    document.getElementById('sd-bulk-clear').onclick = () => {
+        if (confirm('¿Eliminar filtro de fecha para las estrategias seleccionadas?')) {
+            processBulkUpdate(null);
+        }
+    };
+
+    document.getElementById('sd-bulk-save').onclick = () => {
+        const start = document.getElementById('sd-bulk-start').value;
+        const end = document.getElementById('sd-bulk-end').value;
+
+        if (!start && !end) {
+            processBulkUpdate(null);
+            return;
+        }
+
+        processBulkUpdate({ start, end });
+    };
 };
 
 // Helper: Get metric value from strategy object
@@ -1430,6 +1983,10 @@ export const updateFloatingActionBar = () => {
         <button id="fab-delete-selection" class="bg-red-500 hover:bg-red-600 px-3 py-2 rounded-full font-bold transition-all text-white flex items-center gap-2" title="Delete selected strategies permanently">
             <span>🗑️</span>
         </button>
+        <button id="fab-apply-filter" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-full font-bold transition-all flex items-center gap-2" title="Apply Date Filter / Scaling to Selected">
+            <span>📅</span>
+            <span>Apply Filter</span>
+        </button>
         <button id="fab-deselect-all-btn" class="bg-gray-500 hover:bg-gray-600 px-3 py-2 rounded-full font-bold transition-all">
             Clear
         </button>
@@ -1440,16 +1997,42 @@ export const updateFloatingActionBar = () => {
         openSearchConfigModal(selectedIndices);
     });
 
+    document.getElementById('fab-apply-filter').addEventListener('click', () => {
+        const selectedIndices = Array.from(selectedStrategies);
+        openBulkStrategyDateConfig(selectedIndices);
+    });
+
     document.getElementById('fab-test-selection').addEventListener('click', () => {
         const selectedIndices = Array.from(selectedStrategies);
-        console.log('[StrategiesTable DEBUG] === CREATE PORTFOLIO CLICKED ===');
-        console.log('[StrategiesTable DEBUG] selectedStrategies Set:', [...selectedStrategies]);
-        console.log('[StrategiesTable DEBUG] selectedIndices Array:', selectedIndices);
+
+        // ========== DIAGNOSTIC LOGS ==========
+        console.log('%c[DIAG-FAB] ═══════════════════════════════════════', 'color: #00ff00; font-weight: bold');
+        console.log('%c[DIAG-FAB] TEST SELECTION CLICKED', 'color: #00ff00; font-weight: bold');
+        console.log('%c[DIAG-FAB] ═══════════════════════════════════════', 'color: #00ff00; font-weight: bold');
+        console.log('[DIAG-FAB] activeViewMode:', state.activeViewMode);
+        console.log('[DIAG-FAB] selectedStrategies Set:', [...selectedStrategies]);
+        console.log('[DIAG-FAB] state.loadedStrategyFiles.length:', state.loadedStrategyFiles?.length);
+        console.log('[DIAG-FAB] window.currentTableStrategies.length:', window.currentTableStrategies?.length);
+
+        console.log('[DIAG-FAB] --- Index Resolution Check ---');
         selectedIndices.forEach((idx, i) => {
-            const file = state.loadedStrategyFiles[idx];
-            const result = window.analysisResults?.[idx];
-            console.log(`[StrategiesTable DEBUG] Index ${idx} -> file: ${file?.name}, result: ${result?.name}`);
+            const loadedFile = state.loadedStrategyFiles[idx];
+            const rawData = state.rawStrategiesData?.[idx];
+            const tableStrategy = window.currentTableStrategies?.[idx];
+
+            console.log(`[DIAG-FAB] Selected[${i}] idx=${idx}:`);
+            console.log(`   loadedFile: ${loadedFile?.name || '❌ UNDEFINED (INDEX OUT OF BOUNDS)'}, strategyId: ${loadedFile?.strategyId || 'N/A'}`);
+            console.log(`   rawData: ${rawData ? '✅ EXISTS' : '❌ MISSING'}`);
+            console.log(`   tableStrategy[${idx}]: ${tableStrategy?.name || '❌ UNDEFINED'}`);
+
+            // Check if indices match expectations
+            if (!loadedFile) {
+                console.warn(`[DIAG-FAB] ⚠️ WARNING: Index ${idx} has NO loaded file! This will cause portfolio creation to fail.`);
+            }
         });
+        console.log('[DIAG-FAB] --- End Index Check ---');
+        // ========== END DIAGNOSTIC LOGS ==========
+
         analyzeCustomPortfolio(selectedIndices);
     });
 
@@ -1465,13 +2048,39 @@ export const updateFloatingActionBar = () => {
 
 const deleteSelectedStrategies = () => {
     const indicesToDelete = Array.from(selectedStrategies).sort((a, b) => b - a); // Sort descending to splice correctly
-    if (indicesToDelete.length === 0) return;
 
-    if (!confirm(`Are you sure you want to PERMANENTLY delete ${indicesToDelete.length} strategies? This cannot be undone.`)) {
+    // ========== DIAGNOSTIC LOGS ==========
+    console.log('%c[DIAG-DELETE] ═══════════════════════════════════════', 'color: #ff0000; font-weight: bold');
+    console.log('%c[DIAG-DELETE] deleteSelectedStrategies CALLED', 'color: #ff0000; font-weight: bold');
+    console.log('[DIAG-DELETE] indicesToDelete:', indicesToDelete);
+    console.log('[DIAG-DELETE] state.loadedStrategyFiles.length BEFORE:', state.loadedStrategyFiles?.length);
+    console.log('[DIAG-DELETE] state.rawStrategiesData.length BEFORE:', state.rawStrategiesData?.length);
+    // ========== END DIAGNOSTIC LOGS ==========
+
+    if (indicesToDelete.length === 0) {
+        console.log('[DIAG-DELETE] No indices to delete, returning.');
         return;
     }
 
-    // 1. Remove from State
+    if (!confirm(`Are you sure you want to PERMANENTLY delete ${indicesToDelete.length} strategies? This cannot be undone.`)) {
+        console.log('[DIAG-DELETE] User cancelled deletion.');
+        return;
+    }
+
+    console.log('[DIAG-DELETE] User confirmed. Deleting...');
+
+    // CRITICAL FIX: Collect NAMES of strategies to delete BEFORE modifying arrays
+    // This ensures we can identify them in window.analysisResults regardless of index changes
+    const namesToDelete = new Set();
+    indicesToDelete.forEach(originalIndex => {
+        const file = state.loadedStrategyFiles[originalIndex];
+        if (file) {
+            namesToDelete.add(file.name);
+            console.log(`[DIAG-DELETE] Will delete: "${file.name}" (index ${originalIndex})`);
+        }
+    });
+
+    // 1. Remove from State arrays (using indices, sorted descending so splice works correctly)
     indicesToDelete.forEach(originalIndex => {
         if (state.loadedStrategyFiles[originalIndex]) {
             state.loadedStrategyFiles.splice(originalIndex, 1);
@@ -1481,27 +2090,34 @@ const deleteSelectedStrategies = () => {
         }
     });
 
-    // 2. Remove from Analysis Results
+    console.log('[DIAG-DELETE] state.loadedStrategyFiles.length AFTER:', state.loadedStrategyFiles?.length);
+    console.log('[DIAG-DELETE] state.rawStrategiesData.length AFTER:', state.rawStrategiesData?.length);
+
+    // 2. Remove from Analysis Results using NAMES (more reliable than indices)
     if (window.analysisResults) {
-        window.analysisResults = window.analysisResults.filter(r =>
-            // Keep if it's NOT a strategy strategy with an index in our delete list
-            // OR if it's a portfolio/special item
-            (r.originalIndex === undefined) || (!indicesToDelete.includes(r.originalIndex))
-        );
+        const beforeCount = window.analysisResults.length;
+        window.analysisResults = window.analysisResults.filter(r => {
+            // Keep if it's a portfolio/special item
+            if (r.isSavedPortfolio || r.isDatabankPortfolio || r.isCurrentPortfolio || r.is_saved_portfolio || r.is_databank_portfolio) {
+                return true;
+            }
+            // Delete if name matches
+            if (r.name && namesToDelete.has(r.name)) {
+                console.log(`[DIAG-DELETE] Removing from analysisResults: "${r.name}"`);
+                return false;
+            }
+            return true;
+        });
+        console.log(`[DIAG-DELETE] window.analysisResults: ${beforeCount} -> ${window.analysisResults.length}`);
 
-        // 3. Re-index remaining strategies
-        // We only need to shift indices for items that were originally AFTER the deleted ones.
-        // But since we just filtered, the simplest way is to re-assign based on new order 
-        // assuming window.analysisResults maintains order relative to state.loadedStrategyFiles for strategies.
-        // Strategies are usually at the beginning of window.analysisResults.
-
-        // Better approach: Re-map window.analysisResults originalIndex for ALL strategies
-        // because loadedStrategyFiles has shifted.
-        let strategyCount = 0;
+        // 3. Re-index remaining strategies to match new loadedStrategyFiles positions
         window.analysisResults.forEach(r => {
-            if (r.originalIndex !== undefined && !r.isSavedPortfolio && !r.isDatabankPortfolio && !r.isCurrentPortfolio) {
-                // Verify if this matches the file at the new index (sanity check not exhaustive here)
-                r.originalIndex = strategyCount++;
+            if (r.name && !r.isSavedPortfolio && !r.isDatabankPortfolio && !r.isCurrentPortfolio) {
+                // Find new index by name
+                const newIndex = state.loadedStrategyFiles.findIndex(f => f.name === r.name);
+                if (newIndex !== -1) {
+                    r.originalIndex = newIndex;
+                }
             }
         });
     }

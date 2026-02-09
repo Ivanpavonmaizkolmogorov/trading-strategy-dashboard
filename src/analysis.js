@@ -329,8 +329,7 @@ export const reAnalyzeAllData = async () => {
                         // Opcional: store metric/target if needed for UI restore
                     } else {
                         // Si no devuelve riskPerStrategy (ej. normalización desactivada), limpiarlo si existía
-                        console.warn('[Analysis] WARNING: Deleting riskPerStrategy for portfolio', result.saved_index);
-                        // delete portfolioInState.riskPerStrategy; // DISABLED DEBUG
+                        // This is expected behavior when risk normalization is not active
                         if (portfolioInState.riskConfig) portfolioInState.riskConfig.isScaled = false;
                     }
                 }

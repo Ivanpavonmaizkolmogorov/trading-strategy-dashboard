@@ -57,8 +57,9 @@ const initSidebar = () => {
 
 const switchView = (viewName) => {
     if (viewName === 'dashboard') {
-        // Hide Monitor
+        // Hide Monitor & Engines
         if (dom.liveMonitorView) dom.liveMonitorView.classList.add('hidden');
+        document.getElementById('engines-view')?.classList.add('hidden');
 
         // Show Sidebar Highlight
         if (dom.navMonitor) dom.navMonitor.classList.remove('active', 'text-white', 'bg-gray-700');
@@ -68,8 +69,9 @@ const switchView = (viewName) => {
         if (dom.navAnalysis) dom.navAnalysis.classList.remove('text-gray-400');
 
     } else if (viewName === 'monitor') {
-        // Show Monitor
+        // Show Monitor, Hide Engines
         if (dom.liveMonitorView) dom.liveMonitorView.classList.remove('hidden');
+        document.getElementById('engines-view')?.classList.add('hidden');
 
         // Sidebar Highlight
         if (dom.navAnalysis) dom.navAnalysis.classList.remove('active', 'text-white', 'bg-gray-700');
@@ -541,6 +543,7 @@ const initPanelResizer = () => {
         if (newHeight > containerHeight - 100) newHeight = containerHeight - 100; // Max height
 
         sourcePanel.style.height = `${newHeight}px`;
+        updateResetButtonState(newHeight); // [NEW] Update button state
     });
 
     document.addEventListener('mouseup', () => {
@@ -555,7 +558,24 @@ const initPanelResizer = () => {
     // --- Resize Control Buttons ---
     const maxChartBtn = document.getElementById('resize-max-chart');
     const resetBtn = document.getElementById('resize-reset');
+    const resetToolbarBtn = document.getElementById('resize-reset-toolbar'); // [NEW] Duplicate button
     const maxBottomBtn = document.getElementById('resize-max-bottom');
+
+    // [NEW] Helper to toggle Red/Pulse on Reset Button when hidden
+    const updateResetButtonState = (heightPx) => {
+        if (!resetToolbarBtn) return;
+        // Parse if string "300px"
+        let h = parseInt(heightPx);
+        if (isNaN(h)) h = sourcePanel.clientHeight;
+
+        if (h < 60) { // Threshold for "minimized" (usually 44px or 4px)
+            resetToolbarBtn.classList.remove('bg-gray-700', 'hover:bg-gray-600');
+            resetToolbarBtn.classList.add('bg-red-600', 'hover:bg-red-500', 'text-white', 'animate-pulse');
+        } else {
+            resetToolbarBtn.classList.remove('bg-red-600', 'hover:bg-red-500', 'text-white', 'animate-pulse');
+            resetToolbarBtn.classList.add('bg-gray-700', 'hover:bg-gray-600');
+        }
+    };
 
     // Helper to trigger window resize for Chart.js update
     const triggerResize = () => {
@@ -571,20 +591,31 @@ const initPanelResizer = () => {
             // Maximize Bottom Panel (User Requested Swap)
             const containerHeight = document.querySelector('main').clientHeight;
             // Leave 44px (raised 4 more points as requested)
-            sourcePanel.style.height = `${containerHeight - 44}px`;
+            const newH = containerHeight - 44;
+            sourcePanel.style.height = `${newH}px`;
+            updateResetButtonState(newH);
 
             triggerResize();
         });
     }
 
+    // Logic to reset view (shared)
+    const handleResetView = (e) => {
+        e.stopPropagation();
+        // Reset to default (approx 40% or 320px)
+        sourcePanel.style.height = '320px';
+        updateResetButtonState(320);
+        triggerResize();
+    };
+
     if (resetBtn) {
         resetBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-        resetBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            // Reset to default (approx 40% or 320px)
-            sourcePanel.style.height = '320px';
-            triggerResize();
-        });
+        resetBtn.addEventListener('click', handleResetView);
+    }
+
+    // [NEW] Toolbar Button Listener
+    if (resetToolbarBtn) {
+        resetToolbarBtn.addEventListener('click', handleResetView);
     }
 
     if (maxBottomBtn) {
@@ -595,8 +626,111 @@ const initPanelResizer = () => {
             // Maximize Chart / Minimize Bottom Panel (User Requested Swap)
             // Leave 4px visible (a couple points higher than 0)
             sourcePanel.style.height = '4px';
+            updateResetButtonState(4);
 
             triggerResize();
         });
     }
+
+    // Init Floating Scrollbar
+    initializeFloatingScrollbar();
+
+    // Init State
+    updateResetButtonState(sourcePanel.clientHeight);
 };
+
+/**
+ * Initializes the Global Floating Scrollbar logic.
+ * Syncs the fixed bottom scrollbar with the currently active table container.
+ */
+function initializeFloatingScrollbar() {
+    const floatingScrollbar = document.getElementById('global-floating-scrollbar');
+    const floatingContent = document.getElementById('global-floating-content');
+    if (!floatingScrollbar || !floatingContent) return;
+
+    let activeSyncContainer = null;
+    let isSyncing = false;
+
+    // 1. Function to find the active scrollable container
+    const findActiveContainer = () => {
+        // Look for the visible tab content
+        const visibleTab = document.querySelector('.tab-content:not(.hidden)');
+        if (!visibleTab) return null;
+
+        // Find the scrollable div inside (our table wrappers have overflow-x-scroll)
+        // We know they have class 'custom-scrollbar'
+        const container = visibleTab.querySelector('.overflow-x-scroll');
+        return container;
+    };
+
+    // 2. Update Layout based on active container
+    const updateScrollbarState = () => {
+        const container = findActiveContainer();
+        activeSyncContainer = container;
+
+        if (container && container.scrollWidth > container.clientWidth) {
+            // Content overflows -> Show scrollbar
+            floatingScrollbar.classList.remove('hidden');
+            floatingContent.style.width = `${container.scrollWidth}px`;
+            floatingScrollbar.scrollLeft = container.scrollLeft;
+        } else {
+            // No overflow or no container -> Hide
+            // floatingScrollbar.classList.add('hidden'); // Optional: hide if not needed
+            // User requested "Flexible always visible", implies if table is present.
+            // But if table fits, scrollbar is useless.
+            // Let's keep it hidden if no overflow, OR show disabled?
+            // User said "siempre visible". Let's show it but it might be empty.
+            // Actually, if scrollWidth <= clientWidth, scrollbar track is empty.
+            if (container) {
+                floatingScrollbar.classList.remove('hidden');
+                floatingContent.style.width = `${container.scrollWidth}px`;
+            } else {
+                floatingScrollbar.classList.add('hidden');
+            }
+        }
+    };
+
+    // 3. Sync Logic
+    floatingScrollbar.addEventListener('scroll', () => {
+        if (!activeSyncContainer || isSyncing) return;
+        isSyncing = true;
+        activeSyncContainer.scrollLeft = floatingScrollbar.scrollLeft;
+        requestAnimationFrame(() => isSyncing = false);
+    });
+
+    // We need to attach listeners to the containers themselves
+    // Since containers might change or be hidden, we use a MutationObserver or global delegation?
+    // Delegation doesn't work for 'scroll' (doesn't bubble).
+    // We'll attach to known containers on init and whenever tabs change.
+
+    // A. Attach to all potential containers now
+    const potentialContainers = document.querySelectorAll('.overflow-x-scroll');
+    potentialContainers.forEach(el => {
+        el.addEventListener('scroll', () => {
+            if (el !== activeSyncContainer || isSyncing) return;
+            isSyncing = true;
+            floatingScrollbar.scrollLeft = el.scrollLeft;
+            requestAnimationFrame(() => isSyncing = false);
+        });
+    });
+
+    // B. Observer for Tab Switching / content resizing
+    const observer = new MutationObserver(() => {
+        updateScrollbarState();
+    });
+
+    // Oberve the Tab Area (parent of tab-contents)
+    const sourcePanel = document.getElementById('source-panel');
+    if (sourcePanel) {
+        observer.observe(sourcePanel, { attributes: true, subtree: true, attributeFilter: ['class', 'style'] });
+    }
+
+    // Also listen to window resize
+    window.addEventListener('resize', updateScrollbarState);
+
+    // Check periodically (failsafe for dynamic content load)
+    setInterval(updateScrollbarState, 500);
+
+    // Initial check
+    updateScrollbarState();
+}

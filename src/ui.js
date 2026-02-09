@@ -690,6 +690,12 @@ export const renderLorenzChart = (canvasId, analysis, color) => {
  * Muestra la lista de portafolios guardados.
  */
 export const getRealTradesByName = (stratName) => {
+    // ========== DIAGNOSTIC LOGS ==========
+    console.log('%c[DIAG-REALDATA] ═══════════════════════════════════════', 'color: #00ffff; font-weight: bold');
+    console.log('%c[DIAG-REALDATA] getRealTradesByName CALLED', 'color: #00ffff; font-weight: bold');
+    console.log('[DIAG-REALDATA] Input stratName:', stratName);
+    // ========== END DIAGNOSTIC LOGS ==========
+
     if (!stratName) return [];
 
     // Normalization Helpers
@@ -701,6 +707,8 @@ export const getRealTradesByName = (stratName) => {
     const normalizedName = normalize(stratName);
     const cleanName = strictNormalize(stratName);
     const fuzzyName = stripImproved(cleanName);
+
+    console.log('[DIAG-REALDATA] Name variations:', { normalizedName, cleanName, fuzzyName });
 
     // Resolve ID & Robust File Map Key
     let strategyId = stratName;
@@ -719,6 +727,9 @@ export const getRealTradesByName = (stratName) => {
     if (file) {
         if (file.strategyId) strategyId = file.strategyId;
         resolvedFileName = file.name;
+        console.log('[DIAG-REALDATA] ✅ File found:', { strategyId, resolvedFileName });
+    } else {
+        console.log('[DIAG-REALDATA] ⚠️ No file match in loadedStrategyFiles');
     }
 
     // Lookups
@@ -733,12 +744,26 @@ export const getRealTradesByName = (stratName) => {
     // New Fuzzy Map Check
     const mapByFuzzy = state.magicNumberMap[fuzzyName]; // Check base name in map
 
+    console.log('[DIAG-REALDATA] Magic lookups:', {
+        'byId': mapById ? '✅' : '❌',
+        'byResolvedFile': mapByResolvedFile ? '✅' : '❌',
+        'byNormName': mapByNormName ? '✅' : '❌',
+        'byName': mapByName ? '✅' : '❌',
+        'byCleanName': mapByCleanName ? '✅' : '❌',
+        'byFuzzy': mapByFuzzy ? '✅' : '❌'
+    });
+
     let magicRaw = mapById || mapByResolvedFile || mapByNormName || mapByName || mapByCleanName || mapByFuzzy;
 
     // DEBUG: If we found via fuzzy, log it
     // if (!mapById && !mapByName && mapByFuzzy) console.log(`[UI DEBUG] Fuzzy Match found for '${stratName}' -> '${fuzzyName}'`);
 
-    if (!magicRaw) return [];
+    if (!magicRaw) {
+        console.log('[DIAG-REALDATA] ❌ No magic number found. Available map keys (first 10):', Object.keys(state.magicNumberMap).slice(0, 10));
+        return [];
+    }
+
+    console.log('[DIAG-REALDATA] ✅ Magic raw value:', magicRaw);
 
     let magics = [];
     if (Array.isArray(magicRaw)) magics = magicRaw;
@@ -783,7 +808,7 @@ export const getRealTradesByName = (stratName) => {
     // 3. FALLBACK: If no trades found via magicNumberMap, search deepScanData by comment/name
     // This mirrors the logic used in calculatePortfolioRealMetrics for aggregate lookups
     if (allRealTrades.length === 0 && state.deepScanData) {
-        console.log(`[getRealTradesByName] 🔄 Fallback: Searching deepScanData by comment/name for: ${stratName}`);
+        console.log(`[DIAG-REALDATA] 🔄 Fallback: Searching deepScanData by comment/name for: ${stratName}`);
 
         Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
             const tradesMap = accountData.tradesById || accountData._tradesById;
@@ -807,13 +832,14 @@ export const getRealTradesByName = (stratName) => {
                 });
 
                 if (matchingTrades.length > 0) {
-                    console.log(`[getRealTradesByName] ✅ Found ${matchingTrades.length} trades via comment match in account ${accountId}`);
+                    console.log(`[DIAG-REALDATA] ✅ Found ${matchingTrades.length} trades via comment match in account ${accountId}`);
                     allRealTrades = allRealTrades.concat(matchingTrades);
                 }
             });
         });
     }
 
+    console.log(`[DIAG-REALDATA] Final: Found ${allRealTrades.length} real trades for '${stratName}'`);
     return allRealTrades;
 };
 
@@ -877,6 +903,13 @@ const calculatePortfolioRealMetrics = (portfolio) => {
 
             if (!magicRaw) {
                 console.log(`[UI DEBUG] ❌ No Magic Map for '${stratName}'. Tried: ID=${strategyId}, File=${resolvedFileName}, Clean=${cleanName}`);
+                // Debug available keys to see why we missed it
+                const keys = Object.keys(state.magicNumberMap);
+                console.log(`   -> Total Map Keys: ${keys.length}. Sample:`, keys.slice(0, 10));
+                console.log(`   -> Check '[${stratName}]':`, state.magicNumberMap[stratName]);
+                console.log(`   -> Check '[${cleanName}]':`, state.magicNumberMap[cleanName]);
+                console.log(`   -> Check '[${normalizedStratName}]':`, state.magicNumberMap[normalizedStratName]);
+                if (strategyId) console.log(`   -> Check ID '[${strategyId}]':`, state.magicNumberMap[strategyId]);
             } else {
                 // console.log(`[UI DEBUG] ✅ Magic Map Found for '${stratName}':`, magicRaw);
             }
@@ -1200,7 +1233,7 @@ export const displaySavedPortfoliosList = () => {
             if (!colInfo) return;
 
             const td = document.createElement('td');
-            td.className = 'px-4 py-3 text-gray-300 truncate';
+            td.className = 'px-4 py-3 text-gray-300 whitespace-nowrap';
 
             if (key === 'name') {
                 // Name Column Structure
@@ -1890,6 +1923,19 @@ export const switchViewMode = (mode) => {
  * Renderiza los gráficos de comparación de portafolios.
  */
 export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
+    // ========== DIAGNOSTIC LOGS ==========
+    console.log('%c[DIAG-CHART] ═══════════════════════════════════════', 'color: #00ff00; font-weight: bold');
+    console.log('%c[DIAG-CHART] renderPortfolioComparisonCharts CALLED', 'color: #00ff00; font-weight: bold');
+    console.log('[DIAG-CHART] portfolioAnalyses.length:', portfolioAnalyses.length);
+    console.log('[DIAG-CHART] state.activeViewMode:', state.activeViewMode);
+    portfolioAnalyses.forEach((p, i) => {
+        console.log(`[DIAG-CHART] Item[${i}]: name="${p.name}", realMetrics=${!!p.realMetrics}, indices=${p.indices?.length || 0}`);
+        if (p.realMetrics) {
+            console.log(`[DIAG-CHART]   -> realMetrics.totalRealTrades=${p.realMetrics.totalRealTrades}, _tradesById keys=${Object.keys(p.realMetrics._tradesById || {}).length}`);
+        }
+    });
+    // ========== END DIAGNOSTIC LOGS ==========
+
     console.log('[ANTIGRAVITY] renderPortfolioComparisonCharts called with', portfolioAnalyses.length, 'items. Mode:', state.activeViewMode);
     const canvasId = 'portfolioEquityChart';
     destroyChart(canvasId);
@@ -1970,6 +2016,51 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
         // --- RISK NORMALIZATION SCALING ---
         let finalData = rawEquityCurve || [];
+
+        // [NEW] Apply Date Range Filter (Global / Strategy Specific)
+        if (state.strategyDateRanges) {
+            // Check By ID or Name
+            const sId = result.id || result.name;
+            let filter = state.strategyDateRanges[sId] || state.strategyDateRanges[result.name] || (result.name ? state.strategyDateRanges[result.name.replace(/\.csv$/i, '')] : null);
+
+            // Logic for Portfolios/Focus Mode Selections:
+            // If the item itself doesn't have a filter, check if ANY of its constituent strategies has one.
+            if (!filter && result.strategyNames && Array.isArray(result.strategyNames)) {
+                console.log(`[UI] 🔍 Validating Date Filter for Composite/Portfolio: ${result.name}`);
+                for (const stratName of result.strategyNames) {
+                    const stratFilter = state.strategyDateRanges[stratName] || state.strategyDateRanges[stratName.replace(/\.csv$/i, '')];
+                    if (stratFilter) {
+                        console.log(`[UI]    -> Inheriting filter from child strategy: ${stratName}`);
+                        filter = stratFilter;
+                        break; // Use the first valid filter found (assuming synced context or user focus)
+                    }
+                }
+            }
+
+            if (filter && (filter.start || filter.end)) {
+                console.log(`[UI] 📅 Applying Chart Filter for ${result.name}: ${filter.start} to ${filter.end}`);
+                console.log(`[UI]    - Original Points: ${finalData.length}`);
+
+                const startTs = filter.start ? new Date(filter.start).getTime() : -Infinity;
+                const endTs = filter.end ? new Date(filter.end).getTime() + 86399999 : Infinity; // End of day
+
+                finalData = finalData.filter(pt => {
+                    let t;
+                    if (typeof pt === 'object') {
+                        if ('x' in pt) t = pt.x;
+                        else if ('date' in pt) t = pt.date;
+                        else if (Array.isArray(pt)) t = pt[0];
+                    }
+                    // Handle string dates usually found in x
+                    if (typeof t === 'string' && isNaN(t)) t = new Date(t).getTime();
+
+                    return t >= startTs && t <= endTs;
+                });
+                console.log(`[UI]    - Filtered to ${finalData.length} points.`);
+            } else {
+                console.log(`[UI] 📅 No active filter found for ${result.name} (checked ${result.strategyNames?.length || 0} children)`);
+            }
+        }
 
         console.group(`[DEBUG CHART] Portfolio: ${result.name} (Idx: ${result.savedIndex})`);
         console.log(`- Raw Equity Points: ${finalData.length}`);

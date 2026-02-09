@@ -6,3 +6,5 @@ backend.log
 myfx_playground/myfx_auth/
 myfx_playground/debug_scraper.txt
 myfx_playground/debug_table_timeout_1.html
+myfx_playground/myfx_auth/
+__pycache__/

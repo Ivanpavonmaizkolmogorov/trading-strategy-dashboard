@@ -1,7 +1,7 @@
 // Myfxbook Account Management UI
 import { state } from '../state.js';
 import { dom } from '../dom.js';
-import { calculateSQMetrics } from './sqAnalysis_v2.js?v=11';
+import { calculateSQMetrics, filterTradesByDate } from './sqAnalysis_v2.js?v=11'; // [MOD] Import filterTradesByDate
 
 let currentCredentials = null;
 let myfxbookModal = null;
@@ -9,6 +9,28 @@ let pendingSync = false;
 
 export function initMyfxbookUI() {
     console.log('[Myfxbook UI] Initializing...');
+
+    // [NEW] Listen for Strategy Date Updates to Trigger Portfolio Recalc at UI level
+    document.addEventListener('strategy-date-updated', (e) => {
+        const { name } = e.detail;
+        console.log(`[Myfxbook UI] 📅 Strategy Date Updated: ${name}. Checking portfolios...`);
+
+        if (state.savedPortfolios) {
+            state.savedPortfolios.forEach(p => {
+                // Check if portfolio contains this strategy
+                // Robust check: Names, IDs, or Indices?
+                // Real portfolios use strategyNames most reliably for breakdown.
+                if (p.strategyNames && p.strategyNames.some(sn => sn === name || sn.replace(/\.csv$/i, '') === name.replace(/\.csv$/i, ''))) {
+                    console.log(`[Myfxbook UI] ⚡ Updating Portfolio Breakdown for: ${p.name}`);
+                    recalculateStrategyBreakdown(p);
+                }
+            });
+            // Refresh UI if list is visible
+            import('../ui.js').then(mod => {
+                if (document.getElementById('saved-portfolios-list')) mod.displaySavedPortfoliosList();
+            });
+        }
+    });
 }
 
 export function openMyfxbookModal() {
@@ -778,7 +800,13 @@ export function checkAndRenormalizeMetrics(portfolio) {
 
     if (hasDirtyKeys || missingRawData) {
         console.log('[Myfxbook] Detected dirty IDs or missing raw data. Forcing re-sync/normalization...');
-        fetchLinkedAccountData(portfolio);
+        if (state.myfxbookCredentials && state.myfxbookCredentials.email) {
+            fetchLinkedAccountData(portfolio);
+        } else {
+            console.log('[Myfxbook] Skipping auto-normalization (fetch) due to missing credentials.');
+            // Optionally recalculate breakdown anyway with what we have
+            recalculateStrategyBreakdown(portfolio);
+        }
     } else {
         // Force audit on load to notify user of any unmapped strategies
         recalculateStrategyBreakdown(portfolio);
@@ -897,7 +925,28 @@ export function recalculateStrategyBreakdown(portfolio) {
     let mappedCount = 0;
 
     targetNames.forEach(stratName => {
-        const trades = findTradesForStrategy(stratName);
+        let trades = findTradesForStrategy(stratName);
+
+        // [NEW] Apply Date Filter if present
+        if (state.strategyDateRanges) {
+            // Try explicit name, then ID if we could resolve it, but here we iterate names.
+            // Check Name and Clean Name
+            const clean = stratName.replace(/\.csv$/i, '');
+            let range = state.strategyDateRanges[stratName] || state.strategyDateRanges[clean];
+
+            // Try to resolve ID?
+            if (!range && state.loadedStrategyFiles) {
+                const f = state.loadedStrategyFiles.find(f => f.name === stratName);
+                if (f && f.strategyId && state.strategyDateRanges[f.strategyId]) {
+                    range = state.strategyDateRanges[f.strategyId];
+                }
+            }
+
+            if (range) {
+                // console.log(`[Myfxbook Breakdown] 📅 Filtering ${stratName} by ${range.start} - ${range.end}`);
+                trades = filterTradesByDate(trades, range.start, range.end);
+            }
+        }
 
         // Even if 0 trades, we want an entry if possible, but mainly if trades exist
         if (trades.length > 0) {

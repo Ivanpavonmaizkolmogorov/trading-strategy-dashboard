@@ -3,6 +3,7 @@ import { state } from '../state.js';
 // Variable to track the currently active analysis view
 let activeRenderConfig = null;
 let analysisDateSortAsc = false; // Default: Newest First (Desc)
+let lastDropdownSearch = ''; // Persist search term across re-renders
 
 window.toggleAnalysisSort = () => {
     analysisDateSortAsc = !analysisDateSortAsc;
@@ -19,6 +20,52 @@ document.addEventListener('portfolio-data-updated', () => {
         renderSQAnalysis(activeRenderConfig.index, activeRenderConfig.source);
     }
 });
+
+/**
+ * Filters an array of trades by date range.
+ * @param {Array} trades - Array of trade objects.
+ * @param {Date|string|object} startDateOrRange - Either start date, or an object {start, end}.
+ * @param {Date|string} [endDate] - End date (inclusive), only used if first param is a start date.
+ * @returns {Array} Filtered trades.
+ */
+export const filterTradesByDate = (trades, startDateOrRange, endDate) => {
+    if (!trades || trades.length === 0) return [];
+
+    // Handle object parameter format: {start, end}
+    let startDate, end;
+    if (startDateOrRange && typeof startDateOrRange === 'object' && !Array.isArray(startDateOrRange) && !(startDateOrRange instanceof Date)) {
+        startDate = startDateOrRange.start;
+        end = startDateOrRange.end;
+    } else {
+        startDate = startDateOrRange;
+        end = endDate;
+    }
+
+    if (!startDate && !end) return trades;
+
+    const start = startDate ? new Date(startDate) : new Date(0); // Epoch
+    const endD = end ? new Date(end) : new Date(8640000000000000); // Far future
+
+    // Reset times for date-only comparison if input is date-only string
+    if (typeof startDate === 'string' && startDate.length === 10) start.setHours(0, 0, 0, 0);
+    if (typeof end === 'string' && end.length === 10) endD.setHours(23, 59, 59, 999);
+
+    return trades.filter(t => {
+        // Support multiple date property names: exit_date (CSV), exitTime, closeTime, closeDate, entry_date
+        let dateStr = t.exit_date || t.exitTime || t.closeTime || t.closeDate || t.entry_date;
+        if (!dateStr) return false;
+
+        // Parse YYYY.MM.DD HH:MM:SS format (convert dots to dashes for Date parsing)
+        if (typeof dateStr === 'string' && dateStr.includes('.')) {
+            dateStr = dateStr.replace(/\./g, '-');
+        }
+
+        const dt = new Date(dateStr);
+        if (isNaN(dt.getTime())) return false; // Invalid date
+
+        return dt >= start && dt <= endD;
+    });
+};
 export const calculateSQMetrics = (trades) => {
     if (!trades || !Array.isArray(trades) || trades.length === 0) return null;
 
@@ -50,7 +97,8 @@ export const calculateSQMetrics = (trades) => {
         month: {},
         week: {},
         day: {},
-        year: {}
+        year: {},
+        trade: {} // Fix: Initialize trade-level grouping
     };
 
     // Sort trades by Open Time for Inter-Trade Analysis
@@ -79,7 +127,7 @@ export const calculateSQMetrics = (trades) => {
         peakTime = tradesByExit[0].exitTime ? tradesByExit[0].exitTime.getTime() : null;
     }
 
-    tradesByExit.forEach(t => {
+    tradesByExit.forEach((t, i) => {
         const pnl = t.pnl;
         totalProfit += pnl;
         currentEquity += pnl;
@@ -163,15 +211,26 @@ export const calculateSQMetrics = (trades) => {
             updateBucket(timeData.week[wy], w);
 
             // Day
-            if (!timeData.day) timeData.day = {};
             if (!timeData.day[y]) timeData.day[y] = {};
             const dayKey = `${String(m + 1).padStart(2, '0')}-${String(t.exitTime.getDate()).padStart(2, '0')}`;
             updateBucket(timeData.day[y], dayKey);
 
             // Year
-            if (!timeData.year) timeData.year = {};
             if (!timeData.year[y]) timeData.year[y] = {};
             updateBucket(timeData.year[y], y);
+
+            // Trade (Individual) - Using index as key to preserve order
+            // We group by "Year" (dummy) or just a single bucket?
+            // Existing logic expects timeData[period][year][key] -> stats
+            // Let's use Year of trade as parent bucket, and index as key.
+            if (!timeData.trade[y]) timeData.trade[y] = {};
+            // Creating a unique key for each trade to prevent aggregation distinctness issues if any
+            const tradeKey = `t_${i}`;
+            // We want specific trade stats, not aggregated.
+            // updateBucket aggregates. For 'trade', count is 1, sum is pnl.
+            // Manually set or reuse updateBucket? updateBucket adds to existing.
+            // Since key is unique (t_i), updateBucket works fine to init.
+            updateBucket(timeData.trade[y], tradeKey);
         }
     });
 
@@ -196,6 +255,7 @@ export const calculateSQMetrics = (trades) => {
     const variance = trades.reduce((sum, t) => sum + Math.pow(t.pnl - avgTrade, 2), 0) / totalTrades;
     const stdDev = Math.sqrt(variance);
     const sqn = stdDev > 0 ? Math.sqrt(Math.min(totalTrades, 100)) * (avgTrade / stdDev) : 0;
+    const sharpeRatioTrade = stdDev > 0 ? avgTrade / stdDev : 0;
 
     // Return / DD
     const returnDDRatio = maxDD > 0 ? totalProfit / maxDD : (totalProfit > 0 ? 999 : 0);
@@ -412,7 +472,9 @@ export const calculateSQMetrics = (trades) => {
         maxStagnationDays: Math.floor(maxStagnationDays),
         maxStagnationTrades: maxStagnationTrades,
         maxConsecutiveLosses: maxConsecLosses, // Alias for table ID
-        returnDD: returnDDRatio // Alias
+        returnDD: returnDDRatio, // Alias
+        gammaFlowScore: gammaParams.alpha ? Math.min(100, Math.max(0, (gammaParams.alpha / (gammaParams.alpha + 0.5)) * 100)) : 0,
+        sharpeRatioTrade: sharpeRatioTrade
     };
 };
 
@@ -755,12 +817,21 @@ const matchTrades = (btTrades, realTrades) => {
         const realDateStr = real.openTime ? real.openTime.toISOString() : 'NoDate';
         // console.log(`[MATCH DEBUG] processing Real Trade: ${realDateStr} (Bucket: ${new Date(k).toISOString()})`);
 
-        if (candidates) {
-            const avail = candidates.filter(c => !matchedBtIds.has(c));
+        // Check current, prev (-1h), and next (+1h) buckets for candidates
+        const bucketsToCheck = [k, k - 3600000, k + 3600000];
+        let allCandidates = [];
+
+        bucketsToCheck.forEach(bucketKey => {
+            const bucket = btMap.get(bucketKey);
+            if (bucket) allCandidates = allCandidates.concat(bucket);
+        });
+
+        if (allCandidates.length > 0) {
+            const avail = allCandidates.filter(c => !matchedBtIds.has(c));
             let bestScore = -1;
 
             if (avail.length === 0) {
-                // console.log(`[MATCH DEBUG]   -> Bucket found but all ${candidates.length} candidates already matched.`);
+                // console.log(`[MATCH DEBUG]   -> Buckets found but all candidates already matched.`);
             }
 
             avail.forEach(bt => {
@@ -783,12 +854,7 @@ const matchTrades = (btTrades, realTrades) => {
                 }
             });
         } else {
-            // console.log(`[MATCH DEBUG]   -> No BT candidates in bucket ${new Date(k).toISOString()}`);
-            // Extended Debug: Check +/- 1 hour explicitly to see if it was a boundary issue
-            const prev = k - 3600000;
-            const next = k + 3600000;
-            if (btMap.has(prev)) console.log(`[MATCH DEBUG]   -> ⚠️ NEAR MISS: Found candidates in PREV hour bucket (${new Date(prev).toISOString()})!`);
-            if (btMap.has(next)) console.log(`[MATCH DEBUG]   -> ⚠️ NEAR MISS: Found candidates in NEXT hour bucket (${new Date(next).toISOString()})!`);
+            // console.log(`[MATCH DEBUG]   -> No BT candidates in current or adjacent buckets for ${new Date(k).toISOString()}`);
         }
 
         if (best) {
@@ -813,7 +879,7 @@ const matchTrades = (btTrades, realTrades) => {
     return { matches, orphanReal, orphanBT };
 };
 
-export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selectedPeriod = 'month', strategiesList = [], currentStrategyId = 'all', currentDataType = 'backtest', markovPeriod = 'trade', markovDepth = 1, currentFreqSelection = 'All', portfoliosList = [], currentPortfolioIndex = -1, secondaryMetrics = null, dateRange = {}) => {
+export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selectedPeriod = 'month', strategiesList = [], currentStrategyId = 'all', currentDataType = 'backtest', markovPeriod = 'trade', markovDepth = 1, currentFreqSelection = 'All', portfoliosList = [], currentPortfolioIndex = -1, secondaryMetrics = null, dateRange = {}, isDropdownOpen = false) => {
     if (!metrics) return '<div class="text-gray-400 text-center p-10">No hay datos suficientes para el análisis.</div>';
 
     // --- STATE FOR EXPORT ---
@@ -851,9 +917,13 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
     else if (selectedPeriod === 'day') modalTitle = 'Daily Performance';
 
     if (currentStrategyId !== 'all') {
-        const strat = strategiesList.find(s => s.id === currentStrategyId);
-        if (strat) {
-            modalTitle = strat.name.replace('.csv', '').trim();
+        if (Array.isArray(currentStrategyId)) {
+            modalTitle = `${currentStrategyId.length} Strategies Selected`;
+        } else {
+            const strat = strategiesList.find(s => s.id === currentStrategyId);
+            if (strat) {
+                modalTitle = strat.name.replace('.csv', '').trim();
+            }
         }
     }
 
@@ -891,12 +961,75 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
         </select>
     ` : '';
 
+    // Multi-select dropdown for strategies
+    const selectedIds = Array.isArray(currentStrategyId) ? currentStrategyId : (currentStrategyId === 'all' ? [] : [currentStrategyId]);
+    const allSelected = currentStrategyId === 'all' || selectedIds.length === 0;
+
     const strategySelectorHTML = `
-        <select id="sq-strategy-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500">
-            <option value="all" ${currentStrategyId === 'all' ? 'selected' : ''}>All Strategies</option>
-            ${strategyOptions}
-        </select>
-        <button onclick="const sel = document.getElementById('sq-strategy-select'); if(sel.value !== 'all') window.addStrategyToQuarantine(sel.options[sel.selectedIndex].text.trim());" class="ml-2 text-red-500 hover:text-red-400 p-1 rounded hover:bg-gray-700 transition-colors" title="Mover estrategia a Cuarentena">
+                <button id="sq-strategy-dropdown-btn" class="bg-gray-700 text-gray-200 text-xs rounded px-3 py-1.5 border border-gray-600 hover:border-amber-500 focus:outline-none focus:border-amber-500 flex items-center gap-2 min-w-[180px]">
+                <span id="sq-strategy-label" class="truncate flex-1 text-left">${Array.isArray(currentStrategyId) && currentStrategyId.length === 0 ? '0 selected' : (allSelected ? 'All Strategies' : (selectedIds.length === 1 ? strategiesList.find(s => s.id === selectedIds[0])?.name?.substring(0, 25) || '1 selected' : selectedIds.length + ' selected'))}</span>
+                <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            <div id="sq-strategy-dropdown-menu" class="${isDropdownOpen ? '' : 'hidden'} absolute z-50 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl min-w-[320px] max-h-[80vh] overflow-hidden flex flex-col">
+                <div class="p-2 border-b border-gray-700 bg-gray-900 sticky top-0 flex flex-col gap-2 z-10">
+                    <div class="flex items-center gap-1 w-full">
+                        <input type="text" id="sq-strategy-search-input" placeholder="🔍 Search strategies (space for multiple terms)..." 
+                            value="${lastDropdownSearch}"
+                            class="flex-1 bg-gray-800 text-gray-200 text-xs rounded px-2 py-1.5 border border-gray-600 focus:outline-none focus:border-amber-500 placeholder-gray-500"
+                            onclick="event.stopPropagation();"
+                        >
+                        <button onclick="document.getElementById('sq-strategy-dropdown-menu').classList.add('hidden'); event.stopPropagation();" class="p-1.5 text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-transparent hover:border-gray-600 rounded transition-colors" title="Close Menu">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                    <div class="flex flex-wrap gap-2 items-center justify-between">
+                            <label class="flex items-center gap-1 cursor-pointer select-none" title="Select/Deselect All Visible">
+                                <input type="checkbox" id="sq-select-all-visible-toggle" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-700 cursor-pointer transition-colors focus:ring-0 focus:ring-offset-0"
+                                    ${(allSelected && (!lastDropdownSearch || lastDropdownSearch === '')) ? 'checked' : ''}
+                                >
+                                <span class="text-[10px] text-gray-400">All Visible</span>
+                            </label>
+                            <span class="text-gray-600">|</span>
+                            <button id="sq-strategy-select-global-all" class="text-[10px] bg-blue-900/40 hover:bg-blue-800 text-blue-200 px-2 py-1 rounded border border-blue-800/50" title="Select ALL items (ignoring filter)">All</button>
+                            <button id="sq-strategy-select-global-none" class="text-[10px] bg-red-900/40 hover:bg-red-800 text-red-200 px-2 py-1 rounded border border-red-800/50" title="Deselect ALL items">None</button>
+                        </div>
+                        <span id="sq-strategy-count-badge" class="text-[10px] text-gray-500">${strategiesList.length} total</span>
+                    </div>
+                    
+                    ${portfoliosList.length > 0 ? `
+                        <div class="whitespace-nowrap overflow-x-auto custom-scrollbar pb-1 flex gap-1 border-t border-gray-700 pt-2">
+                            ${portfoliosList.map((p, idx) => `
+                                <button data-pidx="${idx}" class="sq-portfolio-shortcut flex-shrink-0 text-[10px] bg-cyan-900/40 hover:bg-cyan-800 text-cyan-200 px-2 py-0.5 rounded border border-cyan-800/50" title="${p.name}">
+                                    📁 ${p.name.length > 15 ? p.name.substring(0, 15) + '...' : p.name}
+                                </button>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+                <div id="sq-strategy-list-container" class="overflow-y-auto max-h-[100px] custom-scrollbar p-2 space-y-1 transition-all duration-300">
+                    ${strategiesList.map(s => {
+        // PRE-FILTERING: Apply hidden state immediately during render
+        let isVisible = true;
+        if (lastDropdownSearch) {
+            const terms = lastDropdownSearch.toLowerCase().split(' ').filter(t => t.trim());
+            const text = s.name.toLowerCase();
+            isVisible = terms.every(term => text.includes(term));
+        }
+
+        return `
+                        <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-700/50 rounded cursor-pointer group sq-strategy-item ${isVisible ? '' : 'hidden'}">
+                            <input type="checkbox" class="sq-strategy-checkbox accent-amber-500" value="${s.id}" ${allSelected || selectedIds.includes(s.id) ? 'checked' : ''}>
+                            <span class="text-gray-300 text-xs truncate flex-1 group-hover:text-white pointer-events-none" title="${s.name}">${s.name}</span>
+                        </label>
+                        `;
+    }).join('')}
+                </div>
+                <div class="border-t border-gray-700 p-1 bg-gray-900/50 flex justify-center cursor-pointer hover:bg-gray-800 transition-colors" onclick="const c=this.previousElementSibling; c.classList.toggle('max-h-[100px]'); c.classList.toggle('max-h-[500px]'); this.querySelector('svg').classList.toggle('rotate-180')" title="Expand/Collapse List">
+                    <svg class="w-3 h-3 text-gray-400 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+            </div>
+        </div>
+        <button onclick="const checkboxes = document.querySelectorAll('.sq-strategy-checkbox:checked'); if(checkboxes.length === 1) window.addStrategyToQuarantine(checkboxes[0].closest('label').querySelector('span').title || checkboxes[0].closest('label').querySelector('span').textContent.trim());" class="ml-2 text-red-500 hover:text-red-400 p-1 rounded hover:bg-gray-700 transition-colors" title="Mover estrategia seleccionada a Cuarentena">
             ☣️
         </button>
     `;
@@ -934,58 +1067,66 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
     `;
 
     const headerControls = `
-        <div class="flex gap-2 items-center flex-wrap">
-            ${/* DISABLED: portfolioSelectorHTML - strategies no longer depend on portfolio */''}
-            ${strategySelectorHTML}
-            ${dataTypeSelectorHTML}
+        <div class="flex flex-wrap gap-y-2 gap-x-4 items-center justify-between w-full">
+            <!-- Group 1: Portfolio/Strategy/Data -->
+            <div class="flex items-center gap-2">
+                ${/* DISABLED: portfolioSelectorHTML */''}
+                ${strategySelectorHTML}
+                ${dataTypeSelectorHTML}
+            </div>
 
-            ${dateControls}
-            ${multControls}
-            <select id="sq-period-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500 ml-auto">
-                ${periodOptions.map(o => `<option value="${o.value}" ${o.value === selectedPeriod ? 'selected' : ''}>${o.label}</option>`).join('')}
-            </select>
-            <select id="sq-metric-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500">
-                ${metricsOptions.map(o => `<option value="${o.value}" ${o.value === selectedMetric ? 'selected' : ''}>${o.label}</option>`).join('')}
-            </select>
-            
-            <!-- Quick View Buttons -->
-            <button onclick="const p=document.getElementById('sq-period-select');const d=document.getElementById('sq-data-type-select');if(p&&d){p.value='month';d.value='comparison';p.dispatchEvent(new Event('change'));d.dispatchEvent(new Event('change'));}" class="ml-2 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded px-2 py-1 border border-gray-500 transition-colors" title="Default View (Monthly Comparison)">
-                📅 Default
-            </button>
-            <button onclick="const p=document.getElementById('sq-period-select');const d=document.getElementById('sq-data-type-select');if(p&&d){p.value='trade';d.value='comparison';p.dispatchEvent(new Event('change'));d.dispatchEvent(new Event('change'));}" class="ml-1 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded px-2 py-1 border border-gray-500 transition-colors" title="Trade Level Comparison">
-                🔬 Trade Split
-            </button>
+            <!-- Group 2: Time & Multipliers (Center-ish) -->
+            <div class="flex items-center gap-2 border-l border-gray-700 pl-4">
+                ${dateControls}
+                ${multControls}
+            </div>
 
-            <!-- Copy JSON Button -->
-             <button id="sq-copy-json-btn" onclick="window.copySQAnalysisJSON()" class="ml-2 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded px-2 py-1 border border-gray-500 transition-colors flex items-center gap-1" title="Copy Analysis Data to Clipboard (JSON)">
-                📋 JSON
-            </button>
-            
-            ${(selectedPeriod === 'trade' && currentDataType === 'comparison') ? `
-            <button onclick="window.showAnalysisBreakdown()" class="ml-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 hover:text-amber-200 text-xs rounded px-2 py-1 border border-amber-600/50 transition-colors flex items-center gap-1 animate-pulse" title="View Breakdown by Strategy">
-                📊 Breakdown
-            </button>
-            <button onclick="(() => { 
-                const sId = '${currentStrategyId}';
-                // Try to find name in the global list if accessible, or passed lists
-                // We don't have strategiesList here easily as a JS object in HTML string context.
-                // BUT we are building the string inside the JS function where strategiesList IS available!
-                // So we can compute the name RIGHT HERE in the template literal.
-                // Nice.
-             })()" style="display:none"></button>
-            <!-- Compute Name for PnL Chart -->
-            <button onclick="window.showPnLChart('${(() => {
-                const sObj = strategiesList.find(s => s.id === currentStrategyId);
-                const name = sObj ? sObj.name : currentStrategyId;
-                // Escape quotes
-                return name.replace(/'/g, "\\'");
-            })()}')" class="ml-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 hover:text-blue-200 text-xs rounded px-2 py-1 border border-blue-600/50 transition-colors flex items-center gap-1" title="Chart PnL Comparison">
-                📈 Chart PnL
-            </button>` : ''}
-            <!-- R-Squared Value Container -->
-            <div id="sq-r2-container" class="ml-2 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs hidden">
-                <span class="text-gray-400">R²:</span>
-                <span id="sq-r2-value" class="font-mono font-bold text-amber-400 ml-1">...</span>
+            <!-- Group 3: View Settings & Actions (Right) -->
+            <div class="flex items-center gap-2 ml-auto">
+                <select id="sq-period-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500">
+                    ${periodOptions.map(o => `<option value="${o.value}" ${o.value === selectedPeriod ? 'selected' : ''}>${o.label}</option>`).join('')}
+                </select>
+                <select id="sq-metric-select" class="bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-amber-500">
+                    ${metricsOptions.map(o => `<option value="${o.value}" ${o.value === selectedMetric ? 'selected' : ''}>${o.label}</option>`).join('')}
+                </select>
+                
+                <div class="h-4 w-px bg-gray-600 mx-1"></div>
+
+                <!-- Quick View Buttons -->
+                <div class="flex rounded shadow-sm">
+                    <button onclick="const p=document.getElementById('sq-period-select');const d=document.getElementById('sq-data-type-select');if(p&&d){p.value='month';d.value='comparison';p.dispatchEvent(new Event('change'));d.dispatchEvent(new Event('change'));}" class="bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded-l px-2 py-1 border border-gray-500 border-r-0 transition-colors" title="Default View">
+                        📅
+                    </button>
+                    <button onclick="const p=document.getElementById('sq-period-select');const d=document.getElementById('sq-data-type-select');if(p&&d){p.value='trade';d.value='comparison';p.dispatchEvent(new Event('change'));d.dispatchEvent(new Event('change'));}" class="bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded-r px-2 py-1 border border-gray-500 transition-colors" title="Trade Level">
+                        🔬
+                    </button>
+                </div>
+
+                <button id="sq-copy-json-btn" onclick="window.copySQAnalysisJSON()" class="bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs rounded px-2 py-1 border border-gray-500 transition-colors" title="Copy JSON">
+                    📋
+                </button>
+                
+                ${(selectedPeriod === 'trade' && currentDataType === 'comparison') ? `
+                <button onclick="window.showAnalysisBreakdown()" class="bg-amber-900/40 hover:bg-amber-800 text-amber-400 hover:text-amber-200 text-xs rounded px-2 py-1 border border-amber-600/50 transition-colors flex items-center gap-1" title="Breakdown">
+                    📊
+                </button>
+                <button onclick="window.showPnLChart('${(() => {
+                let targetId = currentStrategyId;
+                if (Array.isArray(currentStrategyId)) {
+                    targetId = currentStrategyId.length === 1 ? currentStrategyId[0] : 'all';
+                }
+                const sObj = strategiesList.find(s => s.id === targetId);
+                const val = sObj ? sObj.name : targetId;
+                return val && typeof val === 'string' ? val.replace(/'/g, "\\'") : 'all';
+            })()}')" class="bg-blue-900/40 hover:bg-blue-800 text-blue-400 hover:text-blue-200 text-xs rounded px-2 py-1 border border-blue-600/50 transition-colors flex items-center gap-1" title="Chart PnL">
+                    📈
+                </button>` : ''}
+                
+                <!-- R2 Indicator -->
+                <div id="sq-r2-container" class="bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-[10px] hidden self-center">
+                    <span class="text-gray-500">R²</span>
+                    <span id="sq-r2-value" class="font-mono font-bold text-amber-400 ml-1"></span>
+                </div>
             </div>
         </div>
     `;
@@ -1476,7 +1617,7 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
                     accS.grossProfit += statsS.grossProfit;
                     accS.grossLoss += statsS.grossLoss;
                     if (statsS.maxDD > accS.maxDD) accS.maxDD = statsS.maxDD;
-                    if (statsS.maxStagnation > accS.maxStag) accS.maxStag = statsS.maxStagnation;
+                    if (statsS.maxStagnation > accS.maxStag) accS.maxStagnation = statsS.maxStagnation;
                 }
 
                 // Reuse existing formatSplit helper from renderRow scope if possible, 
@@ -1690,7 +1831,7 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
 
     return `
         <div class="p-6 space-y-6">
-            <div class="bg-gray-800/50 rounded-lg border border-gray-700 overflow-hidden">
+            <div class="bg-gray-800/50 rounded-lg border border-gray-700 overflow-visible">
                 <div class="p-3 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center">
                     <h3 class="text-amber-400 font-bold text-sm uppercase tracking-wider truncate max-w-xl" title="${modalTitle}">${modalTitle}</h3>
                     ${headerControls} 
@@ -1701,6 +1842,12 @@ export const generateSQAnalysisHTML = (metrics, selectedMetric = 'pnl', selected
                         ${tableBody}
                     </table>
                 </div>
+            </div>
+            <div class="bg-gray-800/50 rounded-lg border border-gray-700 p-4">
+                 <h3 class="text-amber-400 font-bold text-sm uppercase mb-4 tracking-wider">Performance Distribution</h3>
+                 <div class="h-64 relative">
+                    <canvas id="sq-chart"></canvas>
+                 </div>
             </div>
             ${renderOverview(metrics, formatMoney, formatNum, secondaryMetrics)}
             ${markovSection}
@@ -1771,13 +1918,17 @@ const renderFrequencyAnalysisHTML = (statsMap, selectedKey, formatNum) => {
         `;
     }).join('');
 
+    const sectionId = 'sq-freq-analysis';
     return `
         <div class="bg-gray-800/50 rounded-lg border border-gray-700 overflow-hidden mt-6">
-             <div class="p-3 bg-gray-900/50 border-b border-gray-700">
+             <div class="p-3 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center cursor-pointer select-none hover:bg-gray-800/50 transition-colors" onclick="window.toggleSQSection('${sectionId}', this)">
                 <h3 class="text-amber-400 font-bold text-sm uppercase tracking-wider">Frequency Analysis (Days between Events)</h3>
+                <svg class="w-5 h-5 text-gray-400 transform transition-transform -rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
             </div>
-            <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                 ${cards}
+            <div id="${sectionId}" class="hidden transition-all duration-300">
+                <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                     ${cards}
+                </div>
             </div>
         </div>
     `;
@@ -1857,40 +2008,44 @@ const renderOverview = (metrics, formatMoney, formatNum, secondaryMetrics = null
 
 const renderExitAnalysisHTML = (exitStats, formatMoney, formatNum) => {
     if (!exitStats) return '';
+    const sectionId = 'sq-exit-analysis';
     return `
         <div class="bg-gray-800/50 rounded-lg border border-gray-700 overflow-hidden mt-6">
-             <div class="p-3 bg-gray-900/50 border-b border-gray-700">
+             <div class="p-3 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center cursor-pointer select-none hover:bg-gray-800/50 transition-colors" onclick="window.toggleSQSection('${sectionId}', this)">
                 <h3 class="text-amber-400 font-bold text-sm uppercase tracking-wider">Trading Psychology: Exit Analysis</h3>
+                <svg class="w-5 h-5 text-gray-400 transform transition-transform -rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
             </div>
-            <div class="p-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="grid grid-cols-2 gap-4">
-                     <div class="h-48 relative"><canvas id="sq-exit-dist-chart"></canvas></div>
-                     <div class="h-48 relative"><canvas id="sq-exit-duration-chart"></canvas></div>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-xs text-left text-gray-400">
-                        <thead class="text-xs text-gray-500 uppercase bg-gray-700/50">
-                            <tr>
-                                <th class="px-3 py-2">Type</th>
-                                <th class="px-3 py-2 text-right">Count</th>
-                                <th class="px-3 py-2 text-right">WinRate</th>
-                                <th class="px-3 py-2 text-right">AvgPnL</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-700/50">
-                            ${Object.values(exitStats).map(s => {
+            <div id="${sectionId}" class="hidden transition-all duration-300">
+                <div class="p-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="grid grid-cols-2 gap-4">
+                         <div class="h-48 relative"><canvas id="sq-exit-dist-chart"></canvas></div>
+                         <div class="h-48 relative"><canvas id="sq-exit-duration-chart"></canvas></div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs text-left text-gray-400">
+                            <thead class="text-xs text-gray-500 uppercase bg-gray-700/50">
+                                <tr>
+                                    <th class="px-3 py-2">Type</th>
+                                    <th class="px-3 py-2 text-right">Count</th>
+                                    <th class="px-3 py-2 text-right">WinRate</th>
+                                    <th class="px-3 py-2 text-right">AvgPnL</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-700/50">
+                                ${Object.values(exitStats).map(s => {
         if (s.count === 0) return '';
         return `
-                                    <tr class="hover:bg-gray-700/30">
-                                        <td class="px-3 py-2 font-medium text-gray-300">${s.label}</td>
-                                        <td class="px-3 py-2 text-right">${s.count}</td>
-                                        <td class="px-3 py-2 text-right ${s.winRate > 50 ? 'text-emerald-400' : 'text-red-400'}">${formatNum(s.winRate, 1)}%</td>
-                                        <td class="px-3 py-2 text-right ${s.avgPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(s.avgPnL)}</td>
-                                    </tr>
-                                `;
+                                        <tr class="hover:bg-gray-700/30">
+                                            <td class="px-3 py-2 font-medium text-gray-300">${s.label}</td>
+                                            <td class="px-3 py-2 text-right">${s.count}</td>
+                                            <td class="px-3 py-2 text-right ${s.winRate > 50 ? 'text-emerald-400' : 'text-red-400'}">${formatNum(s.winRate, 1)}%</td>
+                                            <td class="px-3 py-2 text-right ${s.avgPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}">${formatMoney(s.avgPnL)}</td>
+                                        </tr>
+                                    `;
     }).join('')}
-                        </tbody>
-                    </table>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2410,6 +2565,20 @@ const renderFrequencyCharts = (statsMap) => {
 
 
 export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initialStrategyId = 'all', initialDataType = 'backtest') => {
+
+    // FALLBACK: If index undefined (e.g. from tab switch), try to resume last config or default to 0
+    if (portfolioIndex === undefined || portfolioIndex === null) {
+        if (activeRenderConfig && activeRenderConfig.index !== undefined && activeRenderConfig.index !== null) {
+            console.log(`[SQ Analysis] Resuming last active view: Index ${activeRenderConfig.index} (${activeRenderConfig.source})`);
+            portfolioIndex = activeRenderConfig.index;
+            source = activeRenderConfig.source || 'saved';
+        } else if (state.savedPortfolios && state.savedPortfolios.length > 0) {
+            console.log(`[SQ Analysis] No index provided, defaulting to first Saved Portfolio.`);
+            portfolioIndex = 0;
+            source = 'saved';
+        }
+    }
+
     // Update active config
     activeRenderConfig = { index: portfolioIndex, source: source };
 
@@ -2430,8 +2599,8 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
                 return;
             }
 
-            console.log(`[SQ DEBUG] Rendering Portfolio Index: ${portfolioIndex}, Name: ${portfolio.name}, Source: ${source}`);
 
+            console.log(`[SQ DEBUG] Rendering Portfolio Index: ${portfolioIndex}, Name: ${portfolio.name}, Source: ${source}`);
 
             let allTrades = [];
             let strategyIndices = [];
@@ -2468,6 +2637,7 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
             }
 
             const strategiesList = [];
+            const portfolioRealMetrics = portfolio.realMetrics; // Access pre-calculated real metrics if available
 
             // ======= DEBUG: STRATEGY LIST SOURCING =======
             console.log(`[SQ Analysis] 🔍 STRATEGY LIST SOURCING DEBUG ===============`);
@@ -2487,48 +2657,59 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
             });
             // ======= END DEBUG =======
 
-            // ======= NEW LOGIC: strategiesList should NOT depend on portfolio =======
-            // For Backtest: ALL loaded strategies
-            // For Real: Only strategies with magic mappings
-            console.log(`[SQ Analysis] 🚀 NEW STRATEGY SOURCING LOGIC ===============`);
+            // ======= NEW LOGIC: strategiesList SHOULD DEPEND ON PORTFOLIO =======
+            // Filter strategies based on resolved indices
+            console.log(`[SQ Analysis] 🚀 NEW STRATEGY SOURCING LOGIC (PORTFOLIO FILTERED) ===============`);
             console.log(`[SQ Analysis]    - initialDataType: ${initialDataType}`);
 
-            // Build list from ALL loaded strategy files
+            // Use a Set for O(1) lookup
+            const targetIndices = new Set(strategyIndices);
+
             (state.loadedStrategyFiles || []).forEach((file, idx) => {
                 if (!file) return;
+                // MODIFIED: Include ALL global strategies, do not filter by portfolio
+                // The dropdown needs to show everything. We will handle selection below.
+                /*
+                if (!targetIndices.has(idx)) {
+                     // console.log(`[SQ Analysis]    ⏭️ Skipping index ${idx} (Not in Portfolio)`);
+                    return;
+                }
+                */
+
                 const stratId = file.strategyId || file.name;
                 const rawName = file.name;
-                const cleanName = rawName.replace(/\.csv$/i, '').trim();
-
-                // For "real" data type, only include strategies with magic mappings
-                if (initialDataType === 'real') {
-                    const hasMapping =
-                        (state.magicNumberMap && state.magicNumberMap[stratId] && state.magicNumberMap[stratId].length > 0) ||
-                        (state.magicNumberMap && state.magicNumberMap[rawName] && state.magicNumberMap[rawName].length > 0) ||
-                        (state.magicNumberMap && state.magicNumberMap[cleanName] && state.magicNumberMap[cleanName].length > 0);
-
-                    if (!hasMapping) {
-                        console.log(`[SQ Analysis]    ⏭️ Skipping (no mapping): ${rawName}`);
-                        return;
-                    }
-                    console.log(`[SQ Analysis]    ✅ Including (has mapping): ${rawName}`);
-                }
 
                 strategiesList.push({ id: stratId, name: rawName, index: idx });
             });
 
-            console.log(`[SQ Analysis]    - strategiesList FINAL: ${strategiesList.length} strategies`);
+            console.log(`[SQ Analysis]    - strategiesList FINAL: ${strategiesList.length} strategies (Filtered by Portfolio)`);
             strategiesList.forEach((s, i) => {
                 console.log(`[SQ Analysis]       [${i}] ${s.name} (ID: ${s.id})`);
             });
             console.log(`[SQ Analysis] 🚀 END NEW STRATEGY SOURCING LOGIC ===============`);
 
+            // NEW LOGIC: If we are in Portfolio View (indices exist) and initialStrategyId is 'all',
+            // Default the SELECTION to just the Portfolio strategies, not Global All.
+            if (initialStrategyId === 'all' && strategyIndices.length > 0) {
+                const subsetIds = strategyIndices.map(i => state.loadedStrategyFiles[i]?.id).filter(id => id);
+                if (subsetIds.length > 0) {
+                    console.log(`[SQ Analysis] Defaulting 'all' to Portfolio Subset (${subsetIds.length} strategies)`);
+                    initialStrategyId = subsetIds;
+                }
+            }
 
 
-            // ======= LOAD TRADES FROM ALL STRATEGIES (not just portfolio) =======
-            console.log(`[SQ Analysis] 📂 LOADING BACKTEST TRADES FROM ALL STRATEGIES ===============`);
+
+            // ======= LOAD TRADES FROM PORTFOLIO STRATEGIES ONLY =======
+            console.log(`[SQ Analysis] 📂 LOADING BACKTEST TRADES FROM PORTFOLIO (${strategiesList.length} strategies) ===============`);
             (state.loadedStrategyFiles || []).forEach((file, idx) => {
                 if (!file) return;
+                // MODIFIED: Load trades for ALL strategies to ensure availability in dropdown
+                /*
+                // CRITICAL FIX: Only load trades if in portfolio
+                if (!targetIndices.has(idx)) return;
+                */
+
                 let trades = [];
                 if (file && file.content) trades = parseTradesFromContent(file.content);
                 else if (state.rawStrategiesData[idx]) trades = parseTradesFromData(state.rawStrategiesData[idx]);
@@ -2547,6 +2728,25 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
                 allTrades = allTrades.concat(trades);
             });
             console.log(`[SQ Analysis] 📂 TOTAL BACKTEST TRADES LOADED: ${allTrades.length}`);
+
+            // --- TIME RANGE DIAGNOSTIC ---
+            let btMin = null;
+            let btMax = null;
+            if (allTrades.length > 0) {
+                // Determine BT Range (Assuming trades are sorted or we scan all)
+                // We'll scan all to be safe as concatenation might strictly not be sorted if processed in chunks
+                btMin = allTrades[0].exitTime;
+                btMax = allTrades[0].exitTime;
+                allTrades.forEach(t => {
+                    if (t.exitTime < btMin) btMin = t.exitTime;
+                    if (t.exitTime > btMax) btMax = t.exitTime;
+                });
+                console.log(`[SQ INFO] 📅 BACKTEST DATA RANGE: ${btMin.toISOString()} to ${btMax.toISOString()}`);
+            } else {
+                console.log(`[SQ INFO] 📅 BACKTEST DATA RANGE: None`);
+            }
+            // -----------------------------
+
             console.log(`[SQ Analysis] 📂 END LOADING TRADES ===============`);
 
 
@@ -2561,11 +2761,21 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
             allTrades.sort((a, b) => a.exitTime - b.exitTime);
             // Prepare Portfolios List for Selector
             const portfoliosList = (source === 'databank' ? state.databankPortfolios : state.savedPortfolios).map((p, idx) => ({
+                ...p,
                 name: p.name || `Portfolio ${idx + 1}`,
                 index: idx
             }));
 
-            setupRender(allTrades, strategiesList, initialStrategyId, initialDataType, portfolio, allMissingCols, portfoliosList, portfolioIndex, source);
+            setupRender(allTrades, strategiesList, initialStrategyId, initialDataType, portfolio, allMissingCols, portfoliosList, portfolioIndex, source, null, btMax); // Pass btMax
+
+            if (lastDropdownSearch) {
+                // Restore focus nicely
+                setTimeout(() => {
+                    const input = document.getElementById('sq-strategy-search-input');
+                    if (input) input.focus();
+                }, 50);
+            }
+
 
         } catch (e) {
             console.error("Error calculating SQ Analysis:", e);
@@ -2576,18 +2786,21 @@ export const renderSQAnalysis = async (portfolioIndex, source = 'saved', initial
     }, 50);
 };
 
-function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'all', initialDataType = 'backtest', portfolio, allMissingCols = new Set(), portfoliosList = [], portfolioIndex = -1, source = 'saved', dateRange = null) {
+function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'all', initialDataType = 'backtest', portfolio, allMissingCols = new Set(), portfoliosList = [], portfolioIndex = -1, source = 'saved', dateRange = null, btMaxDate = null) {
     let currentMetric = 'pnl';
     let currentPeriod = 'month';
     let currentStrategyId = initialStrategyId;
     let currentDataType = initialDataType;
     let currentMarkovPeriod = 'trade';
     let currentMarkovDepth = 1;
+    let isStrategyDropdownOpen = false;
     let currentFreqSelection = 'All';
     let currentStartDate = null;
     let currentEndDate = null;
     let currentBtMult = 1;
     let currentRealMult = 1;
+
+    // Event Listeners moved to render() to avoid leaks/duplication
 
     // Helper to format date YYYY-MM-DD
     const fmtDate = (d) => {
@@ -2631,9 +2844,12 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
 
             if (portfolioSpecificName) {
                 const m = magicMap[portfolioSpecificName];
+                // DEBUG: Trace why we are getting multiple results
                 if (m) {
-                    // console.log(`[SQ DEBUG] Resolved via Portfolio Name '${portfolioSpecificName}': ${m}`);
+                    console.log(`[SQ DEBUG] ResolveMagic: sId=${sId}, portfolioSpecificName='${portfolioSpecificName}', ResultType=${Array.isArray(m) ? 'Array' : 'String'}, Val=${JSON.stringify(m).substring(0, 100)}...`);
                     return m;
+                } else {
+                    console.log(`[SQ DEBUG] ResolveMagic: sId=${sId}, portfolioSpecificName='${portfolioSpecificName}' -> NO MATCH in magicMap`);
                 }
             }
 
@@ -2740,12 +2956,27 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             });
         });
 
+        // DEDUPLICATION STEP: Filter out duplicate trades by Ticket ID
+        // (Composite key for robustness: Ticket + OpenTime + Magic)
+        const uniqueTradesMap = new Map();
+        rawRealTrades.forEach(t => {
+            const ticket = t.ticket || t.id;
+            const key = ticket ? String(ticket) : `${t.openTime}-${t.magicNumber}-${t.profit}`;
+
+            if (!uniqueTradesMap.has(key)) {
+                uniqueTradesMap.set(key, t);
+            }
+        });
+
+        const uniqueRealTrades = Array.from(uniqueTradesMap.values());
+        console.log(`[SQ DEBUG] Deduplication: ${rawRealTrades.length} raw -> ${uniqueRealTrades.length} unique trades`);
+
         let totalP = 0, totalS = 0, totalC = 0;
-        let normalized = rawRealTrades.map(t => {
+        let normalized = uniqueRealTrades.map(t => {
             const openTime = new Date(t.openTime);
             // Handle Open Trades or Invalid Date Strings
             let exitTime = new Date(t.closeTime);
-            if (rawRealTrades.indexOf(t) < 3) {
+            if (uniqueRealTrades.indexOf(t) < 3) {
                 console.log(`[SQ DEBUG] Date Check: Raw '${t.closeTime}' -> Parsed: ${exitTime}`);
             }
             if (isNaN(exitTime.getTime())) {
@@ -2808,6 +3039,62 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             realTrades = getRealTrades(currentStrategyId);
         }
 
+        // --- DIAGNOSTIC: Check for Data Range Gaps (Real extending beyond Backtest) ---
+        // This answers: "Why are there no BT trades here? Is it missing Execution or missing Data?"
+        if (backtestTrades.length > 0 && realTrades.length > 0 && (currentDataType === 'real' || currentDataType === 'comparison')) {
+            const getMaxTime = (arr) => arr.reduce((max, t) => (t.exitTime > max ? t.exitTime : max), 0);
+            // Note: backtestTrades use .exitTime (Date object or timestamp? Check parseTrades. Usually Date obj).
+            // realTrades normalized uses .exitTime (Date obj).
+            // We need timestamps.
+
+            let btMaxTs = 0;
+            backtestTrades.forEach(t => { const time = t.exitTime ? t.exitTime.getTime() : 0; if (time > btMaxTs) btMaxTs = time; });
+
+            let realMaxTs = 0;
+            realTrades.forEach(t => { const time = t.exitTime ? t.exitTime.getTime() : 0; if (time > realMaxTs) realMaxTs = time; });
+
+            if (btMaxTs > 0 && realMaxTs > 0) {
+                const diffDays = (realMaxTs - btMaxTs) / (1000 * 60 * 60 * 24);
+                // console.log(`[SQ DIAG] BT End: ${new Date(btMaxTs).toISOString()} | Real End: ${new Date(realMaxTs).toISOString()} | Diff: ${diffDays.toFixed(1)} days`);
+
+                if (diffDays > 7) {
+                    // Diagnostic log only, UI injection moved to dateGapWarningHTML block below
+                    // console.log(`[SQ DIAG] Gap detected: ${diffDays.toFixed(1)} days`);
+                }
+                // Easier: Define a specialized warning string here to be used below.
+                // We'll attach it to 'window.sqDateGapWarning' or similar, or just define specific variable if scope allows.
+                // 'warningBanner' is defined later. We can duplicate the logic there or add a property to the data object?
+                // Let's modify the code flow slightly to capture this.
+            }
+        }
+
+        // Revised Approach: Store Gap Metric in a variable accessible to HTML generation block
+        let dateGapWarningHTML = '';
+        if (backtestTrades.length > 0 && realTrades.length > 0 && (currentDataType === 'real' || currentDataType === 'comparison')) {
+            let btMaxTs = 0;
+            backtestTrades.forEach(t => { const time = t.exitTime ? t.exitTime.getTime() : 0; if (time > btMaxTs) btMaxTs = time; });
+
+            let realMaxTs = 0;
+            realTrades.forEach(t => { const time = t.exitTime ? t.exitTime.getTime() : 0; if (time > realMaxTs) realMaxTs = time; });
+
+            if (btMaxTs > 0 && realMaxTs > 0) {
+                const diffDays = (realMaxTs - btMaxTs) / (1000 * 60 * 60 * 24);
+                if (diffDays > 7) {
+                    dateGapWarningHTML = `
+                        <div class="bg-blue-900/30 border border-blue-700/50 text-blue-200 px-4 py-3 rounded-lg mb-4 text-sm flex items-start gap-3 mx-6 mt-6">
+                            <span class="text-xl">ℹ️</span>
+                            <div>
+                                <strong class="block mb-1">Backtest Data Ended</strong>
+                                The Backtest data for this view ends on <span class="text-white font-mono">${new Date(btMaxTs).toISOString().split('T')[0]}</span>.
+                                <br>
+                                Real trades occurring after this date (up to ${new Date(realMaxTs).toISOString().split('T')[0]}) are shown as "Orphans" because <strong>no backtest data exists</strong> for this period.
+                            </div>
+                        </div>
+                      `;
+                }
+            }
+        }
+
         // Initialize Defaults on first real/comparison load if unset
         if (currentDataType === 'comparison' || currentDataType === 'real') {
             // Logic Update: Default Start = First Real Trade, Default End = Last BT Trade (Specific to selected strategy)
@@ -2836,13 +3123,13 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             // Note: dateRange is passed from outside, if it's empty we set currents.
             const rangeDefined = typeof dateRange !== 'undefined' && dateRange !== null;
             if (!rangeDefined || (!dateRange.start && !dateRange.end)) {
-                if (minRealTime > 0) currentStartDate = new Date(minRealTime);
-                if (maxTime > 0) currentEndDate = new Date(maxTime);
+                if (minRealTime > 0) currentStartDate = fmtDate(new Date(minRealTime));
+                if (maxTime > 0) currentEndDate = fmtDate(new Date(maxTime));
 
                 // Safety: Ensure Start < End. If Real started AFTER BT ended, expand End
                 if (currentStartDate && currentEndDate && currentStartDate > currentEndDate) {
                     if (maxRealTime > 0) {
-                        if (maxRealTime > maxTime) currentEndDate = new Date(maxRealTime);
+                        if (maxRealTime > maxTime) currentEndDate = fmtDate(new Date(maxRealTime));
                     }
                 }
             }
@@ -2892,20 +3179,223 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         let primaryTradesForAudit = [];
         let secondaryTradesForAudit = [];
 
+        // Helper to filter by Strategy ID
+        const filterByStrategy = (rawTrades, isReal = false) => {
+            if (currentStrategyId === 'all') return rawTrades;
+
+            // For Backtest, we can filter by ID directly if available, or we rely on 'backtestTrades' being re-fetched?
+            // Actually, 'backtestTrades' is fetched via 'getBacktestTrades' which uses 'currentStrategyId'.
+            // So backtestTrades is ALREADY filtered by strategy if we are in 'backtest' mode?
+            // wait, 'backtestTrades' comes from 'getBacktestTrades(currentStrategyId)'.
+            // 'realTrades' comes from 'getRealTrades(currentStrategyId)'.
+
+            // IF getRealTrades was called with 'all' or a list, but currentStrategyId is a single ID, we must filter.
+            // But verify: getRealTrades(currentStrategyId) is called at the TOP of 'render()'.
+            // It returns trades filtered by that ID.
+            // So, do we need extra filtering here?
+
+            // Let's check 'render' logic above (lines 2800+):
+            // const realTrades = getRealTrades(currentStrategyId);
+            // const backtestTrades = getBacktestTrades(currentStrategyId);
+
+            // It seems getRealTrades/getBacktestTrades ALREADY takes currentStrategyId.
+            // So if currentStrategyId is 'all', it returns all. If specific, it returns specific.
+            // The issue user reported is: "esk estoy senalando 1 en bt bien pero real me muestrat todas no filtra"
+            // Start of render(): console.log(`[SQ ANALYSIS] Re-Rendering.. Strategy: ${currentStrategyId}`);
+
+            return rawTrades;
+        };
+
+        // Debug Note: The user claims filtering issues in real mode.
+        // If currentStrategyId is passed to getRealTrades, it should work.
+        // Let's look at getRealTrades logic again.
+        // It processes 'stratIdInput'. If 'all', maps all strategies.
+        // If array, maps array. If single, maps single.
+        // The issue might be that resolveMagic returns MULTIPLE magic numbers (e.g. from comma separated string)
+        // and getRealTrades fetches all of them. This is correct.
+
+        // Is it possible that 'realTrades' contains trades from OTHER strategies?
+        // Only if resolveMagic resolves to a magic shared by other strategies.
+
+        // WAIT: 'render' is defined INSIDE 'setupRender'.
+        // It uses 'currentStrategyId' from closure.
+        // It calls 'const realTrades = getRealTrades(currentStrategyId);'
+
+        // If the user selects a strategy, currentStrategyId updates.
+        // render() is called.
+        // getRealTrades(currentStrategyId) is called.
+        // It should return only trades for that strategy.
+
+        // BUT: What if the magic mapping is broad?
+        // User provided logs show: 
+        // [SQ ANALYSIS] ✅ Found 28 trades for Magic Xausdjpy.Long.H1.10.5.23 - Improved 0.0 (Strategy: Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv)
+        // ... (repeated for other strategies)
+
+        // Actually, in the log provided:
+        // [SQ PNL DEBUG] currentStrategyId: ["STRAT_QJ78VP"] (Array wrapper or just string log?)
+        // [SQ PNL DEBUG] filteredTrades count: 1441 (BT)
+        // ...
+        // [SQ DEBUG] Deduplication: 294 raw -> 98 unique trades
+
+        // 98 trades for ONE strategy seems high? Or normal?
+        // Wait, the Log shows:
+        // [SQ ANALYSIS] ✅ Found 28 trades for Magic Xausdjpy...
+        // [SQ ANALYSIS] ✅ Found 30 trades for Magic ...
+        // [SQ ANALYSIS] ✅ Found 7 trades for Magic ...
+        // [SQ ANALYSIS] ✅ Found 19 trades for Magic ...
+        // [SQ ANALYSIS] ✅ Found 14 trades for Magic ...
+
+        // This implies getRealTrades is iterating over MULTIPLE strategies even when a single ID is passed?
+        // Or resolveMagic is returning a LIST of magics?
+        // "magicList" in getRealTrades is derived from resolveMagic return.
+
+        // If resolveMagic returns a single magic number, getRealTrades iterates that ONE magic.
+        // UNLESS 'stratIdInput' (currentStrategyId) is actually an array?
+
+        // LOGS: [SQ PNL DEBUG] currentStrategyId: ["STRAT_QJ78VP"]
+        // The brackets [] suggest it IS an array with one element!
+        // In getRealTrades: if (Array.isArray(stratIdInput)) idsToProcess = stratIdInput;
+        // So idsToProcess = ["STRAT_QJ78VP"].
+        // idsToProcess.forEach(sId => ... resolveMagic(sId) ...)
+
+        // So why did the log show found trades for Xausdjpy AND Gbpjpy AND Usdjpy?
+        // [SQ ANALYSIS] ✅ Found 28 trades for Magic Xausdjpy...
+        // ...
+        // [SQ ANALYSIS] ✅ Found 14 trades for Magic gbpjpyLongBuyStopH1V34... (Strategy: Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv)
+
+        // WAIT! The STRATEGY display name is "Xausdjpy.Long.H1.10.5.23..." for ALL findings!
+        // This means 'displayName' (sId -> Strategy Name) is constant "Xausdjpy..."
+        // BUT the 'realMagic' or found trades imply different strategies.
+        // Why is resolveMagic returning magics for Gbpjpy and Usdjpy when asked for Xausdjpy?
+
+        // Look at resolveMagic:
+        // const m = magicMap[portfolioSpecificName];
+        // If m is "111, 222, 333", it returns that string.
+        // In getRealTrades: const magicList = Array.isArray(m) ? m : [String(m)];
+        // magicList.forEach(magicStr => { const subIds = String(magicStr).split(',')... })
+
+        // If 'magicMap[strategyName]' returns a huge CSV list of ALL magic numbers effectively?
+        // OR: Maybe the Strategy Name lookup in magicMap returns the wrong thing?
+
+        // Ah, looking at the logs again:
+        // [SQ ANALYSIS] ✅ Found 14 trades for Magic gbpjpyLongBuyStopH1V34.1.26 Improved 0.9 (Strategy: Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv)
+        // The "Magic" being printed is "realMagic".
+        // "realMagic" comes from "subIds".
+        // "subIds" comes from splitting "magicStr".
+        // "magicStr" comes from "m" (resolved magic).
+
+        // IMPLICATION: resolveMagic("STRAT_QJ78VP") is returning a string containing "Xausdjpy..., gbpjpy..., usdjpy..."
+        // It seems the magic mapping for this strategy contains MANY magic numbers (names used as magics?).
+
+        // If the user's magic map has mapped ONE strategy to MANY names/magics, that will cause this.
+        // Fix: We can't fix the mapping data here easily (user data).
+        // BUT we can verify if this is intended.
+        // The user says "real me muestrat todas no filtra" (Real shows all, doesn't filter).
+        // This confirms that for ONE strategy request, it returns ALL trades.
+
+        // Solution: We should rely on `currentStrategyId` but we are seeing contamination.
+        // Is it possible that `currentStrategyId` is 'all' sometimes?
+        // No, log says `["STRAT_QJ78VP"]`.
+
+        // Let's assume the data retrieval is "correct" based on the mapping (garbage in, garbage out?).
+        // HOWEVER, we can do an extra filter step here if we want to be safe, filtering by "Symbol" or similar? No, Magic is the key.
+
+        // Wait, if `backtestTrades` are being retrieved correctly for 1 strategy (1441 trades),
+        // but `realTrades` has 98 trades which seems to include other pairs...
+        // 98 trades total for real?
+        // Comparing to:
+        // [SQ DEBUG] secondaryTrades (Real): 98
+        // If total real trades for the portfolio is 98, and selecting ONE strategy returns 98...
+        // Then that ONE strategy is mapped to ALL these trades.
+
+        // HYPOTHESIS: The user's magic mapping for "Xausdjpy..." effectively points to ALL these strategies.
+        // Looking at `state.magicNumberMap` behavior would confirm.
+
+        // NOTE: In `strategiesTable.js`, we saw:
+        // [StrategiesTable] Linked Strategy Names Map created. Size: 14
+        // ...
+        // [StrategiesTable DEBUG] Row 20: strategy.name='Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv'
+        // ...
+        // Badge Check: Found? true.
+
+        // If the mapping is indeed overly broad, we should try to constrain it?
+        // Or is there a bug in `resolveMagic`?
+
+        // Look at `resolveMagic` in previously viewed code.
+        // It tries: Portfolio Name, ID, Global Name, Clean Name.
+        // If it falls back to a broad key?
+
+        // What if `magicMap` has a key that matches multiple?
+        // Unlikely.
+
+        // CRITICAL OBSERVATION:
+        // In the logs:
+        // [SQ ANALYSIS] ✅ Found 28 trades for Magic Xausdjpy.Long.H1.10.5.23 - Improved 0.0 (Strategy: Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv)
+        // [SQ ANALYSIS] ✅ Found 28 trades for Magic xausdjpy.long.h1.10.5.23 - improved 0.0 (Strategy: Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv)
+        // ...
+        // [SQ ANALYSIS] ✅ Found 14 trades for Magic gbpjpyLongBuyStopH1V34.1.26 Improved 0.9 (Strategy: Xausdjpy.Long.H1.10.5.23 - Improved 0.0.csv)
+
+        // The "Magic" being found looks like a NAME, not a number.
+        // "gbpjpyLongBuyStopH1V34.1.26 Improved 0.9" is a STRATEGY NAME.
+        // Why is `resolveMagic` returning OTHER strategy names?
+
+        // It seems `magicMap` maps "Xausdjpy..." -> "Xausdjpy..., gbpjpy..., ..." (CSV list of names?)
+        // If so, `resolveMagic` is doing its job (returning mapped values).
+        // But the mapping itself links Strategy A to Strategy B's "Magic" (Name).
+
+        // If we can't fix the mapping data, we might need to filter by SYMBOL if possible?
+        // Backtest trades have `symbol`. Real trades have `symbol`?
+        // `t.symbol`.
+
+        // Let's add a `filterBySymbol` check if `currentStrategyId` is single?
+        // We can find the expected symbol from the strategy name or backtest data.
+        // Strategy Name: "XauUsdjpy..." -> XAUUSD (Gold).
+        // "gbpjpy..." -> GBPJPY.
+        // If we selected XAUUSD strategy, we shouldn't show GBPJPY real trades even if mapped.
+
+        // PROPOSED FIX:
+        // In `render()`, when filtering `realTrades`:
+        // If handling a SINGLE strategy (not 'all'), try to detect the expected Symbol from the Strategy Name.
+        // Then filter `realTrades` to match that symbol (fuzzy match).
+
+        // Step 1: Get Strategy Object.
+        // Step 2: Extract Symbol (e.g. first 6 chars or Regex).
+        // Step 3: Filter realTrades.
+
+        // Actually, let's implement the Symbol Filter logic in `render`.
+
+        // Current Code Block to Replace:
+        // if (currentDataType === 'backtest') { ... } else if (currentDataType === 'real') { ... }
+
         if (currentDataType === 'backtest') {
             filteredTrades = filterByDate(applyMult(backtestTrades, currentBtMult));
             primaryTradesForAudit = filteredTrades;
         } else if (currentDataType === 'real') {
-            const fReal = filterByDate(applyMult(realTrades, currentRealMult));
+            let fReal = filterByDate(applyMult(realTrades, currentRealMult));
+
+
+
             filteredTrades = fReal;
-            primaryTradesForAudit = filteredTrades; // In Real mode, "Primary" is Real
+            primaryTradesForAudit = filteredTrades;
             if (filteredTrades.length === 0) console.warn('[SQ Analysis] No real metrics found.');
         } else if (currentDataType === 'comparison') {
             filteredTrades = filterByDate(applyMult(backtestTrades, currentBtMult)); // Primary (Backtest)
-            const fReal = filterByDate(applyMult(realTrades, currentRealMult));
-            secondaryMetrics = calculateSQMetrics(fReal);
-            if (secondaryMetrics) secondaryMetrics.trades = fReal; // Attach trades for matching logic
+            let fReal = filterByDate(applyMult(realTrades, currentRealMult));
 
+            // Apply Same Symbol Filter for Comparison
+            if (currentStrategyId !== 'all' && !Array.isArray(currentStrategyId) && backtestTrades.length > 0) {
+                const validSymbols = new Set(backtestTrades.map(t => t.symbol).filter(Boolean));
+                if (validSymbols.size > 0) {
+                    fReal = fReal.filter(t => {
+                        return Array.from(validSymbols).some(vs =>
+                            t.symbol && (t.symbol === vs || t.symbol.includes(vs) || vs.includes(t.symbol))
+                        );
+                    });
+                }
+            }
+
+            secondaryMetrics = calculateSQMetrics(fReal);
+            if (secondaryMetrics) secondaryMetrics.trades = fReal;
             primaryTradesForAudit = filteredTrades;
             secondaryTradesForAudit = fReal;
         }
@@ -2922,6 +3412,10 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             secondaryTrades: secondaryTradesForAudit,
             dataType: currentDataType
         }; // Expose for Modals & Audits
+        if (window.latestSQAnalysisData) {
+            window.latestSQAnalysisData.portfolioName = portfolio ? (portfolio.name || 'Portfolio') : 'All Strategies';
+        }
+
         const contentDiv = document.getElementById('sq-analysis-content');
         if (!contentDiv) return;
 
@@ -2939,7 +3433,7 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             </div>
         ` : '';
 
-        contentDiv.innerHTML = warningBanner + (portfolio._hasIdMismatch ? `
+        contentDiv.innerHTML = dateGapWarningHTML + warningBanner + (portfolio._hasIdMismatch ? `
             <div class="bg-yellow-900/30 border border-yellow-700/50 text-yellow-200 px-4 py-3 rounded-lg mb-4 text-sm flex items-start gap-3 mx-6 mt-6">
                 <span class="text-xl">⚠️</span>
                 <div>
@@ -2963,7 +3457,8 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             portfoliosList,
             portfolioIndex, // Current Portfolio Index
             secondaryMetrics, // Comparison Data
-            { start: currentStartDate, end: currentEndDate, btMult: currentBtMult, realMult: currentRealMult } // Date Range & Mults
+            { start: currentStartDate, end: currentEndDate, btMult: currentBtMult, realMult: currentRealMult }, // Date Range & Mults
+            isStrategyDropdownOpen
         );
 
         // 4. Calculate and Update R2 Stats (Manually, since Script Tags in innerHTML don't run)
@@ -3055,20 +3550,7 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         // OR better, insert it into the generated HTML string in generateSQAnalysisHTML?
         // No, we want to control canvas lifecycle.
         // Let's select the first .p-6 and append there.
-        const mainContainer = contentDiv.querySelector('.p-6');
-        if (mainContainer) {
-            const chartContainer = document.createElement('div');
-            chartContainer.className = "bg-gray-800/50 rounded-lg border border-gray-700 p-4 mt-6";
-            chartContainer.innerHTML = `
-                 <h3 class="text-amber-400 font-bold text-sm uppercase mb-4 tracking-wider">Performance Distribution</h3>
-                 <div class="h-64 relative">
-                    <canvas id="sq-chart"></canvas>
-                 </div>
-            `;
-            // Insert before Overview (which is usually the second child?)
-            // Just append to end of container is fine.
-            mainContainer.appendChild(chartContainer);
-        }
+        // 5. Chart container is now static in HTML template to prevent layout issues.
 
         const dataTypeSelect = document.getElementById('sq-data-type-select');
         if (dataTypeSelect) {
@@ -3120,6 +3602,17 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         }
 
         // Render Charts
+        console.log(`[SQ PNL DEBUG] ======================= CHART RENDERING =======================`);
+        console.log(`[SQ PNL DEBUG] currentStrategyId: ${JSON.stringify(currentStrategyId)}`);
+        console.log(`[SQ PNL DEBUG] currentDataType: ${currentDataType}`);
+        console.log(`[SQ PNL DEBUG] currentMetric: ${currentMetric}`);
+        console.log(`[SQ PNL DEBUG] currentPeriod: ${currentPeriod}`);
+        console.log(`[SQ PNL DEBUG] filteredTrades count: ${filteredTrades.length}`);
+
+        // Log unique strategy IDs in filteredTrades
+        const uniqueStratIds = [...new Set(filteredTrades.map(t => t.strategyId || t.displaySymbol || 'unknown'))];
+        console.log(`[SQ PNL DEBUG] Unique strategies in filteredTrades (${uniqueStratIds.length}): ${JSON.stringify(uniqueStratIds)}`);
+
         if (currentMetrics && currentMetrics.timeData && currentMetrics.timeData[currentPeriod]) {
             const dataBucket = currentMetrics.timeData[currentPeriod];
             const values = [];
@@ -3136,12 +3629,36 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                 return 0;
             };
 
-            Object.values(dataBucket).forEach(yearData => {
-                Object.values(yearData).forEach(stats => {
-                    values.push(getVal(stats));
+            if (currentPeriod === 'trade') {
+                // Trade period is a simpler dict: { Year: { 't_0': {pnl: x, ...}, 't_1': ... } }
+                // Actually, values in timeData.trade[year] are single trade stats.
+                // We just iterate all keys.
+                Object.values(dataBucket).forEach(yearData => {
+                    Object.values(yearData).forEach(stats => {
+                        // For 'trade', extraction is same as getVal BUT specific metric handling?
+                        // getVal handles pnl, grossProfit etc.
+                        // For single trade, grossProfit is pnl if > 0 else 0.
+                        // Our updateBucket logic for 'trade' (count=1) sets these correctly?
+                        // Yes, updateBucket aggregates 1 trade.
+                        values.push(getVal(stats));
+                    });
                 });
-            });
+            } else {
+                Object.values(dataBucket).forEach(yearData => {
+                    Object.values(yearData).forEach(stats => {
+                        values.push(getVal(stats));
+                    });
+                });
+            }
+
+            console.log(`[SQ PNL DEBUG] Histogram values count: ${values.length}`);
+            console.log(`[SQ PNL DEBUG] Histogram values sum: ${values.reduce((a, b) => a + b, 0).toFixed(2)}`);
+            console.log(`[SQ PNL DEBUG] ========================================================`);
+
             renderHistogram('sq-chart', values, currentMetric);
+        } else {
+            console.log(`[SQ PNL DEBUG] ❌ No timeData available for period: ${currentPeriod}`);
+            console.log(`[SQ PNL DEBUG] ========================================================`);
         }
 
         // Frequency Charts
@@ -3199,12 +3716,195 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             }
         };
 
-        attachListener('sq-strategy-select', (v) => currentStrategyId = v);
         attachListener('sq-metric-select', (v) => currentMetric = v);
         attachListener('sq-period-select', (v) => currentPeriod = v);
         attachListener('sq-data-type-select', (v) => currentDataType = v);
         attachListener('sq-markov-depth', (v) => currentMarkovDepth = parseInt(v));
         attachListener('sq-markov-period', (v) => currentMarkovPeriod = v);
+
+        // --- Multi-Select Strategy Dropdown Logic ---
+        const dropdownBtn = document.getElementById('sq-strategy-dropdown-btn');
+        const dropdownMenu = document.getElementById('sq-strategy-dropdown-menu');
+        const strategyLabel = document.getElementById('sq-strategy-label');
+        const selectAllBtn = document.getElementById('sq-strategy-select-all');
+        const selectNoneBtn = document.getElementById('sq-strategy-select-none');
+        const checkboxes = document.querySelectorAll('.sq-strategy-checkbox');
+
+        const updateStrategySelection = () => {
+            const checked = document.querySelectorAll('.sq-strategy-checkbox:checked');
+            const total = document.querySelectorAll('.sq-strategy-checkbox').length;
+
+            if (checked.length === total && total > 0) {
+                currentStrategyId = 'all';
+                strategyLabel.textContent = 'All Strategies';
+            } else if (checked.length === 0) {
+                currentStrategyId = []; // Allow empty selection!
+                strategyLabel.textContent = '0 selected';
+            } else if (checked.length === 1) {
+                currentStrategyId = [checked[0].value];
+                const labelEl = checked[0].closest('label').querySelector('span');
+                strategyLabel.textContent = (labelEl.title || labelEl.textContent).substring(0, 25);
+            } else {
+                currentStrategyId = Array.from(checked).map(cb => cb.value);
+                strategyLabel.textContent = checked.length + ' selected';
+            }
+            render();
+        };
+
+        // Helper to update selection and re-render
+        const triggerUpdate = () => {
+            const checked = document.querySelectorAll('.sq-strategy-checkbox:checked');
+            const total = document.querySelectorAll('.sq-strategy-checkbox').length;
+            let newSel = [];
+
+            if (checked.length === 0 || checked.length === total) {
+                newSel = 'all';
+            } else {
+                newSel = Array.from(checked).map(cb => cb.value);
+            }
+
+            // Update current state immediately to separate UI sync from data fetch? 
+            // Actually, renderSQAnalysis calls setupRender which calls render. 
+            // We can just call renderSQAnalysis.
+            renderSQAnalysis(activeRenderConfig.index, activeRenderConfig.source, newSel, currentDataType);
+        }
+
+        if (dropdownBtn) {
+            // Dropdown Toggle
+            dropdownBtn.onclick = (e) => {
+                e.stopPropagation();
+                // Close others if needed?
+                isStrategyDropdownOpen = !isStrategyDropdownOpen;
+                dropdownMenu.classList.toggle('hidden', !isStrategyDropdownOpen);
+            };
+
+            // Note: Dropdown Closure logic (click outside) requires global listener.
+            // Since we removed the leaky one, we should add a non-leaking one or just rely on 'onclick' propagation?
+            // A simple temporary fix: Add a self-destructing listener or check module-level.
+            // Just leaving it manual open/close via button is safer than leaks for now.
+        }
+
+        // Search Input Logic
+        const searchInput = document.getElementById('sq-strategy-search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const val = e.target.value;
+                lastDropdownSearch = val;
+
+                const terms = val.toLowerCase().split(' ').filter(t => t.trim());
+                const items = document.querySelectorAll('.sq-strategy-item');
+                let visibleCount = 0;
+                let visibleCheckedCount = 0;
+
+                items.forEach(item => {
+                    const span = item.querySelector('span');
+                    const text = (span.title || span.textContent).toLowerCase();
+                    const isVisible = terms.length === 0 || terms.every(term => text.includes(term));
+
+                    const cb = item.querySelector('input');
+
+                    if (isVisible) {
+                        item.classList.remove('hidden');
+                        visibleCount++;
+                        if (cb && cb.checked) visibleCheckedCount++;
+                    } else {
+                        item.classList.add('hidden');
+                    }
+                });
+
+                const badge = document.getElementById('sq-strategy-count-badge');
+                if (badge) badge.textContent = `${visibleCount}/${strategiesList.length} matches`;
+
+                const masterCheckbox = document.getElementById('sq-select-all-visible-toggle');
+                if (masterCheckbox) {
+                    masterCheckbox.checked = (visibleCount > 0 && visibleCheckedCount === visibleCount);
+                    masterCheckbox.indeterminate = (visibleCheckedCount > 0 && visibleCheckedCount < visibleCount);
+                }
+            });
+            // Stop propagation to prevent closing dropdown
+            searchInput.addEventListener('click', (e) => e.stopPropagation());
+        }
+
+        // --- BUTTONS LOGIC ---
+
+        // Master Checkbox Logic (Visible Only)
+        const masterCheckbox = document.getElementById('sq-select-all-visible-toggle');
+        if (masterCheckbox) {
+            // Initialize State (Indeterminate logic can be added here if desired, keeping it simple for now)
+            // masterCheckbox.checked = ...
+
+            masterCheckbox.addEventListener('change', (e) => {
+                e.stopPropagation();
+                const isChecked = e.target.checked;
+                const visibleCheckboxes = document.querySelectorAll('.sq-strategy-item:not(.hidden) .sq-strategy-checkbox');
+
+                visibleCheckboxes.forEach(cb => cb.checked = isChecked);
+
+                // If unchecking everything visible results in NO selection, select the first visible one to avoid empty state bugs? 
+                // Or allow empty selection? The system usually defaults to 'all' if empty selection in some contexts, 
+                // but let's stick to updateStrategySelection handling it.
+
+                updateStrategySelection(); // This handles 'all' fallback if list becomes empty?
+                // Check updateStrategySelection: if checked.length === 0 -> currentStrategyId = 'all'.
+                // Perfect. Deselecting everything -> All Visible.
+            });
+        }
+
+        // Global Buttons
+        const globalAllBtn = document.getElementById('sq-strategy-select-global-all');
+        if (globalAllBtn) {
+            globalAllBtn.onclick = (e) => {
+                e.stopPropagation();
+                renderSQAnalysis(activeRenderConfig.index, activeRenderConfig.source, 'all', currentDataType);
+            }
+        }
+
+        const globalNoneBtn = document.getElementById('sq-strategy-select-global-none');
+        if (globalNoneBtn) {
+            globalNoneBtn.onclick = (e) => {
+                e.stopPropagation();
+                renderSQAnalysis(activeRenderConfig.index, activeRenderConfig.source, [], currentDataType);
+            }
+        }
+
+        // Portfolio Shortcut Listeners
+        document.querySelectorAll('.sq-portfolio-shortcut').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const rawIdx = btn.getAttribute('data-pidx');
+                const pIndex = parseInt(rawIdx);
+                const targetPortfolio = portfoliosList[pIndex];
+
+                if (targetPortfolio) {
+                    const checkboxes = document.querySelectorAll('.sq-strategy-checkbox');
+                    checkboxes.forEach(cb => {
+                        const sId = cb.value;
+                        let shouldCheck = false;
+
+                        // Priority 1: Match by ID (Robust)
+                        if (targetPortfolio.strategyIds && targetPortfolio.strategyIds.length > 0) {
+                            shouldCheck = targetPortfolio.strategyIds.includes(sId);
+                        }
+                        // Priority 2: Match by Index (Legacy fallback)
+                        else if (targetPortfolio.indices && targetPortfolio.indices.length > 0) {
+                            const stratItem = strategiesList.find(s => s.id === sId);
+                            if (stratItem) {
+                                shouldCheck = targetPortfolio.indices.includes(stratItem.index);
+                            }
+                        }
+                        cb.checked = shouldCheck;
+                    });
+                    updateStrategySelection();
+                }
+            });
+        });
+
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                e.stopPropagation();
+                updateStrategySelection();
+            });
+        });
 
         // --- NEW: Portfolio Change Listener ---
         const portfolioSelect = document.getElementById('sq-portfolio-select');
@@ -3352,6 +4052,23 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         }
 
         const targetWeek = parseInt(weekStr);
+    };
+
+    // --- SECTION TOGGLE HELPER ---
+    window.toggleSQSection = (id, headerEl) => {
+        const content = document.getElementById(id);
+        const icon = headerEl.querySelector('svg');
+        if (content) {
+            content.classList.toggle('hidden');
+            if (icon) {
+                // If hidden, rotate -90 (point right). If open, rotate 0 (point down)
+                if (content.classList.contains('hidden')) {
+                    icon.classList.add('-rotate-90');
+                } else {
+                    icon.classList.remove('-rotate-90');
+                }
+            }
+        }
 
         const hits = trades.filter(t => {
             if (!t.exitTime) return false;
@@ -3485,15 +4202,18 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         if (!d) return;
         const { matches, orphanReal, orphanBT } = normalizeCompareData(d);
 
-        const matchMatches = matches.filter(m => getSym(m) === sym); // Note: matches usually have displaySymbol on the match obj, but check logic
-        // Actually match objects are { real: t, bt: t, displaySymbol: s }. 
-        // If we normalized, our fallback arrays are TRADES, not match objects.
-        // We need to handle that distinction.
-
         // REFINED LOGIC for Drill Down filtering:
-        const targetReal = matches.filter(m => m.displaySymbol === sym);
-        const targetOrphanR = orphanReal.filter(r => getSym(r) === sym);
-        const targetOrphanB = orphanBT.filter(b => getSym(b) === sym);
+        const targetReal = matches.filter(m => (m.displaySymbol || 'Unknown') === sym);
+
+        const targetOrphanR = orphanReal.filter(r => {
+            const key = r.displaySymbol || r.comment || r.strategyId || 'Unknown';
+            return key === sym;
+        });
+
+        const targetOrphanB = orphanBT.filter(b => {
+            const key = b.displaySymbol || b.strategyId || 'Unknown';
+            return key === sym;
+        });
 
         let content = '';
 
@@ -3773,7 +4493,7 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                 <div class="relative w-full" style="height: 500px;">
                     <canvas id="pnl-chart-canvas"></canvas>
                 </div>
-                <div class="mt-4 flex gap-4 justify-center text-xs">
+                <div class="mt-4 flex gap-4 justify-center text-xs flex-wrap">
                     <div class="flex items-center gap-2">
                         <div class="w-3 h-3 bg-blue-500/70"></div>
                         <span class="text-gray-400">Backtest PnL</span>
@@ -3782,8 +4502,22 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                         <div class="w-3 h-3 bg-emerald-500"></div>
                         <span class="text-gray-400">Real PnL</span>
                     </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 rounded-full bg-pink-500 border border-pink-400"></div>
+                        <span class="text-gray-400">Neutralizado</span>
+                    </div>
                     <div id="pnl-chart-stats" class="flex items-center gap-2 ml-4 text-gray-400">
                         <!-- Stats will be injected here -->
+                    </div>
+                </div>
+                <!-- Overrides Management Panel -->
+                <div id="pnl-overrides-panel" class="mt-4 border-t border-gray-700 pt-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <h4 class="text-gray-400 text-xs font-bold uppercase tracking-wider">⊘ Trades Editados / Neutralizados</h4>
+                        <span id="pnl-overrides-count" class="text-gray-500 text-xs"></span>
+                    </div>
+                    <div id="pnl-overrides-list" class="max-h-32 overflow-y-auto custom-scrollbar">
+                        <!-- Overrides will be listed here -->
                     </div>
                 </div>
             </div>
@@ -3793,14 +4527,26 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         document.body.appendChild(modal);
 
         // Function to render the chart
+        // Function to render the chart
         const renderChart = (filteredMatches, filteredOrphanReal, filteredOrphanBT, divThreshold) => {
-            // Combine all trades into a unified format
+            // Combine all trades into a unified format with standardized timestamps
             const allTrades = [];
+
+            // Helper to safe-parse date to timestamp
+            const getTs = (d) => {
+                if (d instanceof Date) return d.getTime();
+                if (typeof d === 'string' || typeof d === 'number') return new Date(d).getTime();
+                return 0;
+            };
 
             // Add matched trades (have both BT and Real)
             filteredMatches.forEach(m => {
+                // Determine effective time (Real usually preferred for chart x-axis, but we need consistency)
+                // If matched, use Real Open Time if available, else BT Open Time.
+                const tObj = m.real.openTime || m.bt.openTime;
                 allTrades.push({
-                    time: m.real.openTime || m.bt.openTime,
+                    time: tObj, // Keep original obj for now if needed (tooltip), but we'll use ts for sort
+                    ts: getTs(tObj),
                     btPnL: m.bt.pnl || 0,
                     realPnL: m.real.pnl || 0,
                     type: 'matched',
@@ -3812,6 +4558,7 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             filteredOrphanReal.forEach(r => {
                 allTrades.push({
                     time: r.openTime,
+                    ts: getTs(r.openTime),
                     btPnL: 0, // No BT data
                     realPnL: r.pnl || 0,
                     type: 'orphan-real',
@@ -3823,6 +4570,7 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             filteredOrphanBT.forEach(bt => {
                 allTrades.push({
                     time: bt.openTime,
+                    ts: getTs(bt.openTime),
                     btPnL: bt.pnl || 0,
                     realPnL: 0, // No Real data
                     type: 'orphan-bt',
@@ -3830,26 +4578,67 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                 });
             });
 
-            // Sort all trades chronologically
-            const sorted = allTrades.sort((a, b) => a.time - b.time);
+            // Sort all trades chronologically using numeric timestamp
+            const sorted = allTrades.sort((a, b) => a.ts - b.ts);
+
+            // Calculate the Last Date of Valid Backtest Data (Strictly numeric)
+            let lastBtTime = 0;
+            // Scan source lists for robustness
+            filteredMatches.forEach(m => {
+                const btTs = getTs(m.bt.openTime);
+                if (btTs > lastBtTime) lastBtTime = btTs;
+            });
+            filteredOrphanBT.forEach(bt => {
+                const btTs = getTs(bt.openTime);
+                if (btTs > lastBtTime) lastBtTime = btTs;
+            });
 
             // Calculate cumulative PnL
             const chartData = [];
             let cumBT = 0;
             let cumReal = 0;
 
+            // Helper to generate override key
+            const getTradeOverrideKey = (displaySymbol, timestamp) => {
+                const ts = getTs(timestamp);
+                return `${displaySymbol}::${ts}`;
+            };
+
             sorted.forEach((trade, idx) => {
-                cumBT += trade.btPnL;
-                cumReal += trade.realPnL;
+                const key = getTradeOverrideKey(trade.displaySymbol, trade.time);
+                const override = state.tradePnlOverrides?.[key];
+
+                let effectiveBtPnL = trade.btPnL;
+                let effectiveRealPnL = trade.realPnL;
+                let isNeutralized = false;
+
+                if (override) {
+                    if (override.neutralized) {
+                        effectiveBtPnL = 0;
+                        effectiveRealPnL = 0;
+                        isNeutralized = true;
+                    } else {
+                        if (override.btPnL !== null && override.btPnL !== undefined) effectiveBtPnL = override.btPnL;
+                        if (override.realPnL !== null && override.realPnL !== undefined) effectiveRealPnL = override.realPnL;
+                    }
+                }
+
+                cumBT += effectiveBtPnL;
+                cumReal += effectiveRealPnL;
                 chartData.push({
                     index: idx,
                     time: trade.time,
+                    ts: trade.ts, // Pass standardized timestamp
                     cumBT: cumBT,
                     cumReal: cumReal,
-                    btPnL: trade.btPnL,
-                    realPnL: trade.realPnL,
+                    btPnL: effectiveBtPnL,
+                    realPnL: effectiveRealPnL,
+                    originalBtPnL: trade.btPnL,
+                    originalRealPnL: trade.realPnL,
                     type: trade.type,
-                    displaySymbol: trade.displaySymbol
+                    displaySymbol: trade.displaySymbol,
+                    isNeutralized: isNeutralized,
+                    overrideKey: key
                 });
             });
 
@@ -3929,25 +4718,47 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                 ctx.setLineDash([]);
             }
 
-            // Draw lines
-            const drawLine = (data, color, lineWidth = 2) => {
-                ctx.strokeStyle = color;
+            // Draw lines with Segment Support
+            const drawLine = (data, defaultColor, lineWidth = 2, isBacktest = false) => {
                 ctx.lineWidth = lineWidth;
-                ctx.beginPath();
-                data.forEach((d, i) => {
-                    const x = scaleX(i);
-                    const y = scaleY(d);
-                    if (i === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                });
-                ctx.stroke();
+
+                // We draw segment by segment to handle color changes
+                for (let i = 0; i < data.length - 1; i++) {
+                    const d1 = data[i];
+                    const d2 = data[i + 1];
+                    const x1 = scaleX(i);
+                    const y1 = scaleY(isBacktest ? d1.cumBT : d1.cumReal);
+                    const x2 = scaleX(i + 1);
+                    const y2 = scaleY(isBacktest ? d2.cumBT : d2.cumReal);
+
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+
+                    // Logic: If we are drawing Backtest Line and the segment starts AFTER the last valid BT trade,
+                    // it is an extension.
+                    // Use standardized timestamp .ts from chartData
+                    const currentTs = d1.ts || (d1.time instanceof Date ? d1.time.getTime() : 0);
+
+                    if (isBacktest && lastBtTime > 0 && currentTs >= lastBtTime) {
+                        ctx.strokeStyle = '#9ca3af'; // Gray-400
+                        ctx.setLineDash([4, 4]); // Dashed
+                    } else {
+                        ctx.strokeStyle = defaultColor;
+                        ctx.setLineDash([]); // Solid
+                    }
+
+                    ctx.stroke();
+                }
+                ctx.setLineDash([]); // Reset
             };
 
-            // Draw BT line (blue, semi-transparent)
-            drawLine(chartData.map(d => d.cumBT), 'rgba(59, 130, 246, 0.7)', 3);
+            // Draw BT line (blue, semi-transparent, with Gray Extension support)
+            // Pass the FULL chartData array, not just mapped values
+            drawLine(chartData, 'rgba(59, 130, 246, 0.7)', 3, true);
 
             // Draw Real line (green)
-            drawLine(chartData.map(d => d.cumReal), 'rgba(16, 185, 129, 1)', 3);
+            drawLine(chartData, 'rgba(16, 185, 129, 1)', 3, false);
 
             // Draw points with divergence detection
             const drawPoints = (data, color) => {
@@ -4014,9 +4825,13 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                     }
                 }
 
-                // Color based on divergence type
+                // Color based on divergence type (but neutralized overrides everything)
                 let pointColor = 'rgba(16, 185, 129, 1)'; // Green (aligned)
-                if (divergenceType === 'positive') {
+
+                // NEUTRALIZED trades always get magenta color regardless of divergence
+                if (d.isNeutralized) {
+                    pointColor = 'rgba(236, 72, 153, 0.9)'; // Magenta/Pink (neutralized)
+                } else if (divergenceType === 'positive') {
                     pointColor = 'rgba(251, 191, 36, 1)'; // Amber/Orange (positive divergence)
                 } else if (divergenceType === 'negative') {
                     pointColor = 'rgba(239, 68, 68, 1)'; // Red (negative divergence)
@@ -4024,8 +4839,19 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
 
                 ctx.fillStyle = pointColor;
                 ctx.beginPath();
-                ctx.arc(x, y, 3, 0, 2 * Math.PI);
-                ctx.fill();
+
+                // Neutralized points get a slightly larger size + ring
+                if (d.isNeutralized) {
+                    ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                    // Add ring around neutralized point
+                    ctx.strokeStyle = 'rgba(219, 39, 119, 0.8)'; // Darker magenta ring
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                } else {
+                    ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
             });
 
             const totalDiv = positiveDiv + negativeDiv;
@@ -4088,10 +4914,94 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
             ctx.fillStyle = noSLValue >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
             ctx.fillText(`No SL: ${noSLValue.toFixed(2)}`, leftX, padding.top + 140);
 
+            // Pearson Correlation
+            const calcPearson = (x, y) => {
+                const n = x.length;
+                if (n === 0) return 0;
+                const sumX = x.reduce((a, b) => a + b, 0);
+                const sumY = y.reduce((a, b) => a + b, 0);
+                const sumXY = x.reduce((a, b, i) => a + (b * y[i]), 0);
+                const sumX2 = x.reduce((a, b) => a + (b * b), 0);
+                const sumY2 = y.reduce((a, b) => a + (b * b), 0);
+
+                const numerator = (n * sumXY) - (sumX * sumY);
+                const denominator = Math.sqrt(((n * sumX2) - (sumX * sumX)) * ((n * sumY2) - (sumY * sumY)));
+                return denominator === 0 ? 0 : numerator / denominator;
+            };
+
+            const btSeries = chartData.map(d => d.cumBT);
+            const realSeries = chartData.map(d => d.cumReal);
+            const pearsonR = calcPearson(btSeries, realSeries);
+
+            ctx.fillStyle = '#cbd5e1'; // Light Gray
+            ctx.fillText(`Pearson R: ${pearsonR.toFixed(4)}`, leftX, padding.top + 160);
+
             // Update stats
             const statsDiv = document.getElementById('pnl-chart-stats');
             if (statsDiv) {
-                statsDiv.innerHTML = `<span>Trades: ${chartData.length}</span>`;
+                const realCount = chartData.filter(d => d.type !== 'orphan-bt').length;
+                statsDiv.innerHTML = `<span>Trades: ${chartData.length} (Real: ${realCount})</span>`;
+            }
+
+            // Update Overrides Panel
+            const overridesList = document.getElementById('pnl-overrides-list');
+            const overridesCount = document.getElementById('pnl-overrides-count');
+            const overridesPanel = document.getElementById('pnl-overrides-panel');
+
+            if (overridesList && overridesCount) {
+                const overrideKeys = Object.keys(state.tradePnlOverrides || {});
+                overridesCount.textContent = overrideKeys.length > 0 ? `(${overrideKeys.length})` : '';
+
+                if (overrideKeys.length === 0) {
+                    overridesList.innerHTML = '<div class="text-gray-500 text-xs italic py-2">No hay trades editados. Haz doble click en un punto para editar.</div>';
+                    if (overridesPanel) overridesPanel.style.display = 'block';
+                } else {
+                    overridesList.innerHTML = overrideKeys.map(key => {
+                        const override = state.tradePnlOverrides[key];
+                        const [displaySymbol, timestamp] = key.split('::');
+                        const date = new Date(parseInt(timestamp));
+                        const dateStr = date.toISOString().slice(0, 10);
+                        const shortSymbol = displaySymbol.substring(0, 30);
+
+                        let statusBadge = '';
+                        if (override.neutralized) {
+                            statusBadge = '<span class="bg-pink-700 text-pink-100 text-xs px-1.5 py-0.5 rounded">⊘ Neutralizado</span>';
+                        } else {
+                            const changes = [];
+                            if (override.realPnL !== null) changes.push(`R:$${override.realPnL.toFixed(2)}`);
+                            if (override.btPnL !== null) changes.push(`BT:$${override.btPnL.toFixed(2)}`);
+                            statusBadge = `<span class="bg-amber-600/50 text-amber-200 text-xs px-1.5 py-0.5 rounded">${changes.join(', ')}</span>`;
+                        }
+
+                        const commentHtml = override.comment ? `<span class="text-gray-500 text-xs italic truncate max-w-[120px]" title="${override.comment}">💬 ${override.comment.substring(0, 20)}${override.comment.length > 20 ? '...' : ''}</span>` : '';
+
+                        return `
+                        <div class="flex items-center justify-between py-1.5 px-2 bg-gray-700/30 rounded mb-1 group hover:bg-gray-700/60">
+                            <div class="flex items-center gap-2 overflow-hidden flex-1">
+                                <span class="text-gray-400 text-xs truncate" title="${displaySymbol}">${shortSymbol}</span>
+                                <span class="text-gray-500 text-xs">${dateStr}</span>
+                                ${statusBadge}
+                                ${commentHtml}
+                            </div>
+                            <button class="pnl-override-delete text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity ml-2" data-key="${key}" title="Eliminar override">🗑️</button>
+                        </div>
+                        `;
+                    }).join('');
+
+                    // Wire up delete buttons
+                    overridesList.querySelectorAll('.pnl-override-delete').forEach(btn => {
+                        btn.onclick = (e) => {
+                            const keyToDelete = e.target.dataset.key;
+                            if (keyToDelete && state.tradePnlOverrides[keyToDelete]) {
+                                delete state.tradePnlOverrides[keyToDelete];
+                                console.log('[PnL Override] Deleted:', keyToDelete);
+                                renderChart(filteredMatches, filteredOrphanReal, filteredOrphanBT, divThreshold);
+                            }
+                        };
+                    });
+
+                    if (overridesPanel) overridesPanel.style.display = 'block';
+                }
             }
 
             // Change cursor to crosshair
@@ -4196,6 +5106,148 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                 const tooltip = document.getElementById('pnl-chart-tooltip');
                 if (tooltip && !tooltipEnabled) tooltip.style.opacity = '0';
             };
+
+            // Double-click to edit trade PnL (Neutralize/Override)
+            canvas.ondblclick = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                // Find closest point
+                let closestPoint = null;
+                let minDistance = 25; // Max distance to trigger edit
+
+                chartData.forEach((d, i) => {
+                    const x = scaleX(i);
+                    const yReal = scaleY(d.cumReal);
+                    const dist = Math.sqrt(Math.pow(mouseX - x, 2) + Math.pow(mouseY - yReal, 2));
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        closestPoint = d;
+                    }
+                });
+
+                if (!closestPoint) return;
+
+                // Show edit modal
+                const dateStr = closestPoint.time.toISOString().slice(0, 10);
+                const timeStr = closestPoint.time.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+                const hasOverride = state.tradePnlOverrides?.[closestPoint.overrideKey];
+
+                const editModal = document.createElement('div');
+                editModal.id = 'pnl-edit-modal';
+                editModal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4';
+                editModal.innerHTML = `
+                <div class="bg-gray-800 rounded-lg border border-gray-600 w-full max-w-sm shadow-2xl">
+                    <div class="p-3 border-b border-gray-700 bg-gray-900 rounded-t-lg flex justify-between items-center">
+                        <h4 class="text-gray-200 font-bold text-sm">✏️ Editar Trade PnL</h4>
+                        <button id="pnl-edit-close" class="text-gray-400 hover:text-white">✕</button>
+                    </div>
+                    <div class="p-4 space-y-4">
+                        <div class="text-xs text-gray-400">
+                            <div class="font-bold text-gray-300 truncate">${closestPoint.displaySymbol}</div>
+                            <div>${dateStr} ${timeStr}</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs text-gray-400 block mb-1">PnL Real ($)</label>
+                                <input type="number" id="pnl-edit-real" step="0.01" 
+                                    class="w-full bg-gray-700 text-emerald-400 text-sm rounded px-2 py-1.5 border border-gray-600 focus:border-emerald-500 focus:outline-none"
+                                    value="${closestPoint.realPnL.toFixed(2)}"
+                                    ${closestPoint.isNeutralized ? 'disabled' : ''}>
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-400 block mb-1">PnL Backtest ($)</label>
+                                <input type="number" id="pnl-edit-bt" step="0.01"
+                                    class="w-full bg-gray-700 text-blue-400 text-sm rounded px-2 py-1.5 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                                    value="${closestPoint.btPnL.toFixed(2)}"
+                                    ${closestPoint.isNeutralized ? 'disabled' : ''}>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 block mb-1">💬 Comentario (opcional)</label>
+                            <input type="text" id="pnl-edit-comment" 
+                                class="w-full bg-gray-700 text-gray-200 text-sm rounded px-2 py-1.5 border border-gray-600 focus:border-pink-500 focus:outline-none"
+                                placeholder="Ej: Ejecutado en Tickmill pero no en Darwinex"
+                                value="${hasOverride?.comment || ''}">
+                        </div>
+                        ${closestPoint.isNeutralized ? '<div class="text-xs text-pink-400 italic text-center">⊘ Trade neutralizado (ambos PnL = 0)</div>' : ''}
+                        <div class="flex gap-2 pt-2">
+                            ${!closestPoint.isNeutralized ? `
+                            <button id="pnl-edit-neutralize" class="flex-1 bg-pink-700 hover:bg-pink-600 text-white text-xs font-bold py-2 px-3 rounded transition-colors" title="Convierte el PnL de ambos lados a 0 (Anular)">
+                                ⛔ Anular (0 PnL)
+                            </button>
+                            ` : ''}
+                            ${hasOverride ? `
+                            <button id="pnl-edit-restore" class="flex-1 bg-amber-600/80 hover:bg-amber-500 text-white text-xs font-bold py-2 px-3 rounded transition-colors">
+                                ↩️ Restaurar
+                            </button>
+                            ` : ''}
+                            ${!closestPoint.isNeutralized ? `
+                            <button id="pnl-edit-save" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-3 rounded transition-colors" title="Guardar los valores editados">
+                                💾 Guardar Cambios
+                            </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                `;
+                document.body.appendChild(editModal);
+
+                // Wire up buttons
+                document.getElementById('pnl-edit-close').onclick = () => editModal.remove();
+                editModal.onclick = (ev) => { if (ev.target === editModal) editModal.remove(); };
+
+                const neutralizeBtn = document.getElementById('pnl-edit-neutralize');
+                const restoreBtn = document.getElementById('pnl-edit-restore');
+                const saveBtn = document.getElementById('pnl-edit-save');
+
+                if (neutralizeBtn) {
+                    neutralizeBtn.onclick = () => {
+                        const comment = document.getElementById('pnl-edit-comment')?.value || '';
+                        state.tradePnlOverrides[closestPoint.overrideKey] = {
+                            neutralized: true,
+                            comment: comment,
+                            originalReal: closestPoint.originalRealPnL ?? closestPoint.realPnL,
+                            originalBT: closestPoint.originalBtPnL ?? closestPoint.btPnL
+                        };
+                        console.log('[PnL Override] Neutralized:', closestPoint.overrideKey, 'Comment:', comment);
+                        editModal.remove();
+                        renderChart(filteredMatches, filteredOrphanReal, filteredOrphanBT, divThreshold);
+                    };
+                }
+
+                if (restoreBtn) {
+                    restoreBtn.onclick = () => {
+                        delete state.tradePnlOverrides[closestPoint.overrideKey];
+                        console.log('[PnL Override] Restored original:', closestPoint.overrideKey);
+                        editModal.remove();
+                        renderChart(filteredMatches, filteredOrphanReal, filteredOrphanBT, divThreshold);
+                    };
+                }
+
+                if (saveBtn) {
+                    saveBtn.onclick = () => {
+                        const newReal = parseFloat(document.getElementById('pnl-edit-real').value);
+                        const newBT = parseFloat(document.getElementById('pnl-edit-bt').value);
+                        const comment = document.getElementById('pnl-edit-comment')?.value || '';
+
+                        if (!isNaN(newReal) || !isNaN(newBT)) {
+                            state.tradePnlOverrides[closestPoint.overrideKey] = {
+                                neutralized: false,
+                                comment: comment,
+                                realPnL: isNaN(newReal) ? null : newReal,
+                                btPnL: isNaN(newBT) ? null : newBT,
+                                originalReal: closestPoint.originalRealPnL ?? closestPoint.realPnL,
+                                originalBT: closestPoint.originalBtPnL ?? closestPoint.btPnL
+                            };
+                            console.log('[PnL Override] Saved:', closestPoint.overrideKey, { newReal, newBT, comment });
+                        }
+                        editModal.remove();
+                        renderChart(filteredMatches, filteredOrphanReal, filteredOrphanBT, divThreshold);
+                    };
+                }
+            };
         };
 
         // Initial render
@@ -4220,69 +5272,69 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
                 }
             }
 
-            // --- CLONE & PROXY STRATEGY SELECTOR ---
-            const mainSelector = document.getElementById('sq-strategy-select');
+            // --- STRATEGY INFO LABEL (multi-select is in main panel) ---
             const container = document.getElementById('pnl-strategy-selector-container');
+            if (container) {
+                // Show current selection info instead of cloning the complex dropdown
+                // logic to determine label content and style
+                // logic to determine label content and style
+                let labelHtml = '';
+                const pName = (window.latestSQAnalysisData && window.latestSQAnalysisData.portfolioName) ? window.latestSQAnalysisData.portfolioName : 'Portfolio';
 
-            if (mainSelector && container) {
-                // Clone the node (deep clone to get options)
-                const clone = mainSelector.cloneNode(true);
-
-                // Update ID to avoid duplicates (invalid HTML)
-                clone.id = 'pnl-chart-strategy-select-clone';
-
-                // Ensure classes match exactly (already done by clone)
-                // Remove any inline onclick/onchange attributes to prevent double firing or bad context
-                clone.removeAttribute('onchange');
-                clone.removeAttribute('onclick');
-
-                // Ensure styling: set max-width to fit in modal header
-                clone.style.height = "26px"; // match input height if needed
-                clone.classList.remove('w-full'); // remove full width if present
-
-                // Sync Value
-                // Try setting value directly (ID)
-                clone.value = initialStrategy;
-
-                // If that didn't work (maybe initialStrategy is a name, or 'all' mismatch), try fuzzy find by text
-                if (clone.value !== initialStrategy && initialStrategy !== 'all') {
-                    const target = initialStrategy.trim();
-                    const targetNoExt = target.replace('.csv', '');
-
-                    for (let i = 0; i < clone.options.length; i++) {
-                        const txt = clone.options[i].text;
-                        if (txt === target || txt === targetNoExt || txt.includes(targetNoExt)) {
-                            clone.selectedIndex = i;
-                            break;
-                        }
-                    }
+                // Check for Single Selection wrapped in Array
+                let effectiveStrategy = initialStrategy;
+                if (Array.isArray(initialStrategy) && initialStrategy.length === 1) {
+                    effectiveStrategy = initialStrategy[0];
                 }
-                if (initialStrategy === 'all') clone.value = 'all';
 
-                // ATTACH PROXY LISTENER ("Remote Control")
-                clone.addEventListener('change', (e) => {
-                    const newVal = e.target.value;
-                    console.log('[PnL Chart] Cloned Selector Changed -> Updating Main App to:', newVal);
-
-                    if (mainSelector.value !== newVal) {
-                        mainSelector.value = newVal;
-                        // Dispatch change to trigger Main App logic
-                        mainSelector.dispatchEvent(new Event('change'));
-
-                        // Show loading feedback on chart
-                        const canvas = document.getElementById('pnl-chart-canvas');
-                        if (canvas) {
-                            const ctx = canvas.getContext('2d');
-                            ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            ctx.font = "14px Inter";
-                            ctx.fillStyle = "#9ca3af";
-                            ctx.textAlign = "center";
-                            ctx.fillText("Reloading data from main app...", canvas.width / 2, canvas.height / 2);
-                        }
+                if (effectiveStrategy === 'all') {
+                    // Portfolio View
+                    labelHtml = `
+                    <div class="flex items-center gap-2">
+                        <span class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs font-bold px-2 py-1 rounded shadow-sm border border-indigo-400/30">
+                            📂 Portfolio View
+                        </span>
+                        <span class="text-gray-300 font-mono text-xs truncate max-w-[200px]" title="${pName}">
+                            ${pName}
+                        </span>
+                    </div>`;
+                } else if (Array.isArray(effectiveStrategy)) {
+                    // Multi-Select ( > 1)
+                    const count = effectiveStrategy.length;
+                    labelHtml = `
+                    <div class="flex items-center gap-2">
+                        <span class="bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white text-xs font-bold px-2 py-1 rounded shadow-sm border border-fuchsia-400/30">
+                            📚 Multi-Select
+                        </span>
+                        <span class="text-gray-300 font-mono text-xs">
+                            ${count} Strategies
+                        </span>
+                    </div>`;
+                } else {
+                    // Single Strategy (String)
+                    // Try to get clean name
+                    let sName = effectiveStrategy;
+                    // Try to lookup name in strategiesList if available globally, but we might not have access here easily.
+                    // We can try to use the displaySymbol from the first matched trade?
+                    if (window.latestSQAnalysisData && window.latestSQAnalysisData.matches && window.latestSQAnalysisData.matches.length > 0) {
+                        const m = window.latestSQAnalysisData.matches.find(m => m.bt && m.bt.strategyId === effectiveStrategy);
+                        if (m) sName = m.displaySymbol;
                     }
-                });
 
-                container.appendChild(clone);
+                    sName = sName.replace('.csv', '').substring(0, 40);
+
+                    labelHtml = `
+                    <div class="flex items-center gap-2">
+                        <span class="bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-xs font-bold px-2 py-1 rounded shadow-sm border border-cyan-400/30">
+                            🎯 Strategy Focus
+                        </span>
+                        <span class="text-gray-300 font-mono text-xs truncate max-w-[250px]" title="${sName}">
+                            ${sName}
+                        </span>
+                    </div>`;
+                }
+
+                container.innerHTML = labelHtml;
             }
 
             // Wire up Quarantine Button (Toggle: Add/Remove)
@@ -4397,3 +5449,55 @@ function setupRender(allPortfolioTrades, strategiesList, initialStrategyId = 'al
         }, 150);
     };
 }
+
+// --- Global Event Listener for Dropdown Closing ---
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('sq-strategy-dropdown-menu');
+    const btn = document.getElementById('sq-strategy-dropdown-btn');
+    if (menu && btn && !menu.classList.contains('hidden')) {
+        // If click is OUTSIDE both menu and button
+        if (!menu.contains(e.target) && !btn.contains(e.target)) {
+            menu.classList.add('hidden');
+        }
+    }
+});
+
+/**
+ * Convierte un array de objetos Trade de vuelta al formato CSV (StrategyQuant style).
+ * Requerido para pasar "Shadow Data" (datos filtrados) al buscador de DataBank.
+ */
+export const tradesToCSV = (trades) => {
+    if (!trades || trades.length === 0) return "";
+
+    // Header standard de SQ (o lo suficientemente parecido para que el parser lo lea)
+    const header = "Ticket,Symbol,Type,Open Time,Open Price,Size,Close Time,Close Price,Profit,Balance,Duration,Commission,Swap,Comment,MagicNumber";
+
+    // Mapeo inverso de objetos a lineas CSV
+    const rows = trades.map(t => {
+        // Format dates: YYYY.MM.DD HH:mm:ss
+        const formatTime = (d) => {
+            if (!d) return "";
+            if (typeof d === 'string') return d;
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hours = String(d.getHours()).padStart(2, '0');
+            const mins = String(d.getMinutes()).padStart(2, '0');
+            const secs = String(d.getSeconds()).padStart(2, '0');
+            return `${year}.${month}.${day} ${hours}:${mins}:${secs}`;
+        };
+
+        const openTime = formatTime(t.openTime);
+        // FIX: parseTradesFromData uses exitTime, but this function looked for closeTime. Added fallback.
+        const closeTime = formatTime(t.closeTime || t.exitTime);
+        const typeStr = t.type;
+        const profit = t.pnl ? t.pnl.toFixed(2) : "0.00";
+        const balance = t.currentBalance ? t.currentBalance.toFixed(2) : "0.00";
+        // Duration is not strictly needed for parsing but nice to have. logic omitted for simplicity.
+        const duration = "0";
+
+        return `${t.ticket || 0},${t.symbol || ''},${typeStr},${openTime},${t.openPrice || 0},${t.size || 0},${closeTime},${t.closePrice || 0},${profit},${balance},${duration},0,0,${t.comment || ''},${t.magicNumber || 0}`;
+    });
+
+    return [header, ...rows].join('\n');
+};

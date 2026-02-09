@@ -4,6 +4,7 @@
 <head>
     <title>Análisis Comparativo de Estrategias de Trading</title>
     <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <!-- Tailwind CSS for modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- PapaParse for CSV parsing -->
@@ -25,21 +26,42 @@
 
         /* Custom Scrollbar for Webkit */
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #1f2937;
+            width: 14px;
+            /* Increased width for easier grabbing */
+            height: 14px;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: #4b5563;
-            border-radius: 4px;
+            background: #6b7280;
+            /* Lighter default */
+            border-radius: 7px;
+            border: 2px solid #000000;
+            /* High contrast border */
+            min-height: 40px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: #6b7280;
+            background: #3b82f6;
+            /* Blue on hover */
+            border-width: 2px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+            /* Very dark slate */
+        }
+
+        /* Firefox Support */
+        * {
+            scrollbar-width: auto;
+            /* Options: auto, thin, none */
+            scrollbar-color: #4b5563 #111827;
+        }
+
+        /* Specific Containers */
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #4b5563 #111827;
         }
 
         .databank-top3 {
@@ -164,6 +186,13 @@
                 <span class="sidebar-tooltip">Health Monitor</span>
             </button>
 
+            <button id="nav-engines"
+                class="sidebar-item relative w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 transition-all"
+                title="Motores de Búsqueda">
+                <span class="text-xl">🚂</span>
+                <span class="sidebar-tooltip">Motores de Búsqueda</span>
+            </button>
+
             <button id="nav-config"
                 class="sidebar-item relative w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 transition-all"
                 title="Configuración">
@@ -221,6 +250,26 @@
             </header>
             <div id="live-monitor-content" class="flex-1 overflow-y-auto bg-gray-900">
                 <!-- Cards go here -->
+            </div>
+        </div>
+
+        <!-- SEARCH ENGINES / HISTORY VIEW -->
+        <div id="engines-view" class="hidden absolute inset-0 z-30 flex flex-col bg-gray-900 overflow-hidden">
+            <header
+                class="h-14 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-6 flex-shrink-0">
+                <h1 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>🚂</span> Motores de Búsqueda (Historial)
+                </h1>
+                <button id="engines-refresh-btn"
+                    class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 transition-colors">
+                    <span>🔄</span> Refrescar
+                </button>
+            </header>
+            <div id="engines-list-container" class="flex-1 overflow-y-auto bg-gray-900 p-6">
+                <!-- History Cards injected here -->
+                <div class="flex flex-col items-center justify-center h-full text-gray-500">
+                    <span class="animate-pulse">Cargando historial...</span>
+                </div>
             </div>
         </div>
 
@@ -340,7 +389,12 @@
                         <button data-action="destacar"
                             class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 border-r border-gray-600">Destacar</button>
                         <button data-action="ocultar"
-                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-r">Ocultar/Mostrar</button>
+                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 border-r border-gray-600">Ocultar/Mostrar</button>
+                        <button id="resize-reset-toolbar"
+                            class="chart-action-item px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-r text-[10px]"
+                            title="Reset View (Pantalla Partida)">
+                            ●
+                        </button>
                     </div>
                 </div>
 
@@ -534,7 +588,7 @@
                             </div>
                         </div>
 
-                        <div class="flex-1 overflow-y-auto h-full">
+                        <div class="flex-1 overflow-x-scroll overflow-y-auto h-full custom-scrollbar">
                             <table class="w-full text-sm text-left text-gray-300">
                                 <thead class="bg-gray-800 text-xs uppercase sticky top-0 z-10"
                                     id="databank-table-header">
@@ -552,7 +606,7 @@
 
                     <!-- 2. Saved Portfolios Content -->
                     <div id="saved-portfolios-content" class="tab-content h-full flex flex-col min-h-0 overflow-hidden">
-                        <div class="flex-1 overflow-y-auto h-full">
+                        <div class="flex-1 overflow-x-scroll overflow-y-auto h-full custom-scrollbar">
                             <table class="w-full text-sm text-left text-gray-300">
                                 <thead id="saved-portfolios-header"
                                     class="bg-gray-800 text-xs uppercase sticky top-0 z-10">
@@ -568,7 +622,7 @@
                     <!-- 3. Strategies Content -->
                     <div id="strategies-content"
                         class="tab-content hidden h-full flex flex-col min-h-0 overflow-hidden">
-                        <div class="flex-1 overflow-y-auto h-full">
+                        <div class="flex-1 overflow-x-scroll overflow-y-auto h-full custom-scrollbar">
                             <table class="w-full text-sm text-left text-gray-300">
                                 <thead class="bg-gray-800 text-xs uppercase sticky top-0 z-10">
                                     <tr>
@@ -1135,6 +1189,12 @@
     </div>
 
     <!-- Strategy Breakdown Modal -->
+
+    <!-- GLOBAL FLOATING SCROLLBAR -->
+    <div id="global-floating-scrollbar"
+        class="fixed bottom-0 right-0 left-16 h-5 bg-gray-900 border-t border-gray-700 z-[60] overflow-x-auto hidden custom-scrollbar">
+        <div id="global-floating-content" class="h-1 w-[1px]"></div>
+    </div>
 
     <script type="module" src="src/main.js?v=3.93"></script>
 

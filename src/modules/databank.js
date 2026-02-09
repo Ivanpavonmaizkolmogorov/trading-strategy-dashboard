@@ -308,7 +308,8 @@ const executeBackendSearch = async (config, signal, onCallback) => {
     // 1. Prepare Request Body
     const requestBody = {
         strategy_names: state.loadedStrategyFiles.map(f => f.name),
-        strategies_data: state.rawStrategiesData,
+        // USE SHADOW DATA IF PROVIDED (For Date Filtering Optimization)
+        strategies_data: config.strategiesDataOverride || state.rawStrategiesData,
         broker_config: loadBrokerConfig(),
         params: {
             metric_to_optimize_key: config.metric || 'sharpeRatio',
@@ -336,7 +337,10 @@ const executeBackendSearch = async (config, signal, onCallback) => {
             normalization_target: config.normalizationEnabled ? config.normalizationTarget : null,
             cagr_scaling_metric: config.cagrScalingEnabled ? config.cagrScalingMetric : null,
             cagr_scaling_operator: config.cagrScalingEnabled ? config.cagrScalingOperator : 'multiply',
-            re_shuffle_interval: config.reShuffleInterval || 30
+            re_shuffle_interval: config.reShuffleInterval || 30,
+
+            // Persist the filter used to create this optimization context
+            creation_filter: config.creationFilter || null
         }
     };
 
@@ -500,28 +504,73 @@ const executeBackendSearch = async (config, signal, onCallback) => {
             initialTimeStr = `${mins}:${secs}`;
         }
 
+        const isExpanded = state.databankPanelExpanded;
+        const arrowIcon = isExpanded ? '▼' : '▲';
+        const bodyClass = isExpanded ? 'grid grid-cols-1 gap-0.5 text-gray-400' : 'hidden';
+
         statusContainer.classList.remove('hidden');
         statusContainer.innerHTML = `
         <div class="flex flex-col gap-1 text-[10px] font-mono leading-tight bg-gray-900/90 p-2 rounded border border-gray-700 shadow-xl backdrop-blur-sm animate-fade-in min-w-[240px]">
-            <div class="font-bold text-blue-400 border-b border-gray-700 pb-1 mb-1 flex justify-between items-center">
+            <div class="font-bold text-blue-400 border-b border-gray-700 pb-1 mb-1 flex justify-between items-center select-none cursor-pointer" id="databank-panel-header">
                 <span>${objLabel}</span>
                 <div class="flex items-center gap-2">
                     <span id="databank-timer" class="font-mono text-xs text-blue-300">${initialTimeStr}</span>
                     <span class="text-white animate-pulse">Running...</span>
+                    <!-- Toggle Button -->
+                    <button id="databank-panel-toggle" class="ml-2 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-white bg-gray-800 rounded hover:bg-gray-700 transition-colors">
+                        ${arrowIcon}
+                    </button>
                 </div>
             </div>
-            <div class="grid grid-cols-1 gap-0.5 text-gray-400">
+            <div id="databank-panel-body" class="${bodyClass}">
                     <!-- Dynamic Status Line -->
                 <div class="text-yellow-400 font-bold mb-1 truncate" id="databank-card-status-msg">🚀 Inicializando...</div>
                 
                 <div class="flex justify-between"><span>🎯 Meta:</span> <span class="text-gray-200">${metricLabel} ${goalArrow}</span></div>
-                <div class="flex justify-between"><span>📚 Pool:</span> <span class="text-emerald-400 font-bold">${poolSummary}</span></div>
+                <div class="flex justify-between items-start">
+                    <span>📚 Pool:</span> 
+                    <div class="text-right">
+                        <span class="text-emerald-400 font-bold">${poolSummary}</span>
+                        ${state.quarantinedStrategyNames.size > 0 ? `<div class="text-red-400 text-[9px] leading-tight">⛔ ${state.quarantinedStrategyNames.size} en Cuarentena</div>` : ''}
+                    </div>
+                </div>
                 <div class="flex justify-between"><span>⛓️ Const:</span> <span class="text-gray-300">${constraints}</span></div>
                 <div class="flex justify-between"><span>🤖 Algo:</span> <span>${algo}</span></div>
                 ${config.normalizationEnabled ? `<div class="flex justify-between text-indigo-400"><span>⚖️ Norm:</span> <span>${config.normalizationTarget}</span></div>` : ''}
+                ${state.currentOptimizationData?.creation_filter ? `<div class="flex justify-between text-cyan-400 border-t border-gray-700/50 pt-1 mt-1"><span>📅 Rango:</span> <span class="text-[9px]">${state.currentOptimizationData.creation_filter.start} > ${state.currentOptimizationData.creation_filter.end}</span></div>` : ''}
             </div>
         </div>
     `;
+
+        // Attach Listener Logic (One-off check or Re-attach? Since innerHTML nukes listeners, we must re-attach or use delegation on container)
+        // Since statusContainer ID is constant, we can attach to IT, but we wipe ITs children.
+        // Wait, statusContainer is 'databank-status-bar'. We wipe its content.
+        // So we must attach listener to the NEW button.
+        setTimeout(() => {
+            const toggleBtn = document.getElementById('databank-panel-toggle');
+            const header = document.getElementById('databank-panel-header');
+            const handleToggle = (e) => {
+                e.stopPropagation();
+                state.databankPanelExpanded = !state.databankPanelExpanded;
+
+                // Immediate DOM update for responsiveness
+                const body = document.getElementById('databank-panel-body');
+                const btn = document.getElementById('databank-panel-toggle');
+                if (state.databankPanelExpanded) {
+                    body.classList.remove('hidden');
+                    body.classList.add('grid');
+                    btn.textContent = '▼';
+                } else {
+                    body.classList.add('hidden');
+                    body.classList.remove('grid');
+                    btn.textContent = '▲';
+                }
+                // Next render cycle will respect state.databankPanelExpanded
+            };
+
+            if (toggleBtn) toggleBtn.onclick = handleToggle;
+            if (header) header.onclick = handleToggle;
+        }, 0);
     }
 
     // --- TIMER LOGIC ---
@@ -548,7 +597,30 @@ const executeBackendSearch = async (config, signal, onCallback) => {
         normalizationEnabled: config.normalizationEnabled
     };
 
+    // ========== AUTO-SORT BY OPTIMIZED KPI ==========
+    // Set the databank sort config to match the KPI being optimized
+    const optimizedMetricKey = requestBody.params.metric_to_optimize_key || 'sharpeRatio';
+    const optimizationGoal = requestBody.params.optimization_goal || 'maximize';
+
+    console.log('%c[DIAG-SORT] ═══════════════════════════════════════', 'color: #00ff00; font-weight: bold');
+    console.log('[DIAG-SORT] Auto-setting sort config for search');
+    console.log('[DIAG-SORT] metric_to_optimize_key:', optimizedMetricKey);
+    console.log('[DIAG-SORT] optimization_goal:', optimizationGoal);
+    console.log('[DIAG-SORT] Previous databankSortConfig:', JSON.stringify(state.databankSortConfig));
+
+    // Set the sort to 'metricValue' which is the optimized metric
+    // This ensures the databank always shows best results first
+    state.databankSortConfig = {
+        key: 'metricValue',  // This is the column showing the optimized metric
+        order: optimizationGoal === 'maximize' ? 'desc' : 'asc'
+    };
+
+    console.log('[DIAG-SORT] New databankSortConfig:', JSON.stringify(state.databankSortConfig));
+
     try {
+        console.log('[DIAG-DATABANK] Sending request to /databank/find-portfolios-stream...');
+        console.log('[DIAG-DATABANK] Request body params:', JSON.stringify(requestBody.params, null, 2));
+
         const response = await fetch('/databank/find-portfolios-stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -556,32 +628,58 @@ const executeBackendSearch = async (config, signal, onCallback) => {
             signal: signal
         });
 
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status} `);
+        console.log('[DIAG-DATABANK] Response status:', response.status);
+        console.log('[DIAG-DATABANK] Response ok:', response.ok);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.log('[DIAG-DATABANK] Response body:', errorText);
+            throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+        }
         if (!response.body) throw new Error("No response body received");
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder("utf-8");
         let buffer = '';
+        let messageCount = 0;
+        let portfolioCount = 0;
+
+        console.log('[DIAG-DATABANK] Starting to read stream...');
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
+                console.log(`[DIAG-DATABANK] Stream done. Total messages: ${messageCount}, Portfolios received: ${portfolioCount}`);
                 console.log("[DataBank] Stream reader done (Backend closed connection).");
                 break;
             }
 
-            buffer += decoder.decode(value, { stream: true });
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+
+            // Log first chunk to see what backend sends
+            if (messageCount === 0) {
+                console.log('[DIAG-DATABANK] First chunk received:', chunk.substring(0, 200));
+            }
+
             let boundary = buffer.indexOf('\n\n');
 
             while (boundary !== -1) {
                 const message = buffer.substring(0, boundary);
                 buffer = buffer.substring(boundary + 2);
+                messageCount++;
 
                 if (message.startsWith('data:')) {
                     const jsonData = message.substring(5).trim();
                     if (!jsonData) continue;
                     try {
                         const data = JSON.parse(jsonData);
+
+                        // Log every message type
+                        if (messageCount <= 5 || data.status === 'error' || data.status === 'completed') {
+                            console.log(`[DIAG-DATABANK] Message #${messageCount}:`, data.status || 'portfolio', data.message || '');
+                        }
+
                         // --- HANDLING ---
                         if (data.status === 'info' || data.status === 'progress' || data.status === 'scanning') {
                             if (!evolutionManager.active || config.objective !== 'search') {
@@ -590,14 +688,29 @@ const executeBackendSearch = async (config, signal, onCallback) => {
                         } else if (data.status === 'paused') {
                             setDatabankStatus('paused', data.message);
                         } else if (data.status === 'stopped') {
-                            // Handled by abort mostly
+                            console.log('[DIAG-DATABANK] Received STOPPED status');
                         } else if (data.status === 'error') {
+                            console.error('[DIAG-DATABANK] ⛔ Received ERROR:', data.message);
                             if (onCallback) onCallback('error', data.message);
                             else displayError(data.message);
-                        } else if (data.status !== 'completed' && data.status !== 'resumed') {
+                        } else if (data.status === 'completed') {
+                            console.log('[DIAG-DATABANK] ✅ Search completed by backend');
+                        } else if (data.status !== 'resumed') {
                             // Valid Portfolio
+                            portfolioCount++;
                             const newPortfolio = data;
                             if (!newPortfolio.name && newPortfolio.indices) newPortfolio.name = newPortfolio.indices.map(i => state.loadedStrategyFiles[i]?.name.replace('.csv', '') || `Estrat.${i + 1} `).join(', ');
+
+                            // Inject Filter Metadata if present (for Toggle View)
+                            if (state.currentOptimizationData?.creation_filter) {
+                                newPortfolio.creationFilter = state.currentOptimizationData.creation_filter;
+                                console.log('[DataBank] Filter attached to portfolio:', newPortfolio.name);
+                                // DEBUG TOAST (User requested visible confirmation)
+                                if (portfolioCount === 1) {
+                                    showToast("✅ DEBUG: Filtro de fecha detectado y adjuntado.", "success");
+                                }
+                            }
+
                             addToDatabankIfBetter(newPortfolio, parseInt(dom.databankSizeInput?.value || 20, 10));
 
                             if (!window.databankUpdateScheduled) {
@@ -606,7 +719,7 @@ const executeBackendSearch = async (config, signal, onCallback) => {
                             }
                         }
                     } catch (e) {
-                        console.error("JSON Parse Error:", e);
+                        console.error("[DIAG-DATABANK] JSON Parse Error:", e, "Raw data:", jsonData.substring(0, 100));
                     }
                 }
                 boundary = buffer.indexOf('\n\n');
@@ -662,6 +775,36 @@ export const stopDatabankSearch = () => {
  * Inicia la búsqueda de portafolios en el DataBank.
  */
 export const findDatabankPortfolios = async (customConfig = {}) => {
+    // ========== DIAGNOSTIC LOGS ==========
+    console.log('%c[DIAG-DATABANK] ═══════════════════════════════════════', 'color: #9900ff; font-weight: bold');
+    console.log('%c[DIAG-DATABANK] findDatabankPortfolios CALLED', 'color: #9900ff; font-weight: bold');
+    console.log('[DIAG-DATABANK] customConfig.objective:', customConfig.objective);
+    console.log('[DIAG-DATABANK] customConfig.fixedIndices:', customConfig.fixedIndices);
+    console.log('[DIAG-DATABANK] customConfig.allowedIndices.length:', customConfig.allowedIndices?.length);
+    console.log('[DIAG-DATABANK] state.rawStrategiesData.length:', state.rawStrategiesData?.length);
+    console.log('[DIAG-DATABANK] state.loadedStrategyFiles.length:', state.loadedStrategyFiles?.length);
+
+    // Validate indices
+    if (customConfig.allowedIndices && customConfig.allowedIndices.length > 0) {
+        let validCount = 0;
+        let invalidCount = 0;
+        customConfig.allowedIndices.forEach(idx => {
+            if (state.rawStrategiesData?.[idx] && state.loadedStrategyFiles?.[idx]) {
+                validCount++;
+            } else {
+                invalidCount++;
+                if (invalidCount <= 3) { // Only log first 3 to avoid spam
+                    console.error(`[DIAG-DATABANK] ⛔ Invalid index ${idx}: rawData=${!!state.rawStrategiesData?.[idx]}, file=${!!state.loadedStrategyFiles?.[idx]}`);
+                }
+            }
+        });
+        console.log(`[DIAG-DATABANK] Index validation: ${validCount} valid, ${invalidCount} invalid`);
+        if (invalidCount > 0) {
+            console.error(`[DIAG-DATABANK] ⛔ ${invalidCount} invalid indices will cause search to fail!`);
+        }
+    }
+    // ========== END DIAGNOSTIC LOGS ==========
+
     if (state.rawStrategiesData.length < 2) {
         displayError("Necesitas al menos 2 estrategias cargadas para buscar portafolios.");
         return;
@@ -680,11 +823,13 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
 
     // Check Evolution Mode
     if (customConfig.objective === 'evolution') {
+        console.log('[DIAG-DATABANK] Starting Evolution Manager...');
         evolutionManager.start(customConfig);
         return;
     }
 
     // Normal Search
+    console.log('[DIAG-DATABANK] Starting normal search...');
     updateDatabankDisplay();
     setDatabankStatus('connecting', 'Conectando con el backend...');
 
@@ -720,12 +865,22 @@ const addToDatabankIfBetter = (portfolioData, maxSize) => {
 
     if (existingIndex > -1) {
         const existingPortfolio = state.databankPortfolios[existingIndex];
+
+        // CHECK if filter context changed. If dates are different, we CANNOT compare metrics. 
+        // We assume the user wants the result for the CURRENT active filter.
+        const oldFilter = existingPortfolio.creationFilter;
+        const newFilter = portfolioData.creationFilter;
+        const filterChanged = (oldFilter?.start !== newFilter?.start) || (oldFilter?.end !== newFilter?.end);
+
         const isNewBetter = (optimizationGoal === 'maximize')
             ? metricValue > existingPortfolio.metricValue
             : metricValue < existingPortfolio.metricValue;
 
-        if (isNewBetter) {
+        if (filterChanged || isNewBetter) {
             state.databankPortfolios[existingIndex] = { ...portfolioData, key };
+            if (filterChanged) {
+                console.log(`[DataBank] Overwriting portfolio ${key} because Date Filter changed.`);
+            }
         } else {
             return;
         }
@@ -750,11 +905,33 @@ const addToDatabankIfBetter = (portfolioData, maxSize) => {
 /**
  * Actualiza la tabla del DataBank en la UI.
  */
-export const updateDatabankDisplay = () => {
+// [FIX] Expose to Window for FocusMode
+export const updateDatabankDisplay = window.updateDatabankDisplay = () => {
     updateDatabankCount();
 
     // Initialize table if needed
     initDatabankTable();
+
+    // Re-query DOM elements to avoid detached references
+    dom.databankTableBody = document.getElementById("databank-table-body");
+    dom.databankTableHeader = document.getElementById("databank-table-header");
+
+    // CRITICAL: Ensure main table elements exist. 
+    // Note: databankEmptyRow might be missing if we previously wiped innerHTML, so we don't abort on it yet.
+    if (!dom.databankTableBody || !dom.databankTableHeader) {
+        console.warn("[DEBUG-UI] DataBank Table Body or Header missing! Aborting render.");
+        return;
+    }
+
+    // Handle Empty Row (Re-create if missing)
+    dom.databankEmptyRow = document.getElementById("databank-empty-row");
+    if (!dom.databankEmptyRow) {
+        const tr = document.createElement('tr');
+        tr.id = 'databank-empty-row';
+        tr.className = 'hidden'; // Default to hidden
+        tr.innerHTML = '<td colspan="100%" class="p-4 text-center text-gray-500">DataBank vacío. Inicia una búsqueda.</td>';
+        dom.databankEmptyRow = tr;
+    }
 
     if (state.databankPortfolios.length === 0) {
         dom.databankEmptyRow.classList.remove('hidden');
@@ -769,6 +946,9 @@ export const updateDatabankDisplay = () => {
     // Get custom column configuration
     const config = getDatabankTableConfig();
     const visibleColumns = config.visibleColumns;
+
+    console.log(`[DEBUG-UI] Rendering DataBank. Portfolios: ${state.databankPortfolios.length}. Visible Cols: ${visibleColumns.join(', ')}`);
+    if (!dom.databankTableBody) console.error("[DEBUG-UI] ⛔ CRITICAL: dom.databankTableBody is missing!");
 
     // 2. Render Headers
     dom.databankTableHeader.innerHTML = '';
@@ -871,76 +1051,89 @@ export const updateDatabankDisplay = () => {
     let html = '';
     const rankColors = ['bg-amber-400', 'bg-slate-300', 'bg-yellow-600'];
 
-    state.databankPortfolios.forEach((p, index) => {
-        if (index === 0) {
-            // Debugging removed
-        }
-        let rowClass = (index < 3 && state.databankSortConfig.key === 'metricValue') ? 'databank-top3' : '';
-        const selectionIndex = state.selectedRows.databank.indexOf(index);
-        if (selectionIndex !== -1) {
-            rowClass = SELECTION_COLORS[selectionIndex % SELECTION_COLORS.length];
-        }
+    dom.databankEmptyRow.classList.add('hidden');
+    dom.databankEmptyRow.style.display = 'none'; // FORCE HIDE
 
-        let rankBadge = `<span class="font-bold">${index + 1}</span>`;
-        if (index < 3 && state.databankSortConfig.key === 'metricValue') {
-            rankBadge = `<span class="inline-block text-xs py-0.5 px-2 ${rankColors[index]} text-gray-900 rounded-full font-bold">#${index + 1}</span>`;
-        }
-
-        html += `<tr class="${rowClass} hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0" data-row-type="databank" data-row-index="${index}">
-                <td class="px-4 py-3"><input type="checkbox" data-index="${index}" class="databank-row-checkbox form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600"></td>
-                <td class="px-4 py-3 text-center">${rankBadge}</td>`;
-
-        visibleColumns.forEach(key => {
-            // Safety check: ensure column exists in definition to match header rendering
-            const colInfo = ALL_METRICS[key];
-            if (!colInfo) return;
-
-            if (key === 'name') {
-                let constructedName = p.name;
-                if (!constructedName && p.indices) {
-                    constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i + 1} `).join(', ');
-                }
-                // Compact View: Single line with ellipsis, full list in tooltip
-                const count = p.indices ? p.indices.length : 0;
-                const shortText = `${count} Estrategias: ${constructedName} `;
-                html += `<td class="px-4 py-3 text-gray-300 max-w-xs truncate" title="${constructedName}">
-    <div class="truncate text-sm">${shortText}</div>
-                         </td>`;
-            } else {
-                // Get value from metrics or analysis.metrics
-                let value;
-                if (key === 'metricValue') {
-                    value = p.metricValue;
-                } else if (key === 'strategyCount') {
-                    value = p.indices ? p.indices.length : 0;
-                    // console.log(`[DEBUG] Row ${ index } - strategyCount: `, value, 'Indices:', p.indices);
-                } else if (key === 'returnDD') {
-                    // Mapping for Ret/DD
-                    const metrics = p.metrics || p.analysis?.metrics || p.analysis || {};
-                    value = metrics['profitMaxDD_Ratio'];
-                } else if (key === 'cagr_custom_score') {
-                    // Fallback to metricValue (Optimization Goal) if specific custom score is missing
-                    value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.metricValue;
-                } else {
-                    value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.analysis?.[key];
-                }
-
-                if (index === 0) {
-                    // console.log(`[DEBUG FRONTEND] Col '${key}': Value extracted: `, value);
-                    if (key === 'correlationWithBase') console.log(`[DEBUG FRONTEND] correlationWithBase value: `, value, 'Metrics:', p.metrics);
-                }
-
-                html += `<td class="px-4 py-3 text-gray-300 text-right whitespace-nowrap">${formatMetricForDisplay(value, key)}</td>`;
+    try {
+        state.databankPortfolios.forEach((p, index) => {
+            if (index === 0) {
+                // Debugging removed
             }
+            let rowClass = (index < 3 && state.databankSortConfig.key === 'metricValue') ? 'databank-top3' : '';
+            const selectionIndex = state.selectedRows.databank.indexOf(index);
+            if (selectionIndex !== -1) {
+                rowClass = SELECTION_COLORS[selectionIndex % SELECTION_COLORS.length];
+            }
+
+            let rankBadge = `<span class="font-bold">${index + 1}</span>`;
+            if (index < 3 && state.databankSortConfig.key === 'metricValue') {
+                rankBadge = `<span class="inline-block text-xs py-0.5 px-2 ${rankColors[index]} text-gray-900 rounded-full font-bold">#${index + 1}</span>`;
+            }
+
+            html += `<tr class="${rowClass} hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700 last:border-0" data-row-type="databank" data-row-index="${index}">
+                    <td class="px-4 py-3"><input type="checkbox" data-index="${index}" class="databank-row-checkbox form-checkbox h-4 w-4 bg-gray-800 border-gray-600 rounded text-sky-500 focus:ring-sky-600"></td>
+                    <td class="px-4 py-3 text-center">${rankBadge}</td>`;
+
+            visibleColumns.forEach(key => {
+                // Safety check: ensure column exists in definition to match header rendering
+                const colInfo = ALL_METRICS[key];
+                if (!colInfo) return;
+
+                if (key === 'name') {
+                    let constructedName = p.name;
+                    if (!constructedName && p.indices) {
+                        constructedName = p.indices.map(i => state.loadedStrategyFiles[i]?.name || `Estrat ${i + 1} `).join(', ');
+                    }
+                    // Compact View: Single line with ellipsis, full list in tooltip
+                    const count = p.indices ? p.indices.length : 0;
+                    const shortText = `${count} Estrategias: ${constructedName} `;
+                    html += `<td class="px-4 py-3 text-gray-300 max-w-[200px] truncate" title="${constructedName}">
+        <div class="truncate text-sm">${shortText}</div>
+                             </td>`;
+                } else {
+                    // Get value from metrics or analysis.metrics
+                    let value;
+                    if (key === 'metricValue') {
+                        value = p.metricValue;
+                    } else if (key === 'strategyCount') {
+                        value = p.indices ? p.indices.length : 0;
+                        // console.log(`[DEBUG] Row ${ index } - strategyCount: `, value, 'Indices:', p.indices);
+                    } else if (key === 'returnDD') {
+                        // Mapping for Ret/DD
+                        const metrics = p.metrics || p.analysis?.metrics || p.analysis || {};
+                        value = metrics['profitMaxDD_Ratio'];
+                    } else if (key === 'cagr_custom_score') {
+                        // Fallback to metricValue (Optimization Goal) if specific custom score is missing
+                        value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.metricValue;
+                    } else {
+                        value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.analysis?.[key];
+                    }
+
+
+
+                    // Check if formatMetricForDisplay is available, if not use simple toString
+                    let formatted = value;
+                    try {
+                        formatted = formatMetricForDisplay(value, key);
+                    } catch (fmtErr) {
+                        // Fallback if imported function fails or is missing
+                        formatted = (value !== undefined && value !== null) ? value.toString() : '-';
+                    }
+
+                    html += `<td class="px-4 py-3 text-gray-300 text-right whitespace-nowrap">${formatted}</td>`;
+                }
+            });
+
+
+            // Add action column
+            html += `<td class="px-4 py-3 text-center sticky right-0 bg-gray-800 z-10 whitespace-nowrap">
+                        <button class="view-strategy-risk-btn text-gray-400 hover:text-sky-400 text-lg px-1 mr-2" title="Ver Riesgo Base" data-index="${index}" data-source="databank">👁️</button>
+                        <button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button>
+                     </td></tr>`;
         });
-
-
-        // Add action column
-        html += `<td class="px-4 py-3 text-center sticky right-0 bg-gray-800 z-10 whitespace-nowrap">
-                    <button class="view-strategy-risk-btn text-gray-400 hover:text-sky-400 text-lg px-1 mr-2" title="Ver Riesgo Base" data-index="${index}" data-source="databank">👁️</button>
-                    <button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button>
-                 </td></tr>`;
-    });
+    } catch (e) {
+        console.error("[DEBUG-UI] CRITICAL RENDER ERROR:", e);
+    }
     dom.databankTableBody.innerHTML = html;
 
     const firstPortfolio = state.databankPortfolios[0];
@@ -1013,6 +1206,8 @@ export const initDatabankFocus = () => {
         if (index !== undefined) {
             const portfolio = state.databankPortfolios[index];
             if (portfolio) {
+                console.log(`[DataBank] Clicked row ${index}. Portfolio:`, portfolio.name);
+                console.log(`[DataBank] Has creationFilter?`, !!portfolio.creationFilter, portfolio.creationFilter);
                 focusMode.enable(portfolio, 'databank', row);
             }
         }
@@ -1425,12 +1620,19 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
 /**
  * Limpia el DataBank.
  */
-export const clearDatabank = () => {
+export const clearDatabank = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+
+    // Ensure any running search is stopped
+    stopDatabankSearch();
+
     state.databankPortfolios = [];
     state.isSearchPaused = false;
-    state.isSearchStopped = false;
+    state.isSearchStopped = false; // Reset flags for next search
+
     setDatabankStatus('hidden');
     updateDatabankDisplay();
+
     // databankSection ya no existe en el nuevo layout
     if (dom.databankSection) dom.databankSection.classList.add('hidden');
 };

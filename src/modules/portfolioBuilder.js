@@ -12,6 +12,29 @@ import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from 
  * @param {number[]} indices - Array of strategy indices.
  */
 export const analyzeCustomPortfolio = async (indices) => {
+    // ========== DIAGNOSTIC LOGS ==========
+    console.log('%c[DIAG-PORTFOLIO] ═══════════════════════════════════════', 'color: #ff00ff; font-weight: bold');
+    console.log('%c[DIAG-PORTFOLIO] analyzeCustomPortfolio CALLED', 'color: #ff00ff; font-weight: bold');
+    console.log('%c[DIAG-PORTFOLIO] ═══════════════════════════════════════', 'color: #ff00ff; font-weight: bold');
+    console.log('[DIAG-PORTFOLIO] Received indices:', indices);
+    console.log('[DIAG-PORTFOLIO] state.loadedStrategyFiles.length:', state.loadedStrategyFiles?.length);
+    console.log('[DIAG-PORTFOLIO] state.rawStrategiesData.length:', state.rawStrategiesData?.length);
+
+    console.log('[DIAG-PORTFOLIO] --- Index to Data Mapping ---');
+    indices.forEach((idx, i) => {
+        const loadedFile = state.loadedStrategyFiles[idx];
+        const rawData = state.rawStrategiesData?.[idx];
+        console.log(`[DIAG-PORTFOLIO] Index[${i}] = ${idx}:`);
+        console.log(`   loadedFile: ${loadedFile?.name || '❌ MISSING'} (strategyId: ${loadedFile?.strategyId || 'N/A'})`);
+        console.log(`   rawData: ${rawData ? '✅ EXISTS (' + (rawData.data?.length || rawData.length || '?') + ' rows)' : '❌ MISSING'}`);
+
+        if (!rawData) {
+            console.error(`[DIAG-PORTFOLIO] ⛔ CRITICAL: Index ${idx} has NO rawData! Backend will receive incomplete data.`);
+        }
+    });
+    console.log('[DIAG-PORTFOLIO] --- End Index Mapping ---');
+    // ========== END DIAGNOSTIC LOGS ==========
+
     if (!indices || indices.length < 2) {
         displayError("Selecciona al menos 2 estrategias para crear un portafolio.");
         return;
@@ -243,11 +266,37 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
     // Save Button Logic
     const saveBtn = document.getElementById('confirm-save-btn');
     saveBtn.onclick = () => {
+        // ========== DIAGNOSTIC LOGS ==========
+        console.log('%c[DIAG-SAVE] ═══════════════════════════════════════', 'color: #ffff00; font-weight: bold');
+        console.log('%c[DIAG-SAVE] SAVING PORTFOLIO', 'color: #ffff00; font-weight: bold');
+        console.log('%c[DIAG-SAVE] ═══════════════════════════════════════', 'color: #ffff00; font-weight: bold');
+        console.log('[DIAG-SAVE] Indices from closure:', indices);
+        // ========== END DIAGNOSTIC LOGS ==========
+
         // Add to saved portfolios
         // Use 'indices' from the closure, as portfolio result from backend might not have it
-        const names = indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', '')).join('+');
-        const strategyIds = indices.map(i => state.loadedStrategyFiles[i].strategyId);
-        const strategyNames = indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', ''));
+        const names = indices.map(i => state.loadedStrategyFiles[i]?.name?.replace('.csv', '') || `MISSING_${i}`).join('+');
+        const strategyIds = indices.map(i => state.loadedStrategyFiles[i]?.strategyId || `UNKNOWN_${i}`);
+        const strategyNames = indices.map(i => state.loadedStrategyFiles[i]?.name?.replace('.csv', '') || `MISSING_${i}`);
+
+        // ========== DIAGNOSTIC LOGS ==========
+        console.log('[DIAG-SAVE] Resolved names:', names);
+        console.log('[DIAG-SAVE] strategyIds:', strategyIds);
+        console.log('[DIAG-SAVE] strategyNames:', strategyNames);
+
+        // Check for missing data
+        let hasMissing = false;
+        indices.forEach((idx, i) => {
+            const file = state.loadedStrategyFiles[idx];
+            if (!file) {
+                console.error(`[DIAG-SAVE] ⛔ CRITICAL: Index ${idx} has NO file! Portfolio will have incomplete strategy references.`);
+                hasMissing = true;
+            }
+        });
+        if (hasMissing) {
+            console.warn('[DIAG-SAVE] ⚠️ Some indices are invalid. Portfolio may be broken.');
+        }
+        // ========== END DIAGNOSTIC LOGS ==========
 
         // Calculate SQ Metrics for persistence
         let allTrades = [];
@@ -279,6 +328,8 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
             analysis: portfolio.metrics, // Save chart data and analysis (metrics contains chartData)
             comments: document.getElementById('portfolio-comment')?.value || ''
         });
+
+        console.log('[DIAG-SAVE] ✅ Portfolio saved successfully:', state.savedPortfolios[state.savedPortfolios.length - 1].name);
 
         displaySavedPortfoliosList();
 

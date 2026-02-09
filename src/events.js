@@ -46,6 +46,10 @@ export function initializeEventListeners() {
     // --- Live Monitor Navigation ---
     initLiveMonitor();
 
+    // --- NUEVO: Search Engines / History ---
+    import('./modules/searchHistory.js').then(({ initSearchHistory }) => initSearchHistory());
+
+
     // --- Stagnation Mode Controls ---
     const stagnationRadios = document.querySelectorAll('input[name="stagnation-mode"]');
     console.log(`[Events] Found ${stagnationRadios.length} stagnation radio buttons.`);
@@ -102,6 +106,7 @@ export function initializeEventListeners() {
         if (mainHeader) mainHeader.classList.remove('hidden');
         if (mainContent) mainContent.classList.remove('hidden');
         liveMonitorView?.classList.add('hidden');
+        document.getElementById('engines-view')?.classList.add('hidden');
     };
 
     document.getElementById('nav-analysis')?.addEventListener('click', () => restoreMainView('nav-analysis'));

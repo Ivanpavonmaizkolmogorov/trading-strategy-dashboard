@@ -4733,3 +4733,156 @@ Clicking NEXT button for page 6...
 Scraping page 6...
 Page 6 is identical to previous page. Reached end of history.
 Closing browser...
+[22:32:54] ============================================================
+[22:32:54] 🔧 SCRAPING SESSION STARTED
+[22:32:54] 📧 Account ID: 11854272
+[22:32:54] 📁 User data dir: /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/myfx_playground/myfx_auth
+[22:32:54] ============================================================
+[22:32:55] 🌐 Playwright initialized. Launching browser...
+[22:32:55] 🔗 Target URL: https://www.myfxbook.com/portfolio/results/11854272
+[22:32:55] ⏳ Navigating to target URL...
+[22:32:56] 📍 Current URL after navigation: https://www.myfxbook.com/portfolio/results/11854272
+[22:32:56] ✅ DOM content loaded
+[22:32:56] ⚠️ Session not active or Page Error. Initiating MANUAL LOGIN sequence...
+[22:32:56] 📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[22:32:56] 🛑 PAUSED: Waiting for you to log in manually...
+[22:32:56] ACTION REQUIRED: Please log in using the browser window.
+[22:32:56] Waiting for login... (0/300s)
+[22:33:06] Waiting for login... (10/300s)
+[22:33:17] Waiting for login... (20/300s)
+[22:33:27] Waiting for login... (30/300s)
+[22:33:37] Waiting for login... (40/300s)
+[22:33:47] Waiting for login... (50/300s)
+[22:33:57] Waiting for login... (60/300s)
+[22:34:08] Waiting for login... (70/300s)
+[22:34:18] Waiting for login... (80/300s)
+[22:34:28] Waiting for login... (90/300s)
+[22:34:38] Waiting for login... (100/300s)
+[22:34:49] Waiting for login... (110/300s)
+[22:34:59] Waiting for login... (120/300s)
+[22:35:09] Waiting for login... (130/300s)
+[22:35:19] Waiting for login... (140/300s)
+[22:35:22] ✅ Login Detected (User Icon/Name)!
+[22:35:22] ========================================
+[22:35:22] 📑 STEP: Looking for History tab...
+[22:35:22] 📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[22:35:22]    Trying selector: a[href='#historyCont']
+[22:35:22]    ✅ Found with selector: a[href='#historyCont']
+[22:35:22] ✅ History tab button found.
+[22:35:22]    Parent class: 
+[22:35:22] 🖱️ Clicking History tab...
+[22:35:28] 📍 URL after click: https://www.myfxbook.com/portfolio/results/11854272
+[22:35:28] ========================================
+[22:35:28] 📊 STEP: Starting scrape loop...
+[22:35:28] 
+📄 SCRAPING PAGE 1...
+[22:35:28]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[22:35:28]    ⏳ Waiting for #tradingHistoryTable...
+[22:35:28]    ✅ Table found!
+[22:35:28] DEBUG TABLE HEADERS: ['', 'Boleto', 'Magía', 'Fecha de apertura', 'Fecha de cierre', 'Símbolo', 'Acción', 'Lotes', 'SL\n(Precio)', 'TP\n(Precio)', 'Precio de apertura', 'Precio de cierre', 'Pips', 'Beneficio neto', 'Beneficio bruto', 'Duración', 'Ganancia', 'Swap', 'Comisiones', 'Tiempo de rentabilidad', 'Disminución', 'Riesgo recompensa', 'Max', 'Min', 'Precisión de entrada', 'Precisión de salida', 'Beneficio Perdido', '', '']
+[22:35:28] DEBUG COL INDICES: {'openDate': 3, 'closeDate': 4, 'symbol': 5, 'action': 6, 'lots': 7, 'priceOpen': 10, 'priceClose': 11, 'pips': 12, 'profit': 13, 'comment': -1}
+[22:35:28]    ✅ Found 20 trades on page 1. Total so far: 20
+[22:35:28]    📝 Sample trade: {'openTime': '01.23.2026 18:09', 'closeTime': '01.23.2026 19:00', 'symbol': 'XAUUSD', 'action': 'Comprar', 'lots': '0.05', 'openPrice': '4,967.38', 'closePrice': '4,980.23', 'pips': '1,285.0', 'profit': '54.33', 'comment': '117Xausdjpy_Lng_H1_9_9_20_1[sl 4980.23]'}
+[22:35:28] Clicking NEXT button for page 2...
+[22:35:33] 
+📄 SCRAPING PAGE 2...
+[22:35:33]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[22:35:33]    ⏳ Waiting for #tradingHistoryTable...
+[22:35:33]    ✅ Table found!
+[22:35:33]    ✅ Found 20 trades on page 2. Total so far: 40
+[22:35:33] Clicking NEXT button for page 3...
+[22:35:38] 
+📄 SCRAPING PAGE 3...
+[22:35:38]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[22:35:38]    ⏳ Waiting for #tradingHistoryTable...
+[22:35:38]    ✅ Table found!
+[22:35:38]    ✅ Found 20 trades on page 3. Total so far: 60
+[22:35:38] Clicking NEXT button for page 4...
+[22:35:44] 
+📄 SCRAPING PAGE 4...
+[22:35:44]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[22:35:44]    ⏳ Waiting for #tradingHistoryTable...
+[22:35:44]    ✅ Table found!
+[22:35:44]    ✅ Found 7 trades on page 4. Total so far: 67
+[22:35:44] Clicking NEXT button for page 5...
+[22:35:49] 
+📄 SCRAPING PAGE 5...
+[22:35:49]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[22:35:49]    ⏳ Waiting for #tradingHistoryTable...
+[22:35:49]    ✅ Table found!
+[22:35:49]    🔁 Page 5 is identical to previous page. Reached end of history.
+[22:35:49] ============================================================
+[22:35:49] 🏁 SCRAPING COMPLETE! Total trades: 67
+[22:35:49] ============================================================
+[22:35:49] 🔒 Closing browser...
+[22:35:49] ✅ Browser closed.
+[00:08:10] ============================================================
+[00:08:10] 🔧 SCRAPING SESSION STARTED
+[00:08:10] 📧 Account ID: 11854272
+[00:08:10] 📁 User data dir: /home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard/myfx_playground/myfx_auth
+[00:08:10] ============================================================
+[00:08:10] 🌐 Playwright initialized. Launching browser...
+[00:08:10] 🔗 Target URL: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:10] ⏳ Navigating to target URL...
+[00:08:11] 📍 Current URL after navigation: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:11] ✅ DOM content loaded
+[00:08:11] ⚠️ Session not active or Page Error. Initiating MANUAL LOGIN sequence...
+[00:08:11] 📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:11] 🛑 PAUSED: Waiting for you to log in manually...
+[00:08:11] ACTION REQUIRED: Please log in using the browser window.
+[00:08:11] Waiting for login... (0/300s)
+[00:08:22] Waiting for login... (10/300s)
+[00:08:28] ✅ Login Detected (User Icon/Name)!
+[00:08:28] ========================================
+[00:08:28] 📑 STEP: Looking for History tab...
+[00:08:28] 📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:28]    Trying selector: a[href='#historyCont']
+[00:08:28]    ✅ Found with selector: a[href='#historyCont']
+[00:08:28] ✅ History tab button found.
+[00:08:28]    Parent class: 
+[00:08:28] 🖱️ Clicking History tab...
+[00:08:33] 📍 URL after click: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:33] ========================================
+[00:08:33] 📊 STEP: Starting scrape loop...
+[00:08:33] 
+📄 SCRAPING PAGE 1...
+[00:08:33]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:33]    ⏳ Waiting for #tradingHistoryTable...
+[00:08:33]    ✅ Table found!
+[00:08:33] DEBUG TABLE HEADERS: ['', 'Boleto', 'Magía', 'Fecha de apertura', 'Fecha de cierre', 'Símbolo', 'Acción', 'Lotes', 'SL\n(Precio)', 'TP\n(Precio)', 'Precio de apertura', 'Precio de cierre', 'Pips', 'Beneficio neto', 'Beneficio bruto', 'Duración', 'Ganancia', 'Swap', 'Comisiones', 'Tiempo de rentabilidad', 'Disminución', 'Riesgo recompensa', 'Max', 'Min', 'Precisión de entrada', 'Precisión de salida', 'Beneficio Perdido', '', '']
+[00:08:33] DEBUG COL INDICES: {'openDate': 3, 'closeDate': 4, 'symbol': 5, 'action': 6, 'lots': 7, 'priceOpen': 10, 'priceClose': 11, 'pips': 12, 'profit': 13, 'comment': -1}
+[00:08:33]    ✅ Found 20 trades on page 1. Total so far: 20
+[00:08:33]    📝 Sample trade: {'openTime': '01.23.2026 15:30', 'closeTime': '01.23.2026 23:00', 'symbol': 'US30', 'action': 'Vender', 'lots': '0.35', 'openPrice': '49,149.28', 'closePrice': '49,073.83', 'pips': '75.5', 'profit': '22.34', 'comment': 'WS30_v3BKSell8.6.16Im0.4'}
+[00:08:33] Clicking NEXT button for page 2...
+[00:08:38] 
+📄 SCRAPING PAGE 2...
+[00:08:38]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:38]    ⏳ Waiting for #tradingHistoryTable...
+[00:08:38]    ✅ Table found!
+[00:08:38]    ✅ Found 20 trades on page 2. Total so far: 40
+[00:08:38] Clicking NEXT button for page 3...
+[00:08:43] 
+📄 SCRAPING PAGE 3...
+[00:08:43]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:43]    ⏳ Waiting for #tradingHistoryTable...
+[00:08:43]    ✅ Table found!
+[00:08:43]    ✅ Found 20 trades on page 3. Total so far: 60
+[00:08:43] Clicking NEXT button for page 4...
+[00:08:48] 
+📄 SCRAPING PAGE 4...
+[00:08:48]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:48]    ⏳ Waiting for #tradingHistoryTable...
+[00:08:48]    ✅ Table found!
+[00:08:48]    ✅ Found 13 trades on page 4. Total so far: 73
+[00:08:48] Clicking NEXT button for page 5...
+[00:08:53] 
+📄 SCRAPING PAGE 5...
+[00:08:53]    📍 Current URL: https://www.myfxbook.com/portfolio/results/11854272
+[00:08:53]    ⏳ Waiting for #tradingHistoryTable...
+[00:08:53]    ✅ Table found!
+[00:08:53]    🔁 Page 5 is identical to previous page. Reached end of history.
+[00:08:53] ============================================================
+[00:08:53] 🏁 SCRAPING COMPLETE! Total trades: 73
+[00:08:53] ============================================================
+[00:08:53] 🔒 Closing browser...
+[00:08:53] ✅ Browser closed.

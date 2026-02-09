@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 0. Cargar estado persistente
     loadMagicNumbers();
     loadQuarantineList(); // Load Quarantine
-    // loadSavedPortfolios(); // Disabled by user request for clean slate on reload
+    loadSavedPortfolios(); // Re-enabled to fix '0 portfolios' issue
 
     // 1. Poblar los selectores de vistas al inicio
     populateViewSelector('databank');

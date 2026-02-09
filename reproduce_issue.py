@@ -1,45 +1,67 @@
-
 import pandas as pd
-import sys
-import os
+import io
+import json
 
-# Add local directory to path
-sys.path.append('/home/ivan/Desktop/Symbols/Porfolios/trading-strategy-dashboard')
+# Mirroring tradesToCSV output from frontend
+headers = "Ticket,Symbol,Type,Open Time,Open Price,Size,Close Time,Close Price,Profit,Balance,Duration,Commission,Swap,Comment,MagicNumber"
+# Sample row INSIDE the range (2025.08.12 - 2026.01.25)
+row1 = "1,EURUSD,Buy,2025.09.01 11:00:00,1.4320,0.1,2025.09.01 16:00:00,1.4350,261.95,10261.95,0,0,0,,12345"
 
-from analysis_engine import process_strategy_data
+csv_content = f"{headers}\n{row1}"
 
-def test_max_dd():
-    # Mock Data: Standard scenario
-    # Equity: 100000 -> 100100 -> 100050 -> 100250 -> 99950 -> 100450
-    # DD$: 
-    # 1. Peak 100100 -> 100050 = 50
-    # 2. Peak 100250 -> 99950 = 300 (MaxDD)
+print(f"--- Generated CSV Content ---\n{csv_content}\n-----------------------------")
+
+# Imitating app.py logic
+try:
+    df = pd.read_csv(io.StringIO(csv_content))
+    print("\n[STEP 1] read_csv Columns:", list(df.columns))
+    print("[STEP 1] Head:\n", df.head())
     
-    data = [
-        {'entry_date': '2023-01-01', 'exit_date': '2023-01-02', 'pnl': 100.0},
-        {'entry_date': '2023-01-03', 'exit_date': '2023-01-04', 'pnl': -50.0},
-        {'entry_date': '2023-01-05', 'exit_date': '2023-01-06', 'pnl': 200.0},
-        {'entry_date': '2023-01-07', 'exit_date': '2023-01-08', 'pnl': -300.0},
-        {'entry_date': '2023-01-09', 'exit_date': '2023-01-10', 'pnl': 500.0},
-    ]
+    col_map = {
+        'Profit': 'pnl',
+        'Close Time': 'exit_date',
+        'Open Time': 'entry_date',
+        'Size': 'size',
+        'Symbol': 'symbol',
+        'Type': 'type',
+        'Comment': 'comment',
+        'Open Price': 'open_price',
+        'MagicNumber': 'magic_number'
+    }
     
-    df = pd.DataFrame(data)
-    df['entry_date'] = pd.to_datetime(df['entry_date'])
-    df['exit_date'] = pd.to_datetime(df['exit_date'])
+    rename_dict = {k: v for k, v in col_map.items() if k in df.columns}
+    print("\n[STEP 2] Rename Dict:", rename_dict)
     
-    # Mock Benchmark
-    bench_data = [] # Empty benchmark
-    bench_df = pd.DataFrame(bench_data)
+    df = df.rename(columns=rename_dict)
+    print("[STEP 3] Renamed Columns:", list(df.columns))
     
-    print("\n--- Running Analysis ---")
-    results, _ = process_strategy_data(df, bench_df)
-    
-    if results:
-        print(f"Max DD ($): {results.get('maxDrawdownInDollars')}")
-        print(f"Total Profit: {results.get('totalProfit')}")
-        print(f"Initial Capital should be 100000 (default)")
+    if 'exit_date' in df.columns:
+        print("\n[STEP 4] 'exit_date' found. Parsing...")
+        raw_val = df['exit_date'].iloc[0]
+        print(f"Raw Value: '{raw_val}' Type: {type(raw_val)}")
+        
+        try:
+             # CORRECCIÓN DE FECHAS: Priorizar el formato exacto del frontend (YYYY.MM.DD HH:MM:SS)
+             df['exit_date'] = pd.to_datetime(df['exit_date'], format='%Y.%m.%d %H:%M:%S', errors='raise')
+             print("[STEP 5] Parsed successfully with %Y.%m.%d %H:%M:%S")
+        except Exception as e:
+             print(f"[STEP 5] Failed primary parse: {e}")
+             
+             # Fallbacks...
     else:
-        print("Analysis returned None")
+        print("\n[ERROR] 'exit_date' NOT FOUND after rename!")
 
-if __name__ == "__main__":
-    test_max_dd()
+    print("\n[FINAL] Result DataFrame:")
+    print(df)
+    
+    # Check filtering
+    start_date = "2025-08-12"
+    end_date = "2026-01-25"
+    print(f"\n[FILTER] Applying filter {start_date} to {end_date}")
+    
+    mask = (df['exit_date'] >= pd.to_datetime(start_date)) & (df['exit_date'] <= pd.to_datetime(end_date))
+    filtered_df = df[mask]
+    print(f"[FILTER] Result count: {len(filtered_df)}")
+    
+except Exception as e:
+    print(f"\n[FATAL] Script Crash: {e}")

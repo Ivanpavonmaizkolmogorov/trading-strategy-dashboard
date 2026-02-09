@@ -25,6 +25,15 @@ export const state = {
     quarantinedStrategyNames: new Set(), // Set of strategy names permanently excluded
     linkedStrategiesFilter: 'all', // 'all', 'hide', 'only'
 
+    // Advanced Filters (Persistence)
+    advancedFilters: {
+        searchText: '',
+        mt5Only: false,
+        magicMissingOnly: false, // New filter: Linked but No Magic
+        selectedPortfolioId: 'all',
+        showQuarantined: false
+    },
+
     // --- NUEVO: Configuración de Riesgo ---
     stagnationMode: 'days', // 'days', 'trades'
 
@@ -46,6 +55,9 @@ export const state = {
     databankSortConfig: { key: 'metricValue', order: 'desc' },
     savedPortfoliosSortConfig: { key: 'savedIndex', order: 'asc' },
     summarySortConfig: { key: 'name', order: 'asc' }, // <-- ESTA LÍNEA ESTABA AUSENTE
+
+    // UI State
+    databankPanelExpanded: true, // Default to expanded
 
     // --- NUEVO: Vista por defecto centralizada ---
     // Esta es la lista de KPIs que has definido como la vista estándar.
@@ -85,6 +97,10 @@ export const state = {
 
     // --- NUEVO: Modo de Vista (Backtest vs Reality Check) ---
     activeViewMode: 'backtest', // 'backtest' | 'reality-check'
+
+    // --- NUEVO: Trade PnL Overrides (manual edits) ---
+    // Estructura: { "strategyId::timestamp": { realPnL: number|null, btPnL: number|null, neutralized: boolean, originalReal: number, originalBT: number } }
+    tradePnlOverrides: {},
 };
 
 // Funciones de persistencia para Magic Numbers
@@ -122,7 +138,6 @@ export const saveQuarantineList = () => {
 
 export const loadSavedPortfolios = () => {
     // Disabled by user request for clean slate on reload
-    /*
     try {
         const stored = localStorage.getItem('savedPortfolios');
         if (stored) {
@@ -137,8 +152,7 @@ export const loadSavedPortfolios = () => {
     } catch (e) {
         console.error('[State] Error loading Saved Portfolios:', e);
     }
-    */
-    console.log('[State] Saved Portfolios auto-load disabled.');
+    // console.log('[State] Saved Portfolios auto-load disabled.');
 };
 
 export const saveSavedPortfolios = () => {
