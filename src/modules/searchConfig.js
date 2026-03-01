@@ -58,7 +58,9 @@ const createCard = (id, title, icon, description, badge = '') => `
 /**
  * Entry Point: Opens the Search Wizard
  */
-export const openSearchConfigModal = (selectedIndices = []) => {
+export const openSearchConfigModal = (selectedIndices = [], options = {}) => {
+    const isStrategyIndices = options.isStrategyIndices || false;
+
     // 1. Initialize State
     wizardState = {
         step: 1,
@@ -73,7 +75,14 @@ export const openSearchConfigModal = (selectedIndices = []) => {
 
     // Pre-resolve base strategies if needed for Lab mode later
     if (wizardState.isMultiPortfolioMode) {
-        wizardState.baseStrategies = resolveMultiPortfolioBaseStrategies(selectedIndices);
+        if (isStrategyIndices) {
+            // Called from Strategies Table: indices ARE strategy indices, use directly
+            wizardState.baseStrategies = selectedIndices.map(index => mapStrategy(index, true));
+            console.log(`[DIAG-WIZARD] Strategy Indices mode: ${selectedIndices.length} strategies used directly as base`);
+        } else {
+            // Called from Saved Portfolios Table: indices are portfolio indices, resolve strategies
+            wizardState.baseStrategies = resolveMultiPortfolioBaseStrategies(selectedIndices);
+        }
     } else {
         wizardState.baseStrategies = resolveBaseStrategies(selectedIndices);
     }
@@ -237,6 +246,7 @@ export const renderWizard = () => {
                     <div class="p-3 bg-blue-900/30 border border-blue-700/50 rounded-lg text-center text-sm text-blue-200 mb-2">
                         Has seleccionado <strong>${wizardState.selectedPortfolioIndices.length} portafolios</strong>.
                     </div>
+                    ${createCard('boost', 'Multi-Mejorar', '🚀⚡', 'Prueba combinaciones para mejorar TODOS los portafolios seleccionados. Mantiene las mejores estrategias y reemplaza las peores.')}
                     ${createCard('satellite', 'Multi-Satélite', '🛰️⚡', 'Encuentra un portafolio descorrelacionado de TODOS los seleccionados simultáneamente.')}
                     ${createCard('lab', 'Multi-Laboratorio', '🧪🧬', 'Combina estrategias de TODOS los portafolios seleccionados para crear híbridos.')}
                     ${createCard('hybrid', 'Satélite Híbrido', '🛰️🧪', 'Busca descorrelación externa Y mejora de rendimiento (Triple Filtro).', 'Nuevo')}
@@ -870,7 +880,7 @@ const attachWizardEvents = () => {
             if (warnContainer) warnContainer.classList.add('hidden'); // Reset
 
             const payload = {
-                portfolio_indices: selectedContextIndices,
+                portfolio_indices: selectedContextIndices.map((_, i) => i), // Sequential indices matching the pre-filtered array
                 strategies_data: selectedContextIndices.map(i => state.rawStrategiesData[i])
             };
 
@@ -992,7 +1002,7 @@ const attachWizardEvents = () => {
                     // 1. Fetch Correlation Matrix from Backend
                     // We use the same backend endpoint that handles raw strategy data
                     const payload = {
-                        portfolio_indices: selectedContextIndices,
+                        portfolio_indices: selectedContextIndices.map((_, i) => i), // Sequential indices matching the pre-filtered array
                         strategies_data: selectedContextIndices.map(i => state.rawStrategiesData[i])
                     };
 
@@ -1317,14 +1327,35 @@ const executeSearch = () => {
             strategiesDataOverride = null;
         }
 
+        // --- AUTO-ADJUST SIZE FOR BOOST MODE ---
+        // In boost mode, the backend calculates effective_max_k = maxSize - fixedCount.
+        // If maxSize <= fixedCount, no new strategies can be added (search produces nothing).
+        // We auto-adjust to guarantee at least 1 new strategy beyond the fixed base.
+        let finalMinSize = wizardState.config.minSize || 1;
+        let finalMaxSize = wizardState.config.maxSize;
+
+        if (wizardState.objective === 'boost' && fixedIndicesToSend.length > 0) {
+            const fixedCount = fixedIndicesToSend.length;
+            // minSize must be at least fixedCount + 1 (base + at least 1 new)
+            if (finalMinSize <= fixedCount) {
+                finalMinSize = fixedCount + 1;
+                console.log(`[DIAG-WIZARD] Boost: Auto-adjusted minSize from ${wizardState.config.minSize} to ${finalMinSize} (fixed: ${fixedCount})`);
+            }
+            // maxSize must be at least fixedCount + 1
+            if (finalMaxSize <= fixedCount) {
+                finalMaxSize = fixedCount + 3; // Give some room to explore
+                console.log(`[DIAG-WIZARD] Boost: Auto-adjusted maxSize from ${wizardState.config.maxSize} to ${finalMaxSize} (fixed: ${fixedCount})`);
+            }
+        }
+
         // Construct Payload/Config for findDatabankPortfolios
         const config = {
             objective: backendObjective,
             searchMethod: wizardState.config.searchMethod,
             metric: wizardState.config.metric,
             goal: wizardState.config.goal,
-            minSize: wizardState.config.minSize || 1,
-            maxSize: wizardState.config.maxSize,
+            minSize: finalMinSize,
+            maxSize: finalMaxSize,
             correlationThreshold: wizardState.config.correlationThreshold,
             satelliteCorrelationThreshold: wizardState.config.satelliteCorrelationThreshold,
             reShuffleInterval: wizardState.config.reShuffleInterval || 30,

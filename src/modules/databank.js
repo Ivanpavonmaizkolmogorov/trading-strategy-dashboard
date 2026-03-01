@@ -1057,7 +1057,9 @@ export const updateDatabankDisplay = window.updateDatabankDisplay = () => {
     try {
         state.databankPortfolios.forEach((p, index) => {
             if (index === 0) {
-                // Debugging removed
+                console.log(`[DEBUG-DATABANK] Portfolio ${index} Name: ${p.name}, Config:`, p);
+                console.log(`[DEBUG-DATABANK] Portfolio ${index} Metrics:`, p.metrics);
+                console.log(`[DEBUG-DATABANK] Portfolio ${index} Analysis:`, p.analysis);
             }
             let rowClass = (index < 3 && state.databankSortConfig.key === 'metricValue') ? 'databank-top3' : '';
             const selectionIndex = state.selectedRows.databank.indexOf(index);
@@ -1127,6 +1129,7 @@ export const updateDatabankDisplay = window.updateDatabankDisplay = () => {
 
             // Add action column
             html += `<td class="px-4 py-3 text-center sticky right-0 bg-gray-800 z-10 whitespace-nowrap">
+                        <button class="view-dd-analysis-btn text-gray-400 hover:text-red-400 text-lg px-1 mr-1" title="Análisis de Drawdown" data-index="${index}" data-source="databank">📉</button>
                         <button class="view-strategy-risk-btn text-gray-400 hover:text-sky-400 text-lg px-1 mr-2" title="Ver Riesgo Base" data-index="${index}" data-source="databank">👁️</button>
                         <button class="databank-save-single-btn bg-sky-700 hover:bg-sky-800 text-white font-bold py-1 px-2 rounded text-xs" data-index="${index}">Guardar</button>
                      </td></tr>`;

@@ -1,0 +1,32 @@
+On branch main
+Your branch is ahead of 'origin/main' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	modified:   .gitignore
+	renamed:    BBDD/analisis_estrategias_2026-01-31.json -> BBDD/analisis_estrategias_2026-02-24.json
+	modified:   index.html
+	modified:   myfx_playground/debug_scraper.txt
+	new file:   requirements.txt
+	new file:   server.log.old
+	modified:   src/events.js
+	modified:   src/main.js
+	modified:   src/modules/databank.js
+	new file:   src/modules/drawdownAnalysis.js
+	new file:   src/modules/drawdownUI.js
+	modified:   src/modules/magicMapper.js
+	modified:   src/modules/searchConfig.js
+	modified:   src/modules/strategiesTable.js
+	modified:   src/state.js
+	modified:   src/ui.js
+	modified:   start.sh
+	modified:   start_viewer.sh
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	git_out.txt
+	git_out2.txt
+	git_status.txt
+	out_git_log.txt
+

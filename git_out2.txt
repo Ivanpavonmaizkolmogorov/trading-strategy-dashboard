@@ -1,0 +1,5 @@
+f35991d Add BBDD analysis and update gitignore
+47488dc Actualizacion dashboard y limpieza de cache
+3d07cc9 WIP: Backend metrics engine - Added calculate_metrics_for_period helper function
+cfd8290 Debug SQ Analysis Render Error and Strategy Filtering Logic
+9fc3f60 Update strategies table filters, fix portfolio aggregated charts and trades modal, improve magic number matching logic, and debug logging.

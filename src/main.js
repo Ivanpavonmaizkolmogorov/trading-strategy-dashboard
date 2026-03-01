@@ -1,7 +1,7 @@
-import { initializeEventListeners } from './events.js';
+import { initializeEventListeners } from './events.js?v=10';
 import { populateViewSelector } from './modules/viewManager.js';
 import { loadMagicNumbers, loadSavedPortfolios, loadQuarantineList } from './state.js';
-import { displaySavedPortfoliosList } from './ui.js?v=2';
+import { displaySavedPortfoliosList } from './ui.js?v=6';
 import { initBrokerUI } from './modules/brokerUI.js';
 
 document.addEventListener('DOMContentLoaded', () => {

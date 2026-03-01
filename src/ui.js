@@ -844,7 +844,7 @@ export const getRealTradesByName = (stratName) => {
 };
 
 // --- HELPER: Calculate Real Metrics for Portfolio on the Fly ---
-const calculatePortfolioRealMetrics = (portfolio) => {
+export const calculatePortfolioRealMetrics = (portfolio) => {
     // Return existing if valid? Maybe forcing re-calc is safer to ensure it matches current strategies.
     // if (portfolio.calculatedRealMetrics) return portfolio.calculatedRealMetrics;
 
@@ -1487,6 +1487,7 @@ export const displaySavedPortfoliosList = () => {
                 👥
                 ${(p.slaveAccounts && p.slaveAccounts.length > 0) ? `<span class="absolute -top-1 -right-1 flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span></span>` : ''}
             </button>
+            <button data-index="${originalIndex}" class="view-dd-analysis-btn text-gray-400 hover:text-red-400 text-lg px-1" title="Análisis de Drawdown">📉</button>
             <button data-index="${originalIndex}" class="view-strategy-risk-btn text-gray-400 hover:text-sky-400 text-lg px-1" title="Ver Riesgo Base Estrategias">👁️</button>
             <button data-index="${originalIndex}" class="delete-portfolio-btn text-gray-400 hover:text-red-400 text-lg px-1" title="Eliminar">🗑️</button>
             <button data-index="${originalIndex}" class="optimize-portfolio-btn text-sky-400 hover:text-sky-300 text-lg px-1" title="Optimizar">⚙️</button>
@@ -1539,6 +1540,7 @@ export const displaySavedPortfoliosList = () => {
             e.stopPropagation();
             if (window.openOptimizationTab) window.openOptimizationTab(originalIndex);
         });
+
 
         row.appendChild(tdActions);
         dom.savedPortfoliosBody.appendChild(row);

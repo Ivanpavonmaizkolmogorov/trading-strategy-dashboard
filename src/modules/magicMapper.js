@@ -856,8 +856,9 @@ function renderIdsList() {
             <div class="flex-1 min-w-0 flex flex-col gap-0.5 z-0">
                 <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-mono text-xs font-bold ${isChecked ? 'text-purple-200' : 'text-gray-300'} truncate" title="${stat.exampleRaw || stat.id}">
-                        ${stat.id}
+                        ${stat.exampleRaw && stat.exampleRaw !== stat.id ? stat.exampleRaw : stat.id}
                     </span>
+                    ${stat.exampleRaw && stat.exampleRaw !== stat.id ? `<span class="text-[9px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded border border-gray-600" title="Normalized Group ID">≡ ${stat.id}</span>` : ''}
                     ${accountBadge}
                     ${isRecommended ? '<span class="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-800 animate-pulse">MATCH</span>' : ''}
                 </div>

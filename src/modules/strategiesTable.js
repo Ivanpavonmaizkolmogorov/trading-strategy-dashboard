@@ -1480,6 +1480,14 @@ export const renderStrategiesTable = () => {
                         </button>
                     `;
 
+                    // [NEW] Drawdown Analysis Button
+                    // Shows the modal with the drawdown chart and stats.
+                    html += `
+                        <button class="view-dd-analysis-btn ml-1 text-gray-400 hover:text-red-400 transition-colors" title="Análisis de Drawdown" data-index="${targetRef}" data-source="strategies">
+                            📉
+                        </button>
+                    `;
+
                     // [NEW] Date Range Button
                     // Shows calendar icon. If active, shows highlighted color.
                     const isFiltered = strategy.realMetrics && strategy.realMetrics.isDateFiltered;
@@ -1994,7 +2002,7 @@ export const updateFloatingActionBar = () => {
 
     document.getElementById('fab-find-team-btn').addEventListener('click', () => {
         const selectedIndices = Array.from(selectedStrategies);
-        openSearchConfigModal(selectedIndices);
+        openSearchConfigModal(selectedIndices, { isStrategyIndices: true });
     });
 
     document.getElementById('fab-apply-filter').addEventListener('click', () => {

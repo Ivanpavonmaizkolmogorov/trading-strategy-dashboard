@@ -114,12 +114,8 @@ export const loadMagicNumbers = () => {
 };
 
 export const saveMagicNumbers = () => {
-    try {
-        localStorage.setItem('magicNumberMap', JSON.stringify(state.magicNumberMap));
-        console.log('[State] Magic Numbers saved.');
-    } catch (e) {
-        console.error('[State] Error saving Magic Numbers:', e);
-    }
+    // Disabled by user request ("NO CACHE"). Everything should be handled via JSON export.
+    console.log('[State] Magic Numbers local storage save disabled.');
 };
 
 // Funciones de persistencia para Cuarentena (Global Ban)
@@ -138,40 +134,10 @@ export const saveQuarantineList = () => {
 
 export const loadSavedPortfolios = () => {
     // Disabled by user request for clean slate on reload
-    try {
-        const stored = localStorage.getItem('savedPortfolios');
-        if (stored) {
-            state.savedPortfolios = JSON.parse(stored);
-            console.log('[State] Saved Portfolios loaded:', state.savedPortfolios.length);
-            // Ensure nextPortfolioId is updated
-            if (state.savedPortfolios.length > 0) {
-                const maxId = Math.max(...state.savedPortfolios.map(p => p.id || 0));
-                state.nextPortfolioId = maxId + 1;
-            }
-        }
-    } catch (e) {
-        console.error('[State] Error loading Saved Portfolios:', e);
-    }
-    // console.log('[State] Saved Portfolios auto-load disabled.');
+    console.log('[State] Saved Portfolios auto-load disabled (Fresh Session).');
 };
 
 export const saveSavedPortfolios = () => {
-    try {
-        const minimizedPortfolios = state.savedPortfolios.map(p => ({
-            id: p.id,
-            name: p.name,
-            indices: p.indices, // Or strategyIds if available
-            weights: p.weights,
-            comments: p.comments,
-            linkedAccountId: p.linkedAccountId,
-            linkedAccountName: p.linkedAccountName,
-            // Exclude 'analysis', 'metrics', 'realMetrics' (heavy data)
-            // We expect the app to re-calculate or re-fetch analysis on load if needed,
-            // or at least not crash storage.
-        }));
-        localStorage.setItem('savedPortfolios', JSON.stringify(minimizedPortfolios));
-        console.log('[State] Saved Portfolios saved (Minified).');
-    } catch (e) {
-        console.error('[State] Error saving Saved Portfolios:', e);
-    }
+    // Disabled by user request: everything should be saved via JSON export, not cache.
+    console.log('[State] Saved Portfolios local storage save disabled.');
 };

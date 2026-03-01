@@ -1,7 +1,7 @@
 import { dom } from './dom.js';
 import { state, saveSavedPortfolios } from './state.js';
 import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable } from './analysis.js';
-import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal, switchViewMode, renderStrategiesTable } from './ui.js';
+import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal, switchViewMode, renderStrategiesTable } from './ui.js?v=4';
 import { findDatabankPortfolios, stopDatabankSearch, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay, openPurgeModal } from './modules/databank.js';
 import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
 import { openViewManager, closeViewManager, applyView, saveView, deleteView } from './modules/viewManager.js';
@@ -436,6 +436,78 @@ export function initializeEventListeners() {
                 e.stopPropagation();
             }
 
+            // --- Drawdown Analysis ---
+            const ddBtn = e.target.closest('.view-dd-analysis-btn');
+            if (ddBtn) {
+                const index = parseInt(ddBtn.dataset.index, 10);
+                const source = ddBtn.dataset.source || 'saved';
+                let portfolio;
+                if (source === 'saved') {
+                    portfolio = state.savedPortfolios[index];
+                } else if (source === 'databank') {
+                    portfolio = state.databankPortfolios[index];
+                } else if (source === 'strategies') {
+                    portfolio = state.loadedStrategyFiles[index];
+                }
+                if (portfolio) {
+                    const processAndOpen = async () => {
+                        try {
+                            const pObj = { ...portfolio };
+
+                            // Rebuild backtest and real trades for portfolios
+                            if (source === 'saved' || source === 'databank') {
+                                const { parseTradesFromContent, parseTradesFromData } = await import('./modules/sqAnalysis_v2.js?v=11');
+                                let allTrades = [];
+
+                                let strategyIndices = [];
+                                if (pObj.strategyIds && pObj.strategyIds.length > 0) {
+                                    strategyIndices = pObj.strategyIds.map(id => state.loadedStrategyFiles.findIndex(f => f.strategyId === id));
+                                    const validCount = strategyIndices.filter(i => i !== -1).length;
+                                    if (validCount === 0 && pObj.indices) strategyIndices = pObj.indices;
+                                } else {
+                                    strategyIndices = pObj.indices || [];
+                                }
+
+                                console.log('[DEBUG-DD] DrGero/Portfolio Analysis.', pObj.name, 'indices resolved:', strategyIndices.length, strategyIndices);
+                                strategyIndices.forEach(idx => {
+                                    if (idx === -1) return;
+                                    const file = state.loadedStrategyFiles[idx];
+                                    if (file && file.content) {
+                                        const t = parseTradesFromContent(file.content);
+                                        allTrades = allTrades.concat(t);
+                                    } else if (state.rawStrategiesData && state.rawStrategiesData[idx]) {
+                                        const t = parseTradesFromData(state.rawStrategiesData[idx]);
+                                        allTrades = allTrades.concat(t);
+                                    } else {
+                                        console.warn('[DEBUG-DD] Could not find strategy file/data for index', idx);
+                                    }
+                                });
+                                console.log('[DEBUG-DD] Final allTrades length:', allTrades.length);
+                                allTrades.sort((a, b) => (a.exitTime || 0) - (b.exitTime || 0));
+                                pObj.aggregatedTrades = allTrades; // Required by drawdownUI.js
+
+                                const { calculatePortfolioRealMetrics } = await import('./ui.js?v=5');
+                                const realStats = calculatePortfolioRealMetrics(pObj);
+                                if (realStats && realStats.totalTrades > 0) {
+                                    pObj.realMetrics = {
+                                        ...pObj.realMetrics,
+                                        ...realStats,
+                                        allTrades: realStats._aggregatedTrades
+                                    };
+                                }
+                            }
+
+                            const mod = await import('./modules/drawdownUI.js?v=10');
+                            mod.openDrawdownModal(pObj, pObj.realMetrics && pObj.realMetrics.allTrades != null);
+                        } catch (err) {
+                            console.error('[Events] Error preparing DD analysis for portfolio:', err);
+                        }
+                    };
+                    processAndOpen();
+                }
+                e.stopPropagation();
+            }
+
             // --- Edit Portfolio Name in List ---
             const nameContainer = e.target.closest('.portfolio-name-container'); // Updated class match
             if (nameContainer && (e.target.closest('.portfolio-name-display') || e.target.closest('.edit-portfolio-name-btn'))) {
@@ -665,7 +737,108 @@ export function initializeEventListeners() {
             openStrategyRiskModal(index, source);
             e.stopPropagation();
         }
+
+        // --- Drawdown Analysis in Databank ---
+        const ddBtn = e.target.closest('.view-dd-analysis-btn');
+        if (ddBtn) {
+            const index = parseInt(ddBtn.dataset.index, 10);
+            const portfolio = state.databankPortfolios[index];
+            if (portfolio) {
+                const processAndOpen = async () => {
+                    try {
+                        const pObj = { ...portfolio };
+
+                        // Rebuild backtest and real trades for portfolios
+                        const { parseTradesFromContent, parseTradesFromData } = await import('./modules/sqAnalysis_v2.js?v=11');
+                        let allTrades = [];
+
+                        let strategyIndices = [];
+                        if (pObj.strategyIds && pObj.strategyIds.length > 0) {
+                            strategyIndices = pObj.strategyIds.map(id => state.loadedStrategyFiles.findIndex(f => f.strategyId === id));
+                            const validCount = strategyIndices.filter(i => i !== -1).length;
+                            if (validCount === 0 && pObj.indices) strategyIndices = pObj.indices;
+                        } else {
+                            strategyIndices = pObj.indices || [];
+                        }
+
+                        strategyIndices.forEach(idx => {
+                            if (idx === -1) return;
+                            const file = state.loadedStrategyFiles[idx];
+                            if (file && file.content) {
+                                allTrades = allTrades.concat(parseTradesFromContent(file.content));
+                            } else if (state.rawStrategiesData && state.rawStrategiesData[idx]) {
+                                allTrades = allTrades.concat(parseTradesFromData(state.rawStrategiesData[idx]));
+                            }
+                        });
+                        allTrades.sort((a, b) => (a.exitTime || 0) - (b.exitTime || 0));
+                        pObj.aggregatedTrades = allTrades; // Required by drawdownUI.js
+
+                        const { calculatePortfolioRealMetrics } = await import('./ui.js?v=5');
+                        const realStats = calculatePortfolioRealMetrics(pObj);
+                        if (realStats && realStats.totalTrades > 0) {
+                            pObj.realMetrics = {
+                                ...pObj.realMetrics,
+                                ...realStats,
+                                allTrades: realStats._aggregatedTrades
+                            };
+                        }
+
+                        const mod = await import('./modules/drawdownUI.js?v=10');
+                        mod.openDrawdownModal(pObj, pObj.realMetrics && pObj.realMetrics.allTrades != null);
+                    } catch (err) {
+                        console.error('[Events] Error preparing DD analysis for databank portfolio:', err);
+                    }
+                };
+                processAndOpen();
+            }
+            e.stopPropagation();
+        }
     });
+
+    // --- Strategies Table Body ---
+    const strategiesBody = document.getElementById('strategies-table-body');
+    if (strategiesBody) {
+        strategiesBody.addEventListener('click', async (e) => {
+            // --- Drawdown Analysis in Strategies ---
+            const ddBtn = e.target.closest('.view-dd-analysis-btn');
+            if (ddBtn) {
+                const index = parseInt(ddBtn.dataset.index, 10);
+                const fileRecord = state.loadedStrategyFiles[index];
+                if (fileRecord) {
+                    try {
+                        const { parseTradesFromData } = await import('./modules/sqAnalysis_v2.js');
+                        const rawData = state.rawStrategiesData[index];
+                        const trades = parseTradesFromData(rawData);
+                        console.log('[DEBUG-DD] Parsed Strategy Trades:', trades ? trades.length : 'null/undefined');
+
+                        const portfolioObj = {
+                            ...fileRecord,
+                            trades: trades,
+                            strategyNames: [fileRecord.name] // Añadimos esto temporalmente para el calculador
+                        };
+
+                        // Calcular realMetrics al vuelo para la estrategia individual
+                        const { calculatePortfolioRealMetrics } = await import('./ui.js?v=5');
+                        const realStats = calculatePortfolioRealMetrics(portfolioObj);
+
+                        // calculatePortfolioRealMetrics returns standard SQ keys like totalTrades
+                        if (realStats && realStats.totalTrades > 0) {
+                            portfolioObj.realMetrics = {
+                                ...realStats,
+                                allTrades: realStats._aggregatedTrades // drawdownUI expects .allTrades
+                            };
+                        }
+
+                        const mod = await import('./modules/drawdownUI.js?v=10');
+                        mod.openDrawdownModal(portfolioObj, portfolioObj.realMetrics != null);
+                    } catch (error) {
+                        console.error('[Events] Error preparing drawdown data for strategy:', error);
+                    }
+                }
+                e.stopPropagation();
+            }
+        });
+    }
 
     // --- Optimization Modal (Hidden for now) ---
     const optModalElements = document.getElementById('optimization-modal');
