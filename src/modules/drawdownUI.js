@@ -1,4 +1,5 @@
-import { calculateDrawdownBreakdown, formatDDDate } from './drawdownAnalysis.js?v=3';
+import { formatDDDate } from './drawdownAnalysis.js?v=3';
+import { TradeSeries } from '../models/TradeSeries.js';
 
 let ddModal = null;
 
@@ -99,7 +100,8 @@ function renderDrawdownContent(item, hasRealityData) {
         // Fallback weird
     }
 
-    const btData = calculateDrawdownBreakdown(backtestTrades, 7);
+    const btSeries = new TradeSeries(backtestTrades);
+    const btData = btSeries.getDrawdownBreakdown(7);
     const colBacktest = createDrawdownColumn('Simulación Virtual (Backtest)', btData, 'text-blue-400', 'bg-blue-900/10');
     gridDiv.appendChild(colBacktest);
 
@@ -122,7 +124,8 @@ function renderDrawdownContent(item, hasRealityData) {
             };
         }).filter(t => !isNaN(t.pnl) && t.exitTime);
 
-        const realData = calculateDrawdownBreakdown(cleanRealTrades, 7);
+        const realSeries = new TradeSeries(cleanRealTrades);
+        const realData = realSeries.getDrawdownBreakdown(7);
         const colReal = createDrawdownColumn('Mundo Real (Reality Check)', realData, 'text-emerald-400', 'bg-emerald-900/10');
         gridDiv.appendChild(colReal);
     }
@@ -132,7 +135,7 @@ function renderDrawdownContent(item, hasRealityData) {
     setTimeout(() => {
         renderUnderwaterChart('canvas-bt', btData.underwaterCurve);
         if (hasTwoColumns) {
-            renderUnderwaterChart('canvas-real', calculateDrawdownBreakdown(cleanRealTrades(item.realMetrics.allTrades), 7).underwaterCurve);
+            renderUnderwaterChart('canvas-real', new TradeSeries(cleanRealTrades(item.realMetrics.allTrades)).getDrawdownBreakdown(7).underwaterCurve);
         }
     }, 50);
 }

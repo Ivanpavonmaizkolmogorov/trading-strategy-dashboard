@@ -1,51 +1,11 @@
 import { state } from './state.js';
-import { calculateMargin, loadBrokerConfig } from './modules/brokerConfig.js';
 
-// ...
-
-/**
- * Calculates the Maximum Margin Requirement for a set of trades.
- * Uses a sweep-line algorithm to handle overlaps.
- */
-export const calculateMaxMarginUsage = (trades) => {
-    if (!trades || trades.length === 0) return 0;
-
-    // Create events: OPEN and CLOSE
-    const events = [];
-    trades.forEach(t => {
-        // Calculate margin for this specific trade
-        // We use Open Price for margin calculation
-        const margin = calculateMargin(t.symbol, t.lots || t.size, t.openPrice);
-
-        events.push({ time: new Date(t.openTime || t.openDate).getTime(), type: 'OPEN', amount: margin });
-        events.push({ time: new Date(t.closeTime || t.closeDate).getTime(), type: 'CLOSE', amount: margin });
-    });
-
-    // Sort events by time. If times are equal, process OPEN before CLOSE? 
-    // Actually, if a trade closes at T and another opens at T, do they overlap?
-    // Usually yes, momentarily. To be safe/conservative, OPEN before CLOSE.
-    events.sort((a, b) => {
-        if (a.time !== b.time) return a.time - b.time;
-        return a.type === 'OPEN' ? -1 : 1;
-    });
-
-    let currentMargin = 0;
-    let maxMargin = 0;
-
-    events.forEach(e => {
-        if (e.type === 'OPEN') {
-            currentMargin += e.amount;
-            if (currentMargin > maxMargin) maxMargin = currentMargin;
-        } else {
-            currentMargin -= e.amount;
-        }
-    });
-
-    return maxMargin;
-};
 import { dom } from './dom.js';
 import { displayError, toggleLoading, parseCsv } from './utils.js';
 import { displayResults, updateAnalysisModeSelector, displaySavedPortfoliosList } from './ui.js';
+
+import { TradeSeries } from './models/TradeSeries.js';
+import { parseTradesFromData } from './modules/sqAnalysis_v2.js';
 
 /**
  * Inicia el proceso de análisis principal. Carga los archivos y lanza el primer análisis.
@@ -93,6 +53,12 @@ export const runAnalysis = async () => {
         });
         state.rawStrategiesData = await Promise.all(strategiesPromises);
 
+        // Populate TradeSeries directly
+        state.strategySeries = state.rawStrategiesData.map((rawData, idx) => {
+            const parsedTrades = parseTradesFromData(rawData);
+            return new TradeSeries(parsedTrades, state.tradePnlOverrides);
+        });
+
         // Clear old metrics antes de un nuevo análisis completo
         state.savedPortfolios.forEach(p => { delete p.metrics; delete p.analysis; });
         state.databankPortfolios.forEach(p => { delete p.metrics; });
@@ -115,15 +81,12 @@ export const runAnalysis = async () => {
  */
 export const getFullAnalysisFromBackend = async (strategies, portfolios, isRiskNormalized, targetMaxDD) => {
 
-    const brokerConfig = loadBrokerConfig();
-
     const payload = {
         strategies_data: strategies,
         benchmark_data: [], // TODO: Benchmark
         portfolios_to_analyze: portfolios,
         is_risk_normalized: isRiskNormalized,
-        normalization_target_value: targetMaxDD,
-        broker_config: brokerConfig
+        normalization_target_value: targetMaxDD
     };
     try {
         const response = await fetch('/analysis/full', {

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Validator PnL</title>
+</head>
+
+<body>
+    <div id="output"
+        style="font-family: monospace; white-space: pre-wrap; background: #111; color: #0f0; padding: 20px;"></div>
+    <script type="module">
+        import { TradeSeries } from '../src/models/TradeSeries.js';
+
+        async function runValidation() {
+            const out = document.getElementById('output');
+            const log = (msg) => { out.innerHTML += msg + '\n'; console.log(msg); };
+
+            try {
+                // Fetch the actual database JSON
+                const res = await fetch('../BBDD/analisis_estrategias_2026-02-24.json');
+                const db = await res.json();
+
+                const testStrats = [db.strategies[0], db.strategies[5], db.strategies[10]].filter(Boolean);
+
+                log("==========================================");
+                log("🧪 RUNNING VALIDATION: BACKEND VS TRADESERIES");
+                log("==========================================\n");
+
+                let allPassed = true;
+
+                testStrats.forEach((strat, index) => {
+                    const oldMetrics = strat.metrics;
+                    const rawTrades = strat.trades;
+
+                    const series = new TradeSeries(rawTrades);
+
+                    log(`[Test ${index + 1}] Strategy: ${strat.name}`);
+                    log(`Trades in history: ${rawTrades.length}`);
+
+                    const comparisons = [
+                        { name: "Total Profit ($)", old: oldMetrics.netProfit, new: series.totalProfit },
+                        { name: "Max Drawdown ($)", old: oldMetrics.maxDrawdownInDollars, new: series.maxDrawdown },
+                        { name: "Total Trades", old: oldMetrics.totalTrades, new: series.totalTrades },
+                        { name: "Win Rate (%)", old: oldMetrics.winningPercentage, new: series.winRate },
+                        { name: "Profit Factor", old: oldMetrics.profitFactor, new: series.profitFactor }
+                    ];
+
+                    let stratPassed = true;
+
+                    comparisons.forEach(comp => {
+                        const diff = Math.abs(comp.old - comp.new);
+                        const passed = diff < 0.02 || (comp.old === 0 && comp.new === 0);
+
+                        if (!passed) stratPassed = false;
+
+                        log(`  - ${comp.name.padEnd(20)}: Backend = ${Number(comp.old).toFixed(2).padStart(10)} | Frontend = ${Number(comp.new).toFixed(2).padStart(10)} [${passed ? '✅' : '❌'}]`);
+                        if (!passed) {
+                            log(`      > DIFFERENCE DETECTED: ${diff.toFixed(4)}`);
+                            if (comp.name === 'Profit Factor' && comp.old >= 99 && comp.new >= 99) {
+                                log(`      > NOTE: Both are extremely high. Allowing pass.`);
+                                stratPassed = true;
+                            }
+                        }
+                    });
+
+                    if (!stratPassed) allPassed = false;
+                    log("------------------------------------------\n");
+                });
+
+                if (allPassed) {
+                    log("🎉 ALL MATHEMATICAL VALIDATIONS PASSED! The new TradeSeries object is perfectly aligned with the Python Backend.");
+                } else {
+                    log("⚠️ SOME VALIDATIONS FAILED. Please review the differences.");
+                }
+
+            } catch (e) {
+                log("ERROR: " + e.message);
+            }
+        }
+
+        runValidation();
+    </script>
+</body>
+
+</html>

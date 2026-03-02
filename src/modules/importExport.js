@@ -8,6 +8,8 @@ import { updateDatabankDisplay } from '../modules/databank.js';
 import { showToast } from '../modules/notifications.js';
 import { strategiesTable } from '../modules/strategiesTable.js';
 import { getSavedPortfoliosTableConfig } from '../modules/savedPortfoliosTable.js';
+import { TradeSeries } from '../models/TradeSeries.js';
+import { parseTradesFromData } from '../modules/sqAnalysis_v2.js';
 
 /**
  * Exporta el estado actual de la aplicación a un archivo JSON.
@@ -193,7 +195,13 @@ const restoreState = async (importedState) => {
         isPlaceholder: true,
         strategyId: f.strategyId || generateStrategyId(f.name) // Use saved ID or generate new one
     }));
-    state.rawStrategiesData = importedState.rawStrategiesData;
+    state.rawStrategiesData = importedState.rawStrategiesData || [];
+
+    // Repopulate TradeSeries models
+    state.strategySeries = state.rawStrategiesData.map(rawData => {
+        const parsedTrades = parseTradesFromData(rawData);
+        return new TradeSeries(parsedTrades, importedState.tradePnlOverrides || {});
+    });
     state.savedPortfolios = importedState.savedPortfolios || [];
     state.selectedPortfolioIndices = new Set(importedState.selectedPortfolioIndices || []);
     state.featuredPortfolioIndex = importedState.featuredPortfolioIndex !== undefined ? importedState.featuredPortfolioIndex : null;

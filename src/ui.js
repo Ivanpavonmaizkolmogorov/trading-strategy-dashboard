@@ -2019,48 +2019,35 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         // --- RISK NORMALIZATION SCALING ---
         let finalData = rawEquityCurve || [];
 
-        // [NEW] Apply Date Range Filter (Global / Strategy Specific)
-        if (state.strategyDateRanges) {
-            // Check By ID or Name
-            const sId = result.id || result.name;
-            let filter = state.strategyDateRanges[sId] || state.strategyDateRanges[result.name] || (result.name ? state.strategyDateRanges[result.name.replace(/\.csv$/i, '')] : null);
+        // [NEW OOP] Fallback to OOP TradeSeries if provided by caller (like Focus Mode)
+        if (result.pnlSeries) {
+            console.log(`[UI] 🚀 Using TradeSeries Object for Chart Data resolving: ${result.name}`);
+            finalData = result.pnlSeries.getEquityCurveFormat();
+        } else {
+            // [LEGACY] Apply Date Range Filter manually for old paths
+            if (state.strategyDateRanges) {
+                const sId = result.id || result.name;
+                let filter = state.strategyDateRanges[sId] || state.strategyDateRanges[result.name] || (result.name ? state.strategyDateRanges[result.name.replace(/\.csv$/i, '')] : null);
 
-            // Logic for Portfolios/Focus Mode Selections:
-            // If the item itself doesn't have a filter, check if ANY of its constituent strategies has one.
-            if (!filter && result.strategyNames && Array.isArray(result.strategyNames)) {
-                console.log(`[UI] 🔍 Validating Date Filter for Composite/Portfolio: ${result.name}`);
-                for (const stratName of result.strategyNames) {
-                    const stratFilter = state.strategyDateRanges[stratName] || state.strategyDateRanges[stratName.replace(/\.csv$/i, '')];
-                    if (stratFilter) {
-                        console.log(`[UI]    -> Inheriting filter from child strategy: ${stratName}`);
-                        filter = stratFilter;
-                        break; // Use the first valid filter found (assuming synced context or user focus)
+                if (!filter && result.strategyNames && Array.isArray(result.strategyNames)) {
+                    for (const stratName of result.strategyNames) {
+                        const stratFilter = state.strategyDateRanges[stratName] || state.strategyDateRanges[stratName.replace(/\.csv$/i, '')];
+                        if (stratFilter) { filter = stratFilter; break; }
                     }
                 }
-            }
 
-            if (filter && (filter.start || filter.end)) {
-                console.log(`[UI] 📅 Applying Chart Filter for ${result.name}: ${filter.start} to ${filter.end}`);
-                console.log(`[UI]    - Original Points: ${finalData.length}`);
-
-                const startTs = filter.start ? new Date(filter.start).getTime() : -Infinity;
-                const endTs = filter.end ? new Date(filter.end).getTime() + 86399999 : Infinity; // End of day
-
-                finalData = finalData.filter(pt => {
-                    let t;
-                    if (typeof pt === 'object') {
-                        if ('x' in pt) t = pt.x;
-                        else if ('date' in pt) t = pt.date;
-                        else if (Array.isArray(pt)) t = pt[0];
-                    }
-                    // Handle string dates usually found in x
-                    if (typeof t === 'string' && isNaN(t)) t = new Date(t).getTime();
-
-                    return t >= startTs && t <= endTs;
-                });
-                console.log(`[UI]    - Filtered to ${finalData.length} points.`);
-            } else {
-                console.log(`[UI] 📅 No active filter found for ${result.name} (checked ${result.strategyNames?.length || 0} children)`);
+                if (filter && (filter.start || filter.end)) {
+                    const startTs = filter.start ? new Date(filter.start).getTime() : -Infinity;
+                    const endTs = filter.end ? new Date(filter.end).getTime() + 86399999 : Infinity;
+                    finalData = finalData.filter(pt => {
+                        let t;
+                        if (typeof pt === 'object') {
+                            if ('x' in pt) t = pt.x; else if ('date' in pt) t = pt.date; else if (Array.isArray(pt)) t = pt[0];
+                        }
+                        if (typeof t === 'string' && isNaN(t)) t = new Date(t).getTime();
+                        return t >= startTs && t <= endTs;
+                    });
+                }
             }
         }
 

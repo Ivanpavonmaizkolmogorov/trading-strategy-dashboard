@@ -101,7 +101,6 @@ class DatabankRequest(BaseModel):
     strategies_data: List[Union[List[Trade], str]]
     benchmark_data: Optional[List[Dict[str, Any]]] = None
     params: DatabankParams
-    broker_config: Optional[Dict[str, Any]] = None
 
 class PortfolioDefinition(BaseModel):
     indices: List[int]
@@ -128,7 +127,6 @@ class FullAnalysisRequest(BaseModel): # Contenido movido a PortfolioDefinition
     normalization_metric: Optional[str] = None
     normalization_target_value: Optional[float] = None
     portfolios_to_analyze: Optional[List[PortfolioDefinition]] = None
-    broker_config: Optional[Dict[str, Any]] = None
 
 class OptimizationParams(BaseModel):
     num_simulations: int
@@ -145,7 +143,6 @@ class OptimizationRequest(BaseModel):
     is_risk_normalized: bool = False
     normalization_metric: Optional[str] = None
     normalization_target_value: Optional[float] = None
-    broker_config: Optional[Dict[str, Any]] = None
 
 
 class CorrelationRequest(BaseModel):
@@ -273,7 +270,7 @@ async def get_full_analysis(request: FullAnalysisRequest):
             # Aplicar normalización global SOLO a las estrategias individuales
             if request.is_risk_normalized and request.normalization_target_value and request.normalization_target_value > 0 and not trades_to_analyze_df.empty:
                 # Usamos strat_df (original) para el pre-análisis
-                pre_analysis_result = process_strategy_data(strat_df.copy(), benchmark_data_df.copy(), broker_config=request.broker_config)
+                pre_analysis_result = process_strategy_data(strat_df.copy(), benchmark_data_df.copy())
                 if pre_analysis_result:
                     metric_key = 'maxDrawdownInDollars' if request.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
                     current_metric_value = pre_analysis_result[0].get(metric_key, 0)
@@ -282,7 +279,7 @@ async def get_full_analysis(request: FullAnalysisRequest):
                         # Y aplicamos el escalado a la copia que se va a analizar
                         trades_to_analyze_df['pnl'] *= scale_factor
             
-            analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+            analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy())
             strategy_analysis_results.append(analysis_result[0] if analysis_result and analysis_result[0] else None)
             print(f"  -> Strategy {i+1} analysis complete.")
         
@@ -341,7 +338,7 @@ async def get_full_analysis(request: FullAnalysisRequest):
                     print(f"  [BACKEND-LOG] 2.{p_idx}.b -> ✅ ENTRANDO en bloque de normalización.")
                     # --- CORRECCIÓN FINALÍSIMA: Usar 'portfolio_df' (los trades combinados originales) para el pre-análisis ---
                     if not portfolio_df.empty:
-                        pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy(), broker_config=request.broker_config) 
+                        pre_analysis_result = process_strategy_data(portfolio_df.copy(), benchmark_data_df.copy()) 
                         if pre_analysis_result:
                             # Determinar qué métrica usar para la normalización desde los resultados del pre-análisis
                             metric_key = 'maxDrawdownInDollars' if p_def.normalization_metric == 'max_dd' else 'ulcerIndexInDollars'
@@ -381,7 +378,7 @@ async def get_full_analysis(request: FullAnalysisRequest):
                 
                 # CORRECCIÓN CRÍTICA: Usar los trades que han sido potencialmente escalados ('trades_to_analyze')
                 # en lugar de los originales ('portfolio_trades') para el análisis final.
-                analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+                analysis_result = process_strategy_data(trades_to_analyze_df, benchmark_data_df.copy())
                 
                 # CORRECCIÓN: Devolver los trades escalados para que el frontend pueda generar los gráficos correctamente.
                 # CORRECCIÓN FINAL: Si analysis_result es None, devolver un diccionario vacío para 'metrics'
@@ -629,7 +626,7 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
 
                 if strat_trades:
                     trades_df = pd.DataFrame(strat_trades)
-                    analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+                    analysis_result = process_strategy_data(trades_df, benchmark_data_df.copy())
                     if analysis_result:
                         _, daily_returns = analysis_result
                 
@@ -761,7 +758,7 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                     print(f"[DEBUG Helper] DF Rows: {len(p_df)}. Processing...", flush=True)
                     
                     # Note: benchmark_data_df and request.broker_config are captured from closure
-                    an_res = process_strategy_data(p_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+                    an_res = process_strategy_data(p_df, benchmark_data_df.copy())
                     print(f"[DEBUG Helper] Done.", flush=True)
                     return an_res[0] if an_res else {}
                 except Exception as ex:
@@ -1055,7 +1052,7 @@ async def find_portfolios_stream_endpoint(request: DatabankRequest):
                         portfolio_trades.extend(strategies_data[strat_index])
                     
                     portfolio_df = pd.DataFrame(portfolio_trades)
-                    analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy(), broker_config=request.broker_config)
+                    analysis_result = process_strategy_data(portfolio_df, benchmark_data_df.copy())
 
                     stats_checked += 1
 
@@ -1314,7 +1311,7 @@ async def optimize_portfolio_weights(request: OptimizationRequest):
             for col in ['entry_date', 'exit_date']:
                  df[col] = pd.to_datetime(df[col], errors='coerce')
 
-            analysis_result = process_strategy_data(df, pd.DataFrame(request.benchmark_data), broker_config=request.broker_config)
+            analysis_result = process_strategy_data(df, pd.DataFrame(request.benchmark_data))
             
             # Stringify dates for JSON
             df['entry_date'] = df['entry_date'].dt.strftime('%Y-%m-%dT%H:%M:%S')

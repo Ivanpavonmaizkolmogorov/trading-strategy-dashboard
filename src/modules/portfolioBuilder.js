@@ -6,6 +6,11 @@ import { displaySavedPortfoliosList } from '../ui.js';
 import { ALL_METRICS } from '../config.js';
 
 import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=11';
+import { TradeSeries } from '../models/TradeSeries.js';
+
+/**
+ * ======== (inside showPortfolioResultModal, Save Button Logic) ========
+ */
 
 /**
  * Analyzes a manually selected set of strategies.
@@ -298,22 +303,23 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
         }
         // ========== END DIAGNOSTIC LOGS ==========
 
-        // Calculate SQ Metrics for persistence
-        let allTrades = [];
+        // Calculate SQ Metrics for persistence and Create merged TradeSeries
+        const seriesList = [];
         indices.forEach(idx => {
-            const file = state.loadedStrategyFiles[idx];
-            if (file && file.content) {
-                const trades = parseTradesFromContent(file.content);
-                allTrades = allTrades.concat(trades);
-            } else if (state.rawStrategiesData[idx]) {
-                // Fallback: Use rawStrategiesData if content is missing (e.g. after reload)
-                console.log(`[PortfolioBuilder] Using rawStrategiesData for strategy index ${idx}`);
-                const trades = parseTradesFromData(state.rawStrategiesData[idx]);
-                allTrades = allTrades.concat(trades);
+            if (state.strategySeries && state.strategySeries[idx]) {
+                seriesList.push(state.strategySeries[idx]);
             }
         });
-        allTrades.sort((a, b) => a.exitTime - b.exitTime);
-        const sqMetrics = calculateSQMetrics(allTrades);
+        const mergedSeries = TradeSeries.merge(seriesList);
+
+        // Optionally keep sqMetrics backward compatibility
+        const sqMetrics = {
+            totalProfit: mergedSeries.totalProfit,
+            maxDrawdownInDollars: mergedSeries.maxDrawdown,
+            profitFactor: mergedSeries.profitFactor,
+            winningPercentage: mergedSeries.winRate,
+            sqn: mergedSeries.sqn
+        };
 
         // Save portfolio with strategyIds for robust restoration
         state.savedPortfolios.push({
@@ -325,6 +331,7 @@ const showPortfolioResultModal = (portfolio, validation, indices) => {
             weights: null,
             metrics: portfolio.metrics, // Save pre-calculated metrics
             sqMetrics: sqMetrics, // <--- SAVE SQ METRICS
+            pnlSeries: mergedSeries, // <--- NEW ARCHITECTURE
             analysis: portfolio.metrics, // Save chart data and analysis (metrics contains chartData)
             comments: document.getElementById('portfolio-comment')?.value || ''
         });

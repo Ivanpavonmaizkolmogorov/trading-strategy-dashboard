@@ -6,10 +6,10 @@ import { showToast } from './notifications.js';
 import { initDatabankTable, getDatabankTableConfig, ensureColumnVisible, hideColumn } from './databankTable.js?v=8';
 import { focusMode } from './focusMode.js';
 import { generatePortfolioId } from '../utils.js'; // Import ID generator
-import { loadBrokerConfig } from './brokerConfig.js';
 
 import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=11';
 import { getFullAnalysisFromBackend } from '../analysis.js';
+import { TradeSeries } from '../models/TradeSeries.js';
 
 /**
  * Actualiza el indicador visual de estado del DataBank.
@@ -863,6 +863,15 @@ const addToDatabankIfBetter = (portfolioData, maxSize) => {
 
     const existingIndex = state.databankPortfolios.findIndex(p => p.key === key);
 
+    // [FIX] Inject TradeSeries for Contextual Filters / Focus Mode Reactivity
+    if (!portfolioData.pnlSeries && portfolioData.analysis && portfolioData.analysis.trades) {
+        try {
+            portfolioData.pnlSeries = new TradeSeries(portfolioData.analysis.trades, state.tradePnlOverrides || {});
+        } catch (e) {
+            console.error("[DataBank] Error building TradeSeries for portfolio", e);
+        }
+    }
+
     if (existingIndex > -1) {
         const existingPortfolio = state.databankPortfolios[existingIndex];
 
@@ -1081,6 +1090,21 @@ export const updateDatabankDisplay = window.updateDatabankDisplay = () => {
                 const colInfo = ALL_METRICS[key];
                 if (!colInfo) return;
 
+                // Determine the active series and filter BEFORE rendering name or metrics
+                let activeSeries = p.pnlSeries;
+                let activeFilter = null;
+
+                if (activeSeries) {
+                    activeFilter = p.creationFilter;
+                    if (!activeFilter && state.strategyDateRanges) {
+                        const sId = p.id || p.name;
+                        activeFilter = state.strategyDateRanges[sId] || state.strategyDateRanges[p.name];
+                    }
+                    if (activeFilter) {
+                        activeSeries = activeSeries.filterByDateRange(activeFilter.start, activeFilter.end);
+                    }
+                }
+
                 if (key === 'name') {
                     let constructedName = p.name;
                     if (!constructedName && p.indices) {
@@ -1089,25 +1113,43 @@ export const updateDatabankDisplay = window.updateDatabankDisplay = () => {
                     // Compact View: Single line with ellipsis, full list in tooltip
                     const count = p.indices ? p.indices.length : 0;
                     const shortText = `${count} Estrategias: ${constructedName} `;
+
+                    // IF there is a filter active, show it
+                    let filterHtml = '';
+                    if (activeFilter) {
+                        filterHtml = `<div class="text-[10px] text-amber-500 font-mono mt-0.5">${activeFilter.start} ➜ ${activeFilter.end}</div>`;
+                    }
+
                     html += `<td class="px-4 py-3 text-gray-300 max-w-[200px] truncate" title="${constructedName}">
         <div class="truncate text-sm">${shortText}</div>
+        ${filterHtml}
                              </td>`;
                 } else {
-                    // Get value from metrics or analysis.metrics
+                    // Get value from TradeSeries or Fallback to static metrics
                     let value;
+
                     if (key === 'metricValue') {
                         value = p.metricValue;
                     } else if (key === 'strategyCount') {
                         value = p.indices ? p.indices.length : 0;
-                        // console.log(`[DEBUG] Row ${ index } - strategyCount: `, value, 'Indices:', p.indices);
                     } else if (key === 'returnDD') {
-                        // Mapping for Ret/DD
-                        const metrics = p.metrics || p.analysis?.metrics || p.analysis || {};
-                        value = metrics['profitMaxDD_Ratio'];
+                        if (activeSeries) value = activeSeries.returnOverMaxDrawdown || activeSeries.profitMaxDD_Ratio || (activeSeries.totalProfit / Math.abs(activeSeries.maxDrawdown));
+                        else value = p.metrics?.['profitMaxDD_Ratio'] ?? p.analysis?.metrics?.['profitMaxDD_Ratio'] ?? p.analysis?.['profitMaxDD_Ratio'];
                     } else if (key === 'cagr_custom_score') {
-                        // Fallback to metricValue (Optimization Goal) if specific custom score is missing
                         value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.metricValue;
+                    } else if (activeSeries && ['totalProfit', 'maxDrawdown', 'profitFactor', 'totalTrades', 'sharpeRatio'].includes(key)) {
+                        // Extract dynamically calculated KPIs
+                        if (key === 'totalProfit') value = activeSeries.totalProfit;
+                        else if (key === 'maxDrawdown') value = activeSeries.maxDrawdown;
+                        else if (key === 'profitFactor') value = activeSeries.profitFactor;
+                        else if (key === 'totalTrades') value = activeSeries.totalTrades;
+                        else if (key === 'sharpeRatio') value = activeSeries.sharpeRatio;
+                    } else if (activeSeries && key === 'maxDrawdownInDollars') {
+                        value = activeSeries.maxDrawdown;
+                    } else if (activeSeries && key === 'winningPercentage') {
+                        value = activeSeries.winRate;
                     } else {
+                        // Fallback
                         value = p.metrics?.[key] ?? p.analysis?.metrics?.[key] ?? p.analysis?.[key];
                     }
 
@@ -1589,21 +1631,22 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
     const strategyIds = portfolio.indices.map(i => state.loadedStrategyFiles[i].strategyId);
     const strategyNames = portfolio.indices.map(i => state.loadedStrategyFiles[i].name.replace('.csv', ''));
 
-    // Calculate SQ Metrics for persistence
-    let allTrades = [];
+    // Calculate SQ Metrics and Create TradeSeries
+    const seriesList = [];
     portfolio.indices.forEach(idx => {
-        const file = state.loadedStrategyFiles[idx];
-        if (file && file.content) {
-            const trades = parseTradesFromContent(file.content);
-            allTrades = allTrades.concat(trades);
-        } else if (state.rawStrategiesData[idx]) {
-            // Fallback: Use rawStrategiesData if content is missing
-            const trades = parseTradesFromData(state.rawStrategiesData[idx]);
-            allTrades = allTrades.concat(trades);
+        if (state.strategySeries && state.strategySeries[idx]) {
+            seriesList.push(state.strategySeries[idx]);
         }
     });
-    allTrades.sort((a, b) => a.exitTime - b.exitTime);
-    const sqMetrics = calculateSQMetrics(allTrades);
+    const mergedSeries = TradeSeries.merge(seriesList);
+
+    const sqMetrics = {
+        totalProfit: mergedSeries.totalProfit,
+        maxDrawdownInDollars: mergedSeries.maxDrawdown,
+        profitFactor: mergedSeries.profitFactor,
+        winningPercentage: mergedSeries.winRate,
+        sqn: mergedSeries.sqn
+    };
 
     state.savedPortfolios.push({
         name: `P - DB(${names}) ${portfolio.metricName} `,
@@ -1614,6 +1657,7 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
         weights: null,
         metrics: portfolio.metrics || metrics, // Use passed metrics if available
         sqMetrics: sqMetrics, // <--- SAVE SQ METRICS
+        pnlSeries: mergedSeries, // <--- NEW ARCHITECTURE
         comments: `Guardado desde DataBank.Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
     });
     // Adjuntamos las métricas pre-calculadas para evitar re-análisis innecesario

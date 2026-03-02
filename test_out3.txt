@@ -1,0 +1,38 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\ivanp\AppData\Local\Programs\Python\Python311\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\ivanp\Desktop\Symbols\Porfolios\trading-strategy-dashboard
+plugins: anyio-4.9.0
+collecting ... collected 3 items
+
+tests/test_trade_series.py::test_trade_series_basic_metrics FAILED       [ 33%]
+tests/test_trade_series.py::test_trade_series_drawdown PASSED            [ 66%]
+tests/test_trade_series.py::test_trade_series_date_filter PASSED         [100%]
+
+================================== FAILURES ===================================
+_______________________ test_trade_series_basic_metrics _______________________
+
+    def test_trade_series_basic_metrics():
+        # Construct a few trades
+        trades_data = [
+            {"ticket": 1, "pnl": 100, "exit_date": "2023-01-01 10:00:00"},
+            {"ticket": 2, "pnl": 50,  "exit_date": "2023-01-02 10:00:00"},
+            {"ticket": 3, "pnl": -20, "exit_date": "2023-01-03 10:00:00"},
+            {"ticket": 4, "pnl": -30, "exit_date": "2023-01-04 10:00:00"},
+            {"ticket": 5, "pnl": 200, "exit_date": "2023-01-05 10:00:00"},
+        ]
+    
+        trades = [Trade(t) for t in trades_data]
+        series = TradeSeries(trades)
+    
+        metrics = series.to_metrics_dict()
+    
+        assert metrics['totalTrades'] == 5
+>       assert metrics['winningTrades'] == 3
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'winningTrades'
+
+tests\test_trade_series.py:23: KeyError
+=========================== short test summary info ===========================
+FAILED tests/test_trade_series.py::test_trade_series_basic_metrics - KeyError...
+========================= 1 failed, 2 passed in 0.35s =========================

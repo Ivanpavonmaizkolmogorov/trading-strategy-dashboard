@@ -11,6 +11,9 @@ export const state = {
     currentOptimizationData: {},
     portfolioActionTargetIndex: null,
     comparisonPortfolioIndex: null,
+    // --- NUEVO: PnL Architecture Refactor ---
+    strategySeries: [], // Array de instancias de TradeSeries, mismo índice que rawStrategiesData
+
     databankPortfolios: [],
     nextPortfolioId: 0,
     selectedRows: { databank: [], saved: [] },

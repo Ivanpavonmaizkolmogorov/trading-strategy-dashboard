@@ -424,171 +424,13 @@ export const focusMode = {
     },
 
     /**
-     * Render the floating banner
-     */
-    /**
-     * Render the floating banner
+     * Render the floating banner (DISABLED per user request)
      */
     renderBanner() {
-        // Only render if we have at least one focused item.
-        if (this.focusedItems.size < 1) {
-            this.removeBanner();
-            return;
-        }
-
-        const item = this.focusedItems.values().next().value;
-
-        // Create or Get Banner
-        let banner = document.getElementById('focus-mode-banner');
-        if (!banner) {
-            banner = document.createElement('div');
-            banner.id = 'focus-mode-banner';
-            document.body.appendChild(banner);
-        }
-
-        // [FIX] ALWAYS enforce styles to ensure visibility, even if Tailwind fails
-        // Use inline flex for layout, fixed position, high z-index
-        banner.style.cssText = `
-            position: fixed; 
-            top: 100px; 
-            right: 20px; 
-            z-index: 2147483647; 
-            background-color: #111827; 
-            border: 1px solid #4b5563; 
-            border-radius: 8px; 
-            padding: 16px; 
-            min-width: 320px; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
-            color: #f3f4f6;
-            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            display: block;
-            backdrop-filter: blur(12px);
-        `;
-
-        // Determine Mode
-        // Default to 'optimized' if filter exists and not set
-        if (!item.viewMode && item.creationFilter) {
-            item.viewMode = 'optimized';
-        }
-        const mode = item.viewMode || 'full';
-        const hasFilter = !!item.creationFilter || mode === 'optimized';
-
-        // Sanitize Name
-        const safeName = item.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
-        // Calculate Metrics based on Mode
-        let displayMetrics;
-        if (mode === 'full' && item.analysis && item.analysis.metrics) {
-            displayMetrics = item.analysis.metrics;
-        } else {
-            displayMetrics = item.metrics || (item.analysis ? item.analysis.metrics : {});
-        }
-
-        // [FIX] Resolve Active Filter for Display
-        let activeFilterForDisplay = null;
-        if (mode === 'optimized') {
-            if (item.creationFilter) {
-                activeFilterForDisplay = item.creationFilter;
-            } else if (state.strategyDateRanges) {
-                const sId = item.id || item.name;
-                activeFilterForDisplay = state.strategyDateRanges[sId] || state.strategyDateRanges[item.name];
-            }
-        }
-
-        // Update 'hasFilter' logic to consider global filter
-        // If we found a global filter for display, we indeed have a filter.
-        const effectiveHasFilter = !!activeFilterForDisplay || hasFilter;
-
-        // Define Display & Icons
-        let displayType = 'Full History';
-        let displayIcon = '📉';
-        let actionText = 'SWITCH TO OPTIMIZED'; // Button Action
-
-        if (effectiveHasFilter && mode === 'optimized') {
-            displayType = 'Optimized Period';
-            displayIcon = '🎯';
-            actionText = 'SWITCH TO HISTORY'; // Button Action
-        }
-
-        // --- RENDER HTML ---
-        // We use inline styles for the internal layout to be independent of Tailwind
-        const isOpt = mode === 'optimized';
-        const btnBg = isOpt ? '#d97706' : '#2563eb'; // amber : blue
-        const btnHover = isOpt ? '#b45309' : '#1d4ed8';
-
-        // Helper for metric formatting
-        const m = displayMetrics;
-        const format = (v, k) => formatMetricForDisplay(v, k);
-        const profitColor = (m.netProfit || m.totalProfit) >= 0 ? '#34d399' : '#f87171'; // emerald-400 : red-400
-
-        // HTML Structure with INLINE STYLES
-        banner.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #374151;">
-                <div style="display: flex; flex-direction: column; overflow: hidden; margin-right: 12px;">
-                    <span style="font-weight: bold; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;" title="${safeName}">${safeName}</span>
-                    <span style="font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">${displayType}</span>
-                </div>
-                <button id="focus-toggle-view" 
-                    style="background-color: ${btnBg}; color: white; padding: 6px 14px; border-radius: 6px; font-weight: 700; font-size: 13px; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background-color 0.2s;"
-                    onmouseover="this.style.backgroundColor='${btnHover}'"
-                    onmouseout="this.style.backgroundColor='${btnBg}'">
-                    <span>${displayIcon}</span>
-                    <span>${actionText}</span>
-                </button>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; font-size: 12px;">
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: #6b7280;">Net Profit:</span>
-                    <span style="font-family: monospace; font-weight: bold; color: ${profitColor};">${format(m.netProfit || m.totalProfit, 'netProfit')}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: #6b7280;">Max DD:</span>
-                    <span style="font-family: monospace; color: #fca5a5;">${format(m.maxDD || m.drawdown, 'maxDD')}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: #6b7280;">Sharpe:</span>
-                    <span style="font-family: monospace; color: #93c5fd;">${format(m.sharpeRatio, 'sharpeRatio')}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: #6b7280;">Trades:</span>
-                    <span style="font-family: monospace; color: #d1d5db;">${m.totalTrades || m.TotalTrades || 0}</span>
-                </div>
-            </div>
-            ${effectiveHasFilter && mode === 'optimized' && activeFilterForDisplay
-                ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #374151; font-size: 10px; text-align: center; color: #f59e0b; font-family: monospace;">
-                   ${activeFilterForDisplay.start} ➜ ${activeFilterForDisplay.end}
-                   </div>`
-                : ''}
-        `;
-
-        // Attach Listener
-        const btn = banner.querySelector('#focus-toggle-view');
-        if (btn) {
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                // Toggle Mode
-                const newMode = (item.viewMode === 'optimized') ? 'full' : 'optimized';
-                item.viewMode = newMode;
-                console.log(`[FocusMode] Toggled View Mode to: ${item.viewMode}`);
-
-                // Automatically ensure filter exists if switching to optimized
-                if (newMode === 'optimized' && !item.creationFilter) {
-                    this.ensureGlobalFilter(item);
-                }
-
-                // Trigger Updates
-                this.renderBanner(); // Re-render self immediately to update button text
-                this.updateCharts(); // Trigger chart update
-
-                // Force Table Update
-                if (typeof window.updateDatabankDisplay === 'function') {
-                    window.updateDatabankDisplay();
-                }
-            };
-        }
+        // Disabled per user request
+        this.removeBanner();
+        return;
     },
-
     /**
      * Helper to ensure global filter exists
      */
@@ -1423,7 +1265,8 @@ export const focusMode = {
                     realMetrics: realMetrics,
                     indices: item.indices, // Pass indices for Saved Portfolios
                     riskPerStrategy: item.riskPerStrategy, // Pass risk metrics for scaling
-                    strategyNames: item.strategyNames // CRITICAL: Pass strategy names to UI
+                    strategyNames: item.strategyNames, // CRITICAL: Pass strategy names to UI
+                    pnlSeries: item.pnlSeries // Include TradeSeries
                 };
 
                 // For single strategies, we need to pass the name as a strategy so magic number lookup works
@@ -1441,99 +1284,53 @@ export const focusMode = {
 
                 // DEBUG: Verify Analysis Data before sending to UI
                 if (analysisObj.analysis && analysisObj.analysis.chartData && analysisObj.analysis.chartData.equityCurve) {
-                    console.log(`[FocusMode] 📤 Sending Analysis for ${item.name}: ${analysisObj.analysis.chartData.equityCurve.length} points`);
-
-                    // --- METRIC RECALCULATION START ---
-                    // Determine if we should apply a filter (e.g. Optimized vs History)
+                    // --- TRADE SERIES INJECTION START ---
                     let activeFilter = null;
-
-                    // [FIX] Strict View Mode Check for Chart Viewer Logic
-                    if (item.viewMode === 'optimized') {
-                        if (item.creationFilter) {
-                            activeFilter = item.creationFilter;
-                        } else if (state.strategyDateRanges) {
-                            // Resolve ID
-                            const sId = item.id || item.name;
-                            // Resolve Active Filter (Local or Inherited)
-                            activeFilter = state.strategyDateRanges[sId] || state.strategyDateRanges[item.name];
-
-                            // Check children if no direct filter
-                            if (!activeFilter && item.strategyNames) {
-                                for (const name of item.strategyNames) {
-                                    const childFilter = state.strategyDateRanges[name];
-                                    if (childFilter) {
-                                        activeFilter = childFilter;
-                                        break;
-                                    }
-                                }
+                    // [FIX] Always check for date filters, not just when viewMode === 'optimized'
+                    if (item.creationFilter) {
+                        activeFilter = item.creationFilter;
+                    } else if (state.strategyDateRanges) {
+                        const sId = item.id || item.name;
+                        activeFilter = state.strategyDateRanges[sId] || state.strategyDateRanges[item.name];
+                        if (!activeFilter && item.strategyNames) {
+                            for (const name of item.strategyNames) {
+                                if (state.strategyDateRanges[name]) { activeFilter = state.strategyDateRanges[name]; break; }
                             }
                         }
                     }
 
-                    if (activeFilter) {
-                        console.log(`[FocusMode] 📅 Applying Date Filter to KPIS for ${item.name}: ${activeFilter.start} - ${activeFilter.end}`);
+                    // Build or use TradeSeries base
+                    let baseSeries = item.pnlSeries;
+                    if (!baseSeries && item.type === 'strategy' && analysisObj.analysis.trades) {
+                        baseSeries = new TradeSeries(analysisObj.analysis.trades, state.tradePnlOverrides || {});
+                        item.pnlSeries = baseSeries; // Cache it
+                    }
 
-                        // RESOLVE TRADES FOR ENGINE
-                        let tradesForEngine = null;
-
-                        // 1. Try Real Trades (if Reality Check or Real metrics present)
-                        if (analysisObj.realMetrics && analysisObj.realMetrics.trades) {
-                            tradesForEngine = analysisObj.realMetrics.trades;
-                            console.log(`[FocusMode]    Using Real Trades: ${tradesForEngine.length}`);
-                        }
-                        // 2. Try Backtest Trades (Strategy)
-                        else if (item.analysis && item.analysis.trades) {
-                            tradesForEngine = item.analysis.trades;
-                        }
-                        // 3. Try Backtest Trades (Global Store fallback)
-                        else if (window.analysisResults) {
-                            // Identify index
-                            const idx = item.originalIndex !== undefined ? item.originalIndex : -1;
-                            if (idx !== -1 && window.analysisResults[idx]) {
-                                tradesForEngine = window.analysisResults[idx].trades;
-                                console.log(`[FocusMode]    Resolved Backtest Trades from Global Store (Idx ${idx}): ${tradesForEngine?.length}`);
-                            }
+                    if (baseSeries) {
+                        let displaySeries = baseSeries;
+                        if (activeFilter) {
+                            displaySeries = baseSeries.filterByDateRange(activeFilter.start, activeFilter.end);
                         }
 
-                        // [FIX] Pass the correct object structure - recalculateMetrics expects an object with 'chartData' or 'trades'
-                        // analysisObj IS the wrapper, analysisObj.analysis holds the actual data (chartData, metrics)
-                        // [FIX] AWAIT the result as recalculateMetrics is ASYNC
-                        // Since we are in an async function (updateCharts is not async?), 
-                        // we need to handle this.
-                        // Ideally updateCharts should be async.
-                        // For now, let's use .then() or make updateCharts async. 
-                        // Given the complexity, let's try to get the synchronous fallback result if possible,
-                        // OR make updateCharts async.
+                        // Attach the right series to the analysisObj so UI can plot it natively
+                        analysisObj.pnlSeries = displaySeries;
 
-                        // Let's assume we make updateCharts async.
-                        const filteredMetrics = await this.recalculateMetrics(analysisObj.analysis, activeFilter, tradesForEngine);
+                        // Sync metrics locally for the item
+                        // Sync metrics locally for the item
+                        if (activeFilter) {
+                            item.totalProfit = displaySeries.totalProfit;
+                            item.maxDrawdownInDollars = displaySeries.maxDrawdown;
+                            if (!item.metrics) item.metrics = {};
+                            item.metrics.netProfit = displaySeries.totalProfit;
+                            item.metrics.drawdown = displaySeries.maxDrawdown;
 
-                        if (filteredMetrics) {
-                            console.log(`[FocusMode]    ✅ Recalculated: Pure Profit ${filteredMetrics.netProfit}, DD ${filteredMetrics.maxDD}`);
-                            // Override metrics in the analysis object passed to UI
-                            analysisObj.metrics = filteredMetrics;
-                            // Also update built-in analysis.metrics if UI reads from there
-                            analysisObj.analysis = {
-                                ...analysisObj.analysis,
-                                metrics: filteredMetrics
-                            };
-
-                            // [FIX] CRITICAL: Update the ITEM itself with these recalculated metrics
-                            // so that the Databank Table reflects the filtered values (e.g. Optimized Net Profit)
-                            if (item.viewMode === 'optimized' && filteredMetrics.netProfit !== undefined) {
-                                item.metrics.netProfit = filteredMetrics.netProfit;
-                                item.metrics.drawdown = filteredMetrics.maxDD;
-                                item.totalProfit = filteredMetrics.netProfit;
-                                item.maxDrawdownInDollars = filteredMetrics.maxDD;
-
-                                console.log(`[FocusMode] 🔄 UPDATED Item Metrics from Recalculation: Profit=${item.totalProfit}`);
-
-                                // Re-sync to global state
-                                this.syncItemToGlobalState(item);
-                            }
+                            // Re-sync to global state
+                            this.syncItemToGlobalState(item);
                         }
                     }
-                    // --- METRIC RECALCULATION END ---
+                    // --- TRADE SERIES INJECTION END ---
+
+                    console.log(`[FocusMode] 📤 Sending Analysis for ${item.name} with TradeSeries support.`);
                 } else {
                     console.warn(`[FocusMode] ⚠️ Sending Analysis for ${item.name} WITHOUT equity curve! Keys:`, Object.keys(analysisObj.analysis || {}));
                 }
@@ -2006,6 +1803,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (clearAllBtn) {
         clearAllBtn.addEventListener('click', () => focusMode.clearAll());
     }
+
+    // [FIX] Listen for date filter changes from strategiesTable and re-render charts/tables
+    document.addEventListener('strategy-date-updated', (e) => {
+        console.log('[FocusMode] strategy-date-updated received:', e.detail);
+        // Re-render charts if focus mode is active
+        if (focusMode.focusedItems && focusMode.focusedItems.size > 0) {
+            focusMode.updateCharts();
+        }
+        // Re-render the databank table
+        if (typeof window.updateDatabankDisplay === 'function') {
+            window.updateDatabankDisplay();
+        }
+    });
 });
 
 // Helper for Smart Fuzzy Matching

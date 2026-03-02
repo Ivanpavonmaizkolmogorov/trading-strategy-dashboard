@@ -6,6 +6,7 @@ import { openSearchConfigModal } from './searchConfig.js';
 import { analyzeCustomPortfolio } from './portfolioBuilder.js?v=2';
 import { showToast } from './notifications.js';
 import { calculateSQMetrics, filterTradesByDate } from './sqAnalysis_v2.js?v=11'; // [MOD] Added filterTradesByDate import
+import { TradeSeries } from '../models/TradeSeries.js';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -132,6 +133,15 @@ const renderAdvancedFilterPanel = () => {
         </div>
 
         <div class="flex items-center gap-3 border-l border-gray-700 pl-4">
+             <!-- Global Date Filter Buttons -->
+             <button id="adv-filter-date-all" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border bg-gray-700 border-gray-600 text-gray-400 hover:text-blue-300 hover:border-blue-500 transition-all" title="Aplicar filtro de fecha a TODAS las estrategias">
+                 <span class="text-sm">📅</span><span class="text-xs font-bold">Filtrar Todas</span>
+             </button>
+             <button id="adv-filter-date-reset-all" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border bg-red-900/30 border-red-800/50 text-red-400 hover:text-red-200 hover:border-red-500 transition-all ${(state.strategyDateRanges && Object.keys(state.strategyDateRanges).length > 0) ? '' : 'hidden'}" title="Quitar TODOS los filtros de fecha activos">
+                 <span class="text-xs font-bold">✕ Reset Fechas</span>
+                 <span class="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">${state.strategyDateRanges ? Math.floor(Object.keys(state.strategyDateRanges).length / 2) || Object.keys(state.strategyDateRanges).length : 0}</span>
+             </button>
+
              <!-- Quarantine Toggle -->
              <label class="flex items-center gap-2 cursor-pointer group">
                 <div class="relative">
@@ -192,6 +202,22 @@ const renderAdvancedFilterPanel = () => {
         renderAdvancedFilterPanel(); // Update toggle visual
         renderStrategiesTable();
     });
+
+    // 5. Global Date Filter - Apply to All
+    const dateAllBtn = document.getElementById('adv-filter-date-all');
+    if (dateAllBtn) {
+        dateAllBtn.addEventListener('click', () => {
+            window.openGlobalDateFilterModal();
+        });
+    }
+
+    // 6. Global Date Filter - Reset All
+    const dateResetAllBtn = document.getElementById('adv-filter-date-reset-all');
+    if (dateResetAllBtn) {
+        dateResetAllBtn.addEventListener('click', () => {
+            window.resetAllStrategyDateFilters();
+        });
+    }
 };
 
 export const initStrategiesTable = () => {
@@ -899,55 +925,53 @@ export const renderStrategiesTable = () => {
                             });
                         });
 
-                        // Normalize and Calculate
+                        // Normalize and Calculate using TradeSeries PnL object
                         if (allRealTrades.length > 0) {
-                            // [NEW] FILTER PIPELINE START
-                            // 1. Initial Normalization (Dates/Values)
-                            const initialNormalized = allRealTrades.map(trade => {
-                                // Basic normalization for engine
-                                const p = parseFloat(trade.profit) || 0;
-                                const s = parseFloat(trade.swap) || 0;
-                                const c = parseFloat(trade.commission) || 0;
-                                const pnl = p + s + c;
-                                let closeDate = trade.closeTime ? new Date(trade.closeTime) : null;
-                                if (trade.closeDate) closeDate = new Date(trade.closeDate); // Fallback
-
-                                return {
-                                    ...trade,
-                                    pnl: pnl,
-                                    closeTime: closeDate,
-                                    exitTime: closeDate // for engine
-                                };
-                            }).filter(t => t.exitTime && !isNaN(t.pnl));
-
-                            // 2. [NEW] Date Range Filter
-                            // Check local state map (Strategy-Specific or Global)
-                            let filteredTrades = initialNormalized;
+                            const rawSeries = new TradeSeries(allRealTrades, state.tradePnlOverrides);
+                            let filteredSeries = rawSeries;
                             let dateRangeApplied = false;
 
                             if (state.strategyDateRanges && state.strategyDateRanges[id]) {
                                 const range = state.strategyDateRanges[id];
-                                filteredTrades = filterTradesByDate(initialNormalized, range.start, range.end);
+                                filteredSeries = rawSeries.filterByDateRange(range.start, range.end);
                                 dateRangeApplied = true;
-                                strategy._dateRange = range; // Tag for UI
+                                strategy._dateRange = range;
                             } else if (state.strategyDateRanges && state.strategyDateRanges[strategy.name]) {
-                                // Name fallback
                                 const range = state.strategyDateRanges[strategy.name];
-                                filteredTrades = filterTradesByDate(initialNormalized, range.start, range.end);
+                                filteredSeries = rawSeries.filterByDateRange(range.start, range.end);
                                 dateRangeApplied = true;
                                 strategy._dateRange = range;
                             }
 
-                            // 3. Metric Calculation
-                            const metrics = calculateSQMetrics(filteredTrades, 10000);
-                            strategy.realMetrics = metrics;
-                            strategy.realMetrics.trades = filteredTrades.length;
-                            strategy.realMetrics._aggregatedTrades = filteredTrades; // Store filtered for charts
-                            strategy.realMetrics.isAggregated = true;
-                            // Fix Max DD Persistence
-                            strategy.realMetrics.maxDrawdownInDollars = metrics.maxDD;
-                            strategy.realMetrics.profit = metrics.totalNetProfit;
-                            strategy.realMetrics.isDateFiltered = dateRangeApplied; // Tag for UI
+                            strategy.realSeries = filteredSeries;
+
+                            // Ensure object compatibility with existing UI columns
+                            strategy.realMetrics = {
+                                trades: filteredSeries.totalTrades,
+                                totalTrades: filteredSeries.totalTrades,
+                                totalProfit: filteredSeries.totalProfit,
+                                profit: filteredSeries.totalProfit,
+                                maxDrawdownInDollars: filteredSeries.maxDrawdown,
+                                winningPercentage: filteredSeries.winRate,
+                                profitFactor: filteredSeries.profitFactor,
+                                returnDD: filteredSeries.returnDD,
+                                avgTrade: filteredSeries.totalTrades > 0 ? filteredSeries.totalProfit / filteredSeries.totalTrades : 0,
+                                maxConsecutiveLosses: filteredSeries.maxConsecutiveLosses,
+                                maxStagnationDays: filteredSeries.maxStagnationDays,
+                                maxStagnationTrades: filteredSeries.maxStagnationTrades,
+                                upi: filteredSeries.upi,
+                                cagr: filteredSeries.cagr,
+                                sharpeRatio: filteredSeries.sharpeRatio,
+                                sharpeRatioTrade: filteredSeries.sharpeRatioTrade,
+                                sortinoRatio: filteredSeries.sortinoRatio,
+                                sqn: filteredSeries.sqn,
+                                gammaFlowScore: filteredSeries.gammaFlowScore,
+                                maxDrawdown: filteredSeries.maxDrawdownPct,
+
+                                _aggregatedTrades: filteredSeries.trades, // For chart backwards compat
+                                isAggregated: true,
+                                isDateFiltered: dateRangeApplied
+                            };
                         }
                     }
                 } catch (err) {
@@ -1490,7 +1514,8 @@ export const renderStrategiesTable = () => {
 
                     // [NEW] Date Range Button
                     // Shows calendar icon. If active, shows highlighted color.
-                    const isFiltered = strategy.realMetrics && strategy.realMetrics.isDateFiltered;
+                    const isFiltered = (strategy.realMetrics && strategy.realMetrics.isDateFiltered) ||
+                        !!(state.strategyDateRanges && (state.strategyDateRanges[strategy.id] || state.strategyDateRanges[strategy.name]));
                     const dateBtnClass = isFiltered ? 'text-amber-400 hover:text-amber-300' : 'text-gray-500 hover:text-blue-400 transition-all rounded hover:bg-gray-700/50';
                     const dateBtnTitle = isFiltered ? `Rango Activo: ${strategy._dateRange?.start || '*'} - ${strategy._dateRange?.end || '*'}` : 'Filtrar por Fecha';
 
@@ -1504,6 +1529,17 @@ export const renderStrategiesTable = () => {
                            📅
                         </button>
                     `;
+
+                    // [NEW] Inline Reset Button - appears only when filter is active
+                    if (isFiltered) {
+                        html += `
+                            <button onclick="event.stopPropagation(); window.resetStrategyDateFilter('${safeNameJSForDate}', ${stratIdJS})" 
+                                class="text-red-400 hover:text-red-300 hover:bg-red-900/30 p-0.5 rounded transition-colors" 
+                                title="Quitar filtro de fecha (volver a backtest completo)">
+                                ✕
+                            </button>
+                        `;
+                    }
 
 
                     // Backtest Overlay Toggle (Reality Check Only)
@@ -1616,6 +1652,110 @@ export const renderStrategiesTable = () => {
 };
 
 /**
+ * [NEW] Helper to recalculate metrics locally using TradeSeries when date filters change
+ */
+const applyDateFilterToStrategy = (sName, range, strategyObj) => {
+    console.log(`[DateFilter] 🔧 applyDateFilterToStrategy called. sName="${sName}", range=`, range, ', strategyObj?', !!strategyObj);
+
+    const analysisResult = window.analysisResults?.find(r => r.name === sName && !r.isPortfolio);
+    if (!analysisResult) {
+        console.warn(`[DateFilter] ❌ analysisResult NOT FOUND for "${sName}". window.analysisResults length:`, window.analysisResults?.length);
+        if (window.analysisResults?.length > 0) {
+            console.log('[DateFilter] First 3 names:', window.analysisResults.slice(0, 3).map(r => r.name));
+        }
+        return;
+    }
+    console.log(`[DateFilter] ✅ analysisResult found. Has analysis?`, !!analysisResult.analysis, ', Has analysis.metrics?', !!(analysisResult.analysis?.metrics));
+
+    let tradesForEngine = null;
+    if (analysisResult.realMetrics?.trades) tradesForEngine = analysisResult.realMetrics.trades;
+    else if (analysisResult.trades) tradesForEngine = analysisResult.trades;
+    else if (strategyObj?.analysis?.trades) tradesForEngine = strategyObj.analysis.trades;
+
+    // [FIX] Critical fallback: trades are stored in state.rawStrategiesData as parsed CSV rows
+    // This is where SQ Analysis loads them from (via parseTradesFromContent/parseTradesFromData)
+    if (!tradesForEngine || tradesForEngine.length === 0) {
+        const stratIdx = state.loadedStrategyFiles?.findIndex(f => f.name === sName);
+        if (stratIdx !== -1 && stratIdx !== undefined) {
+            const rawData = state.rawStrategiesData?.[stratIdx];
+            if (rawData && rawData.length > 0) {
+                tradesForEngine = rawData;
+                console.log(`[DateFilter] ✅ Found ${rawData.length} trades from state.rawStrategiesData[${stratIdx}]`);
+            }
+        }
+    }
+
+    console.log(`[DateFilter] Trades source: ${tradesForEngine ? tradesForEngine.length + ' trades' : 'NO TRADES FOUND'}`);
+
+    if (tradesForEngine && tradesForEngine.length > 0) {
+        const rawSeries = new TradeSeries(tradesForEngine, state.tradePnlOverrides);
+        const filteredSeries = range && (range.start || range.end)
+            ? rawSeries.filterByDateRange(range.start, range.end)
+            : rawSeries;
+
+        console.log(`[DateFilter] Raw trades: ${rawSeries.totalTrades}, Filtered trades: ${filteredSeries.totalTrades}, Filtered profit: ${filteredSeries.totalProfit?.toFixed(2)}`);
+
+        const newMetrics = {
+            netProfit: filteredSeries.totalProfit,
+            totalProfit: filteredSeries.totalProfit,
+            NetProfit: filteredSeries.totalProfit,
+            maxDrawdownInDollars: filteredSeries.maxDrawdown,
+            maxDD: filteredSeries.maxDrawdown,
+            MaxDD: filteredSeries.maxDrawdown,
+            drawdown: filteredSeries.maxDrawdown,
+            totalTrades: filteredSeries.totalTrades,
+            TotalTrades: filteredSeries.totalTrades,
+            winningPercentage: filteredSeries.winRate,
+            winRate: filteredSeries.winRate,
+            profitFactor: filteredSeries.profitFactor,
+            returnDD: filteredSeries.returnDD,
+            avgTrade: filteredSeries.totalTrades > 0 ? filteredSeries.totalProfit / filteredSeries.totalTrades : 0,
+            maxConsecutiveLosses: filteredSeries.maxConsecutiveLosses,
+            maxStagnationDays: filteredSeries.maxStagnationDays,
+            maxStagnationTrades: filteredSeries.maxStagnationTrades,
+            upi: filteredSeries.upi,
+            cagr: filteredSeries.cagr,
+            sharpeRatio: filteredSeries.sharpeRatio,
+            sharpeRatioTrade: filteredSeries.sharpeRatioTrade,
+            sortinoRatio: filteredSeries.sortinoRatio,
+            sqn: filteredSeries.sqn,
+            gammaFlowScore: filteredSeries.gammaFlowScore,
+            maxDrawdown: filteredSeries.maxDrawdownPct,
+            avgTrade: filteredSeries.avgTrade,
+            isDateFiltered: range && (range.start || range.end) ? true : false
+        };
+
+        analysisResult.metrics = { ...analysisResult.metrics, ...newMetrics };
+        console.log(`[DateFilter] ✅ Updated analysisResult.metrics. isDateFiltered=${newMetrics.isDateFiltered}`);
+
+        // [FIX] Also update analysis.metrics - this is what getMetricValue reads FIRST
+        if (analysisResult.analysis && analysisResult.analysis.metrics) {
+            Object.assign(analysisResult.analysis.metrics, newMetrics);
+            console.log(`[DateFilter] ✅ Updated analysisResult.analysis.metrics`);
+        } else {
+            console.warn(`[DateFilter] ⚠️ analysisResult.analysis.metrics does NOT exist! Creating it.`);
+            if (!analysisResult.analysis) analysisResult.analysis = {};
+            analysisResult.analysis.metrics = { ...newMetrics };
+        }
+
+        if (strategyObj) {
+            if (strategyObj.analysis) {
+                strategyObj.analysis.metrics = { ...strategyObj.analysis.metrics, ...newMetrics };
+            }
+            if (strategyObj.metrics) {
+                Object.assign(strategyObj.metrics, newMetrics);
+            }
+            // [FIX] Update the pnlSeries so Focus Mode charts/metrics use the filtered data
+            strategyObj.pnlSeries = filteredSeries;
+            console.log(`[DateFilter] ✅ Updated strategyObj metrics`);
+        }
+        console.log(`[DateFilter] 🏁 Date filter applied successfully for "${sName}"`);
+    } else {
+        console.warn(`[DateFilter] ❌ No trades found for engine. Cannot apply filter.`);
+    }
+};
+
+/**
  * [NEW] Open Strategy Date Configuration Modal
  */
 window.openStrategyDateConfig = (strategyName, strategyId) => {
@@ -1675,6 +1815,10 @@ window.openStrategyDateConfig = (strategyName, strategyId) => {
         // Also try name if ID used
         if (strategyId) delete state.strategyDateRanges[strategyName];
 
+        // Ensure metrics are restored locally
+        const strategyObj = state.loadedStrategyFiles?.find(s => s.name === strategyName);
+        applyDateFilterToStrategy(strategyName, null, strategyObj);
+
         close();
         renderStrategiesTable(); // Re-render triggers calculation loop
 
@@ -1696,6 +1840,10 @@ window.openStrategyDateConfig = (strategyName, strategyId) => {
         // Fallback: If ID is used, also set Name key to ensure UI consistently finds it
         if (strategyId && strategyName) state.strategyDateRanges[strategyName] = { start, end };
 
+        // Apply filtering locally
+        const strategyObj = state.loadedStrategyFiles?.find(s => s.name === strategyName);
+        applyDateFilterToStrategy(strategyName, { start, end }, strategyObj);
+
         close();
         renderStrategiesTable();
 
@@ -1705,7 +1853,142 @@ window.openStrategyDateConfig = (strategyName, strategyId) => {
 };
 
 /**
- * [NEW] Open Bulk Strategy Date Configuration Modal
+ * [NEW] One-click reset of strategy date filter (from inline ✕ button)
+ */
+window.resetStrategyDateFilter = (strategyName, strategyId) => {
+    if (!state.strategyDateRanges) return;
+
+    const key = strategyId || strategyName;
+    delete state.strategyDateRanges[key];
+    if (strategyId) delete state.strategyDateRanges[strategyName];
+
+    const strategyObj = state.loadedStrategyFiles?.find(s => s.name === strategyName);
+    applyDateFilterToStrategy(strategyName, null, strategyObj);
+    renderStrategiesTable();
+
+    document.dispatchEvent(new CustomEvent('strategy-date-updated', { detail: { name: strategyName, id: strategyId } }));
+    console.log(`[DateFilter] ✅ Filter reset for "${strategyName}" (one-click)`);
+};
+
+/**
+ * [NEW] Reset ALL strategy date filters at once
+ */
+window.resetAllStrategyDateFilters = () => {
+    if (!state.strategyDateRanges || Object.keys(state.strategyDateRanges).length === 0) return;
+
+    const keys = Object.keys(state.strategyDateRanges);
+    console.log(`[DateFilter] 🗑️ Resetting ALL date filters (${keys.length} entries)`);
+
+    // Reset each strategy's metrics to full backtest
+    const processedNames = new Set();
+    keys.forEach(key => {
+        // Find strategy by key (could be id or name)
+        const strategyObj = state.loadedStrategyFiles?.find(s => s.name === key || s.strategyId === key);
+        const stratName = strategyObj?.name || key;
+        if (!processedNames.has(stratName)) {
+            processedNames.add(stratName);
+            applyDateFilterToStrategy(stratName, null, strategyObj);
+        }
+    });
+
+    // Clear all ranges
+    state.strategyDateRanges = {};
+
+    renderAdvancedFilterPanel();
+    renderStrategiesTable();
+
+    document.dispatchEvent(new CustomEvent('strategy-date-updated', { detail: { name: '__ALL__', id: null } }));
+    console.log(`[DateFilter] ✅ All date filters cleared`);
+};
+
+/**
+ * [NEW] Open modal to apply the same date range to ALL strategies
+ */
+window.openGlobalDateFilterModal = () => {
+    if (!state.strategyDateRanges) state.strategyDateRanges = {};
+
+    const modalId = 'strat-date-global-modal';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    // Pre-fill with existing global range if any strategy has one
+    const existingKeys = Object.keys(state.strategyDateRanges);
+    let prefillStart = '';
+    let prefillEnd = '';
+    if (existingKeys.length > 0) {
+        const first = state.strategyDateRanges[existingKeys[0]];
+        if (first) { prefillStart = first.start || ''; prefillEnd = first.end || ''; }
+    }
+
+    const stratCount = state.loadedStrategyFiles?.length || 0;
+
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-[70] animate-fade-in';
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-96 p-6 shadow-2xl">
+            <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                <span>📅</span> Filtrar TODAS las Estrategias
+            </h3>
+            <p class="text-xs text-gray-400 mb-4">Se aplicará el mismo rango a las <strong class="text-blue-400">${stratCount}</strong> estrategias cargadas.</p>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Inicio</label>
+                    <input type="date" id="gd-start" value="${prefillStart}" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fin</label>
+                    <input type="date" id="gd-end" value="${prefillEnd}" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                </div>
+            </div>
+
+            <div class="flex gap-2 mt-6">
+                <button id="gd-cancel" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancelar</button>
+                <button id="gd-apply" class="ml-auto px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-bold shadow-lg shadow-blue-900/30">
+                    Aplicar a Todas
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+    document.getElementById('gd-cancel').onclick = close;
+
+    document.getElementById('gd-apply').onclick = () => {
+        const start = document.getElementById('gd-start').value;
+        const end = document.getElementById('gd-end').value;
+
+        if (!start && !end) { close(); return; }
+
+        const range = { start, end };
+        let applied = 0;
+
+        (state.loadedStrategyFiles || []).forEach(file => {
+            if (!file) return;
+            const name = file.name;
+            const id = file.strategyId;
+            const key = id || name;
+
+            state.strategyDateRanges[key] = range;
+            if (id && name) state.strategyDateRanges[name] = range;
+
+            applyDateFilterToStrategy(name, range, file);
+            applied++;
+        });
+
+        close();
+        renderAdvancedFilterPanel();
+        renderStrategiesTable();
+
+        document.dispatchEvent(new CustomEvent('strategy-date-updated', { detail: { name: '__ALL__', id: null } }));
+        console.log(`[DateFilter] ✅ Global filter applied to ${applied} strategies: ${start} → ${end}`);
+    };
+};
+
+/**
+ * [EXISTING] Open Bulk Strategy Date Configuration Modal
  */
 window.openBulkStrategyDateConfig = (selectedIndices) => {
     if (!selectedIndices || selectedIndices.length === 0) return;
@@ -1777,43 +2060,8 @@ window.openBulkStrategyDateConfig = (selectedIndices) => {
                 if (strategy.id) delete state.strategyDateRanges[strategy.id];
             }
 
-            // 2. Perform Recalculation (Leveraging FocusMode Logic)
-            if (window.focusMode && window.focusMode.recalculateMetrics) {
-                // Find analysis object in 'window.analysisResults' usually used for Table
-                // Or construct a temporary one.
-                // Best source for Table is 'window.analysisResults'.
-                // We need to find the entry matching this strategy.
-                const analysisResult = window.analysisResults?.find(r => r.name === sName && !r.isPortfolio);
-
-                if (analysisResult) {
-                    // Trades resolution logic (similar to focusMode updateCharts)
-                    let tradesForEngine = null;
-                    if (analysisResult.realMetrics?.trades) tradesForEngine = analysisResult.realMetrics.trades;
-                    else if (analysisResult.trades) tradesForEngine = analysisResult.trades;
-                    else if (strategy.analysis?.trades) tradesForEngine = strategy.analysis.trades;
-
-                    if (tradesForEngine) {
-                        const newMetrics = window.focusMode.recalculateMetrics(analysisResult, range || { start: '', end: '' }, tradesForEngine);
-
-                        if (newMetrics) {
-                            // Update Analysis Result
-                            analysisResult.metrics = {
-                                ...analysisResult.metrics,
-                                ...newMetrics
-                            };
-
-                            // Also check if strategy object in loadedFiles needs update (sometimes separate)
-                            if (strategy.analysis) {
-                                strategy.analysis.metrics = { ...strategy.analysis.metrics, ...newMetrics };
-                            }
-                            // Update root metrics if present
-                            if (strategy.metrics) {
-                                Object.assign(strategy.metrics, newMetrics);
-                            }
-                        }
-                    }
-                }
-            }
+            // 2. Perform Recalculation using TradeSeries (Frontend local calculation)
+            applyDateFilterToStrategy(sName, range, strategy);
         });
 
         close();
@@ -1847,14 +2095,23 @@ window.openBulkStrategyDateConfig = (selectedIndices) => {
 const getMetricValue = (strategy, metricKey) => {
     // 1. Determine where metrics are stored
     let source = strategy;
-    if (strategy.analysis && strategy.analysis.metrics) source = strategy.analysis.metrics;
-    else if (strategy.analysis) source = strategy.analysis;
-    else if (strategy.metrics) source = strategy.metrics;
+
+    // [FIX] If a date filter has been applied, prefer the top-level strategy.metrics
+    // because applyDateFilterToStrategy writes filtered values there, NOT to analysis.metrics
+    if (strategy.metrics && strategy.metrics.isDateFiltered) {
+        source = strategy.metrics;
+    } else if (strategy.analysis && strategy.analysis.metrics) {
+        source = strategy.analysis.metrics;
+    } else if (strategy.analysis) {
+        source = strategy.analysis;
+    } else if (strategy.metrics) {
+        source = strategy.metrics;
+    }
 
     // 2. Extract value with mappings
     let val = source[metricKey];
 
-    if (metricKey === 'returnDD') val = source['profitMaxDD_Ratio'];
+    if (metricKey === 'returnDD') val = source['profitMaxDD_Ratio'] ?? source['returnDD'];
     if (metricKey === 'avgTrade') {
         const p = source['totalProfit'] || 0;
         const t = source['totalTrades'] || 0;

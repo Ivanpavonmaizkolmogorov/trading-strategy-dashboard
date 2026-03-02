@@ -1,0 +1,12 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\ivanp\AppData\Local\Programs\Python\Python311\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\ivanp\Desktop\Symbols\Porfolios\trading-strategy-dashboard
+plugins: anyio-4.9.0
+collecting ... collected 3 items
+
+tests/test_trade_series.py::test_trade_series_basic_metrics PASSED       [ 33%]
+tests/test_trade_series.py::test_trade_series_drawdown PASSED            [ 66%]
+tests/test_trade_series.py::test_trade_series_date_filter PASSED         [100%]
+
+============================== 3 passed in 0.27s ==============================

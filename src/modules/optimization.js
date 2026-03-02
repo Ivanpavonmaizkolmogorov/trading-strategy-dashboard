@@ -3,7 +3,6 @@ import { state } from '../state.js';
 import { ALL_METRICS } from '../config.js';
 import { toggleLoading, formatMetricForDisplay } from '../utils.js';
 import { reAnalyzeAllData } from '../analysis.js';
-import { loadBrokerConfig } from './brokerConfig.js';
 import { showToast } from './notifications.js';
 import { METRIC_CONFIG } from './searchConfig.js';
 import { openRiskConfigModal } from './riskConfig.js?v=3.24';
@@ -354,7 +353,6 @@ export const startOptimizationSearch = async (isInitialLoad = false) => {
             is_risk_normalized: false,
             normalization_metric: 'max_dd',
             normalization_target_value: 0,
-            broker_config: loadBrokerConfig(),
             params: {
                 num_simulations: numSimulations,
                 target_metric: elements.targetMetricSelect.value,
@@ -1004,7 +1002,6 @@ async function startOptimizationInTab() {
             is_risk_normalized: false,
             normalization_metric: 'max_dd',
             normalization_target_value: 0,
-            broker_config: loadBrokerConfig(),
             params: {
                 num_simulations: numSimulations,
                 target_metric: targetMetric,
