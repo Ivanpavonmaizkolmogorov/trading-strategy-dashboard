@@ -9,6 +9,7 @@ greenlet==3.3.0
 h11==0.16.0
 httptools==0.7.1
 idna==3.11
+metaapi-cloud-sdk
 numpy==1.26.4
 pandas==2.1.4
 playwright==1.57.0
