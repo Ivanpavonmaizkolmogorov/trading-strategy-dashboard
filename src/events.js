@@ -373,6 +373,21 @@ export function initializeEventListeners() {
         dom.savedPortfoliosBody.addEventListener('click', async (e) => {
             console.log('[Events] Click detected in savedPortfoliosBody. Target:', e.target);
 
+            // --- Clear Creation Filter (from Wizard) ---
+            const clearFilterBtn = e.target.closest('.clear-creation-filter-btn');
+            if (clearFilterBtn) {
+                e.stopPropagation();
+                const idx = parseInt(clearFilterBtn.dataset.index, 10);
+                const portfolio = state.savedPortfolios[idx];
+                if (portfolio) {
+                    console.log(`[Events] Clearing creationFilter for saved portfolio: ${portfolio.name}`);
+                    delete portfolio.creationFilter;
+                    displaySavedPortfoliosList();
+                    showToast(`Filtro de fecha limpiado para ${portfolio.name}`, 'info');
+                }
+                return;
+            }
+
             // --- Delete Portfolio ---
             if (e.target.classList.contains('delete-portfolio-btn')) {
                 const indexToRemove = parseInt(e.target.dataset.index, 10);

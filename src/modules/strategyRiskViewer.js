@@ -1,5 +1,5 @@
 import { state } from '../state.js';
-import { selectedStrategies, renderStrategiesTable, updateFloatingActionBar } from './strategiesTable.js';
+import { selectedStrategies, renderStrategiesTable } from './strategiesTable.js';
 
 /**
  * Generates the HTML for the Strategy Risk Viewer Modal.
@@ -513,7 +513,6 @@ export const openStrategyRiskModal = (portfolioIndex, source = 'saved') => {
 
                 // Update Main UI
                 renderStrategiesTable();
-                updateFloatingActionBar();
             }
         });
     }

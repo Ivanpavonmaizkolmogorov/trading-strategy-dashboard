@@ -7,9 +7,46 @@ import { initDatabankTable, getDatabankTableConfig, ensureColumnVisible, hideCol
 import { focusMode } from './focusMode.js';
 import { generatePortfolioId } from '../utils.js'; // Import ID generator
 
-import { calculateSQMetrics, parseTradesFromContent, parseTradesFromData } from './sqAnalysis_v2.js?v=11';
+import { calculateSQMetrics, parseTradesFromData } from './sqAnalysis_v2.js?v=11';
 import { getFullAnalysisFromBackend } from '../analysis.js';
 import { TradeSeries } from '../models/TradeSeries.js';
+
+export const recalculateDatabankPortfolioMetrics = (portfolio) => {
+    if (!portfolio || !portfolio.indices || !state.rawStrategiesData) return;
+
+    let allTrades = [];
+    portfolio.indices.forEach(idx => {
+        const raw = state.rawStrategiesData[idx];
+        if (raw) {
+            const trades = parseTradesFromData(raw);
+            allTrades = allTrades.concat(trades);
+        }
+    });
+
+    if (allTrades.length > 0) {
+        allTrades.sort((a, b) => new Date(a.exitTime) - new Date(b.exitTime));
+        const metrics = calculateSQMetrics(allTrades);
+
+        portfolio.netProfit = metrics.totalProfit;
+        portfolio.maxDrawdown = metrics.maxDD;
+        portfolio.maxDrawdownInDollars = metrics.maxDD;
+        portfolio.totalTrades = metrics.totalTrades;
+        portfolio.profitFactor = metrics.profitFactor;
+        portfolio.winningPercentage = metrics.winRate;
+        portfolio.cagr = metrics.cagr || 0;
+        portfolio.returnDD = metrics.returnDD || (metrics.maxDD ? metrics.totalProfit / metrics.maxDD : 0);
+        portfolio.sqn = metrics.sqn || 0;
+        portfolio.sharpeRatio = metrics.sharpeRatio || 0;
+        portfolio.sortinoRatio = metrics.sortinoRatio || 0;
+        portfolio.upi = metrics.upi || 0;
+
+        if (portfolio.analysis) {
+            portfolio.analysis.trades = allTrades;
+            portfolio.analysis.metrics = metrics;
+            portfolio.analysis.isFullReconstructed = true;
+        }
+    }
+};
 
 /**
  * Actualiza el indicador visual de estado del DataBank.
@@ -310,7 +347,7 @@ const executeBackendSearch = async (config, signal, onCallback) => {
         strategy_names: state.loadedStrategyFiles.map(f => f.name),
         // USE SHADOW DATA IF PROVIDED (For Date Filtering Optimization)
         strategies_data: config.strategiesDataOverride || state.rawStrategiesData,
-        broker_config: loadBrokerConfig(),
+        broker_config: null, // Removed: loadBrokerConfig() was undefined
         params: {
             metric_to_optimize_key: config.metric || 'sharpeRatio',
             optimization_goal: config.goal || 'maximize',
@@ -1092,17 +1129,16 @@ export const updateDatabankDisplay = window.updateDatabankDisplay = () => {
 
                 // Determine the active series and filter BEFORE rendering name or metrics
                 let activeSeries = p.pnlSeries;
-                let activeFilter = null;
+                let activeFilter = p.creationFilter || null;
 
-                if (activeSeries) {
-                    activeFilter = p.creationFilter;
-                    if (!activeFilter && state.strategyDateRanges) {
-                        const sId = p.id || p.name;
-                        activeFilter = state.strategyDateRanges[sId] || state.strategyDateRanges[p.name];
-                    }
-                    if (activeFilter) {
-                        activeSeries = activeSeries.filterByDateRange(activeFilter.start, activeFilter.end);
-                    }
+                // Fallback: check strategyDateRanges if no creationFilter
+                if (!activeFilter && state.strategyDateRanges) {
+                    const sId = p.id || p.name;
+                    activeFilter = state.strategyDateRanges[sId] || state.strategyDateRanges[p.name];
+                }
+
+                if (activeSeries && activeFilter) {
+                    activeSeries = activeSeries.filterByDateRange(activeFilter.start, activeFilter.end);
                 }
 
                 if (key === 'name') {
@@ -1114,10 +1150,17 @@ export const updateDatabankDisplay = window.updateDatabankDisplay = () => {
                     const count = p.indices ? p.indices.length : 0;
                     const shortText = `${count} Estrategias: ${constructedName} `;
 
-                    // IF there is a filter active, show it
+                    // IF there is a filter active, show it as a clearable chip
                     let filterHtml = '';
                     if (activeFilter) {
-                        filterHtml = `<div class="text-[10px] text-amber-500 font-mono mt-0.5">${activeFilter.start} ➜ ${activeFilter.end}</div>`;
+                        // Format dates: "Jan 09 - Feb 26" style
+                        const fmtD = (ds) => { const d = new Date(ds + 'T00:00:00'); return d.toLocaleDateString('es-ES', { month: 'short', year: '2-digit' }); };
+                        const fStart = fmtD(activeFilter.start);
+                        const fEnd = fmtD(activeFilter.end);
+                        filterHtml = `<div class="inline-flex items-center gap-1 text-[10px] bg-amber-900/30 border border-amber-600/40 text-amber-400 rounded-full px-2 py-0.5 mt-0.5">
+                            📅 ${fStart} ➜ ${fEnd}
+                            <button class="clear-creation-filter-btn ml-1 text-amber-300 hover:text-white font-bold text-xs leading-none" data-index="${index}" data-source="databank" title="Limpiar filtro de creación">✕</button>
+                        </div>`;
                     }
 
                     html += `<td class="px-4 py-3 text-gray-300 max-w-[200px] truncate" title="${constructedName}">
@@ -1241,6 +1284,54 @@ export const initDatabankFocus = () => {
     if (!dom.databankTableBody) return;
 
     dom.databankTableBody.addEventListener('click', (e) => {
+        // --- Clear Creation Filter Button ---
+        const clearFilterBtn = e.target.closest('.clear-creation-filter-btn');
+        if (clearFilterBtn) {
+            e.stopPropagation();
+            const idx = parseInt(clearFilterBtn.dataset.index, 10);
+            const portfolio = state.databankPortfolios[idx];
+            if (portfolio) {
+                console.log(`[DataBank] Clearing creationFilter for ${portfolio.name}`);
+                delete portfolio.creationFilter;
+                // Also clear any cached pnlSeries that was built with the old filter
+                delete portfolio.pnlSeries;
+                // Clear the analysis so it gets rebuilt fresh
+                delete portfolio.analysis;
+
+                // Recalculate metrics on the full unfiltered trades
+                try {
+                    recalculateDatabankPortfolioMetrics(portfolio);
+                    // [FIX] Also sync recalculated values into portfolio.metrics
+                    // (the table renderer reads from p.metrics, not top-level properties)
+                    if (portfolio.metrics) {
+                        if (portfolio.totalTrades !== undefined) portfolio.metrics.totalTrades = portfolio.totalTrades;
+                        if (portfolio.netProfit !== undefined) portfolio.metrics.totalProfit = portfolio.netProfit;
+                        if (portfolio.maxDrawdownInDollars !== undefined) portfolio.metrics.maxDrawdownInDollars = portfolio.maxDrawdownInDollars;
+                        if (portfolio.profitFactor !== undefined) portfolio.metrics.profitFactor = portfolio.profitFactor;
+                        if (portfolio.winningPercentage !== undefined) portfolio.metrics.winningPercentage = portfolio.winningPercentage;
+                        if (portfolio.sharpeRatio !== undefined) portfolio.metrics.sharpeRatio = portfolio.sharpeRatio;
+                        if (portfolio.sortinoRatio !== undefined) portfolio.metrics.sortinoRatio = portfolio.sortinoRatio;
+                        if (portfolio.sqn !== undefined) portfolio.metrics.sqn = portfolio.sqn;
+                        if (portfolio.cagr !== undefined) portfolio.metrics.cagr = portfolio.cagr;
+                        if (portfolio.upi !== undefined) portfolio.metrics.upi = portfolio.upi;
+                    }
+                } catch (e) {
+                    console.error("[DataBank] Error recalculating metrics after filter removal:", e);
+                }
+
+                updateDatabankDisplay();
+
+                // [FIX] Also refresh the chart if this portfolio is currently focused
+                if (focusMode && typeof focusMode.enable === 'function') {
+                    const row = clearFilterBtn.closest('tr');
+                    focusMode.enable(portfolio, 'databank', row);
+                }
+
+                showToast(`Filtro de fecha limpiado para ${portfolio.name}`, 'info');
+            }
+            return;
+        }
+
         const row = e.target.closest('tr');
         if (!row) return;
 
@@ -1658,6 +1749,7 @@ export const savePortfolioFromDatabank = (portfolioIndex, metrics) => {
         metrics: portfolio.metrics || metrics, // Use passed metrics if available
         sqMetrics: sqMetrics, // <--- SAVE SQ METRICS
         pnlSeries: mergedSeries, // <--- NEW ARCHITECTURE
+        creationFilter: portfolio.creationFilter || null, // <--- PROPAGATE DATE FILTER
         comments: `Guardado desde DataBank.Métrica: ${portfolio.metricName} (${portfolio.metricValue.toFixed(2)})`
     });
     // Adjuntamos las métricas pre-calculadas para evitar re-análisis innecesario

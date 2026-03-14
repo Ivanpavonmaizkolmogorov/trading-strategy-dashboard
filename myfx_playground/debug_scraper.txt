@@ -5023,3 +5023,27 @@ Closing browser...
 [23:26:37] Clicking NEXT button for page 8...
 [23:26:42] ============================================================
 [23:26:42] ============================================================
+[19:29:50] ============================================================
+[19:29:50] ============================================================
+[19:30:05] ============================================================
+[19:30:05] ============================================================
+[19:35:55] ============================================================
+[19:35:55] ============================================================
+[19:36:07] ACTION REQUIRED: Please log in using the browser window.
+[19:36:07] Waiting for login... (0/300s)
+[19:36:19] Waiting for login... (10/300s)
+[19:36:30] Waiting for login... (20/300s)
+[19:36:32] ========================================
+[19:36:32]    Trying selector: a[href='#historyCont']
+[19:36:33]    Parent class: 
+[19:36:39] ========================================
+[19:36:39] DEBUG TABLE HEADERS: ['', 'Ticket', 'Magic', 'Open Date', 'Close date', 'Symbol', 'Action', 'Lots', 'SL\n(Price)', 'TP\n(Price)', 'Open Price', 'Close Price', 'Pips', 'Net Profit', 'Gross Profit', 'Duration', 'Gain', 'Swap', 'Commissions', 'Time Profitable', 'Drawdown', 'Risk Reward', 'Max', 'Min', 'Entry Accuracy', 'Exit Accuracy', 'Profit Missed', '', '']
+[19:36:39] DEBUG COL INDICES: {'openDate': 3, 'closeDate': 4, 'symbol': 5, 'action': 6, 'lots': 7, 'priceOpen': 10, 'priceClose': 11, 'pips': 12, 'profit': 13, 'comment': -1}
+[19:36:39] Clicking NEXT button for page 2...
+[19:36:44] Clicking NEXT button for page 3...
+[19:36:49] Clicking NEXT button for page 4...
+[19:36:54] Clicking NEXT button for page 5...
+[19:36:59] Clicking NEXT button for page 6...
+[19:37:04] Clicking NEXT button for page 7...
+[19:37:09] ============================================================
+[19:37:09] ============================================================

@@ -8,6 +8,49 @@ import { TradeSeries } from './models/TradeSeries.js';
 import { parseTradesFromData } from './modules/sqAnalysis_v2.js';
 
 /**
+ * [EAGER REHYDRATION] Reconstruye el pnlSeries de todos los portafolios guardados.
+ * Debe llamarse DESPUÉS de que state.strategySeries esté poblado.
+ * Esto es necesario porque localStorage destruye las instancias de clase (TradeSeries)
+ * al serializar a JSON, dejando solo datos crudos sin métodos.
+ */
+export const rehydratePortfolioPnlSeries = () => {
+    if (!state.strategySeries || state.strategySeries.length === 0) {
+        console.warn('[Rehydration] ⚠️ No strategySeries available. Skipping portfolio rehydration.');
+        return;
+    }
+
+    let rehydrated = 0;
+    state.savedPortfolios.forEach((portfolio, i) => {
+        const indices = portfolio.indices || [];
+
+        // Resolve indices from strategyIds if indices are empty or invalid
+        let resolvedIndices = [...indices];
+        if (resolvedIndices.length === 0 && portfolio.strategyIds && portfolio.strategyIds.length > 0) {
+            portfolio.strategyIds.forEach(id => {
+                const idx = state.loadedStrategyFiles.findIndex(f => f.strategyId === id);
+                if (idx !== -1) resolvedIndices.push(idx);
+            });
+        }
+
+        if (resolvedIndices.length === 0) return;
+
+        const seriesList = [];
+        resolvedIndices.forEach(idx => {
+            if (state.strategySeries[idx]) {
+                seriesList.push(state.strategySeries[idx]);
+            }
+        });
+
+        if (seriesList.length > 0) {
+            portfolio.pnlSeries = TradeSeries.merge(seriesList);
+            rehydrated++;
+        }
+    });
+
+    console.log(`[Rehydration] ✅ Rehidratados ${rehydrated}/${state.savedPortfolios.length} portafolios con pnlSeries vivo.`);
+};
+
+/**
  * Inicia el proceso de análisis principal. Carga los archivos y lanza el primer análisis.
  */
 export const runAnalysis = async () => {
@@ -58,6 +101,9 @@ export const runAnalysis = async () => {
             const parsedTrades = parseTradesFromData(rawData);
             return new TradeSeries(parsedTrades, state.tradePnlOverrides);
         });
+
+        // [EAGER REHYDRATION] Rebuild all portfolio pnlSeries now that strategySeries is alive
+        rehydratePortfolioPnlSeries();
 
         // Clear old metrics antes de un nuevo análisis completo
         state.savedPortfolios.forEach(p => { delete p.metrics; delete p.analysis; });

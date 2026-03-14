@@ -2,6 +2,7 @@ import { state } from '../state.js';
 import { findDatabankPortfolios } from './databank.js';
 import { dom } from '../dom.js';
 import { showToast } from './notifications.js';
+import { parseTradesFromData, filterTradesByDate } from './sqAnalysis_v2.js?v=11';
 
 // Metric configuration
 const METRIC_CONFIG = {
@@ -1060,7 +1061,30 @@ const attachWizardEvents = () => {
         // Date Toggle Logic
         const dateToggle = document.getElementById('wiz-dates');
         const dateInputs = document.getElementById('wiz-date-inputs');
+
+        // [NEW] Initialize Flatpickr for Wizard
+        let fpWizStart = null;
+        let fpWizEnd = null;
+
+        const initFlatpickr = () => {
+            if (!fpWizStart) {
+                const fpConfig = {
+                    locale: "es",
+                    dateFormat: "Y-m-d",
+                    theme: "dark",
+                    allowInput: true
+                };
+                fpWizStart = flatpickr("#wiz-date-start", fpConfig);
+                fpWizEnd = flatpickr("#wiz-date-end", { ...fpConfig, defaultDate: wizardState.config.endDate || 'today' });
+            }
+        };
+
         if (dateToggle && dateInputs) {
+            // Initialize immediately if visible
+            if (!dateToggle.checked) {
+                initFlatpickr();
+            }
+
             dateToggle.addEventListener('change', (e) => {
                 if (e.target.checked) {
                     dateInputs.classList.add('hidden');
@@ -1068,6 +1092,7 @@ const attachWizardEvents = () => {
                 } else {
                     dateInputs.classList.remove('hidden');
                     dateInputs.classList.add('flex');
+                    initFlatpickr(); // Initialize when shown
                 }
             });
         }
@@ -1184,7 +1209,14 @@ const attachWizardEvents = () => {
 }; // End of attachWizardEvents
 
 
+let _executeSearchRunning = false;
 const executeSearch = () => {
+    // Guard against double-fire (button clone sometimes triggers twice)
+    if (_executeSearchRunning) {
+        console.warn('[ExecuteSearch] ⚠️ Already running, ignoring duplicate call.');
+        return;
+    }
+    _executeSearchRunning = true;
     // ========== DIAGNOSTIC LOGS ==========
     console.log('%c[DIAG-WIZARD] ═══════════════════════════════════════', 'color: #ff9900; font-weight: bold');
     console.log('%c[DIAG-WIZARD] executeSearch CALLED', 'color: #ff9900; font-weight: bold');
@@ -1293,35 +1325,41 @@ const executeSearch = () => {
 
         // Shadow Data Generation (Async safe here)
         if (creationFilter) {
-            // Bump version to force reload of patched file
-            const { filterTradesByDate, parseTradesFromData, tradesToCSV } = await import('./sqAnalysis_v2.js?v=13');
-            console.log('[ExecuteSearch] ⏳ Generating Shadow Data (CSV) for filtered period...');
+            try {
+                // Bump version to force reload of patched file
+                const { filterTradesByDate, parseTradesFromData, tradesToCSV } = await import('./sqAnalysis_v2.js?v=13');
+                console.log('[ExecuteSearch] ⏳ Generating Shadow Data (CSV) for filtered period...');
 
-            // Filter and convert back to CSV to keep payload small and ensure backend receives valid list of strings
-            strategiesDataOverride = state.rawStrategiesData.map((raw, idx) => {
-                if (!raw) return "";
+                // Filter and convert back to CSV to keep payload small and ensure backend receives valid list of strings
+                strategiesDataOverride = state.rawStrategiesData.map((raw, idx) => {
+                    if (!raw) return "";
 
-                const trades = parseTradesFromData(raw);
-                const filteredTrades = filterTradesByDate(trades, creationFilter);
+                    const trades = parseTradesFromData(raw);
+                    const filteredTrades = filterTradesByDate(trades, creationFilter);
 
-                // DEBUG: Log first few strategies to see what's happening
-                if (idx < 3) {
-                    console.log(`[SHADOW-DEBUG] Strat ${idx}: Raw Length: ${raw.length}`);
-                    if (trades.length === 0) {
-                        console.warn(`[SHADOW-DEBUG] Strat ${idx} parsed 0 trades! First 200 chars of raw data:`, raw.substring(0, 200));
+                    // DEBUG: Log first few strategies to see what's happening
+                    if (idx < 3) {
+                        console.log(`[SHADOW-DEBUG] Strat ${idx}: Raw Length: ${raw.length}`);
+                        if (trades.length === 0) {
+                            console.warn(`[SHADOW-DEBUG] Strat ${idx} parsed 0 trades! First 200 chars of raw data:`, raw.substring(0, 200));
+                        }
+                        console.log(`[SHADOW-DEBUG] Strat ${idx}: Raw Trades Parsed: ${trades.length}, Filtered: ${filteredTrades.length}`);
+
+                        if (trades.length > 0) {
+                            console.log(`[SHADOW-DEBUG] Strat ${idx} Sample Trade 0:`, trades[0]);
+                            console.log(`[SHADOW-DEBUG] Filter:`, creationFilter);
+                        }
                     }
-                    console.log(`[SHADOW-DEBUG] Strat ${idx}: Raw Trades Parsed: ${trades.length}, Filtered: ${filteredTrades.length}`);
 
-                    if (trades.length > 0) {
-                        console.log(`[SHADOW-DEBUG] Strat ${idx} Sample Trade 0:`, trades[0]);
-                        console.log(`[SHADOW-DEBUG] Filter:`, creationFilter);
-                    }
-                }
-
-                // Map back to CSV String (Compact & Valid for Backend)
-                return tradesToCSV(filteredTrades);
-            });
-            console.log(`[ExecuteSearch] ✅ Shadow Data Ready (CSV Format).`);
+                    // Map back to CSV String (Compact & Valid for Backend)
+                    return tradesToCSV(filteredTrades);
+                });
+                console.log(`[ExecuteSearch] ✅ Shadow Data Ready (CSV Format).`);
+            } catch (shadowErr) {
+                console.error('[ExecuteSearch] ❌ Error generating Shadow Data:', shadowErr);
+                showToast('Error generando datos filtrados: ' + shadowErr.message, 'error');
+                return;
+            }
         } else {
             // Explicitly nullify if no filter, to allow GC
             strategiesDataOverride = null;
@@ -1420,8 +1458,13 @@ const executeSearch = () => {
         findDatabankPortfolios(config);
 
         // Close wizard
+        _executeSearchRunning = false;
         if (wizardState.modalElement) wizardState.modalElement.remove();
         wizardState.modalElement = null;
+    }).catch(err => {
+        _executeSearchRunning = false;
+        console.error('[ExecuteSearch] ❌ CRITICAL: Import/execution chain failed:', err);
+        showToast('Error crítico al ejecutar búsqueda: ' + err.message, 'error');
     });
 };
 const startSearch = (config) => {

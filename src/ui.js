@@ -12,6 +12,7 @@ import { initSavedPortfoliosTable, getSavedPortfoliosTableConfig, selectedSavedP
 import { unlinkAccount } from './modules/myfxbookUI.js';
 import { openSlaveAccountsModal } from './modules/slaveAccounts.js';
 import { openStrategyRiskModal } from './modules/strategyRiskViewer.js';
+import { TradeSeries } from './models/TradeSeries.js';
 
 
 /**
@@ -185,11 +186,12 @@ const createSummaryTab = (results) => {
     const tabId = 'summary';
     const nav = `< button class="tab-btn text-gray-400 py-2 px-4 text-sm font-medium text-center border-b-2 border-transparent" data - target="${tabId}" > Resumen Comparativo</button > `;
 
-    // Ordenar los resultados antes de mostrarlos
-    sortArrayByConfig(results, state.summarySortConfig, r => r.analysis);
+    // Ordenar los resultados antes de mostrarlos (shallow copy para no mutar el array original)
+    const sortedResults = [...results];
+    sortArrayByConfig(sortedResults, state.summarySortConfig, r => r.analysis);
 
     let tableBodyRows = '';
-    results.filter(r => !r.isPortfolio && !r.isSavedPortfolio).forEach((result) => {
+    sortedResults.filter(r => !r.isPortfolio && !r.isSavedPortfolio).forEach((result) => {
         const metrics = result.analysis;
         const isChecked = state.selectedPortfolioIndices.has(result.originalIndex) ? 'checked' : '';
 
@@ -788,19 +790,26 @@ export const getRealTradesByName = (stratName) => {
     // This allows "Hybrid" portfolios to pick up real trades even if they aren't explicitly linked to an account,
     // as long as the strategies themselves are mapped.
     if (state.deepScanData) {
-        Object.values(state.deepScanData).forEach(accountData => {
+        Object.entries(state.deepScanData).forEach(([accountId, accountData]) => {
             const tradesMap = accountData.tradesById || accountData._tradesById;
             if (!tradesMap) return;
 
             magics.forEach(m => {
                 const magicStr = String(m).trim();
-                // Check direct magic match
-                if (tradesMap[magicStr]) {
-                    allRealTrades = allRealTrades.concat(tradesMap[magicStr]);
+                
+                // Check if this is a uniqueId format (accountId::magicNumber)
+                if (magicStr.includes('::')) {
+                    const [targetAccountId, extractedMagicNumber] = magicStr.split('::');
+                    // Only match if we are in the right account
+                    if (accountId === targetAccountId && tradesMap[extractedMagicNumber]) {
+                        allRealTrades = allRealTrades.concat(tradesMap[extractedMagicNumber]);
+                    }
+                } else {
+                    // Legacy format: search all accounts for the magic number
+                    if (tradesMap[magicStr]) {
+                        allRealTrades = allRealTrades.concat(tradesMap[magicStr]);
+                    }
                 }
-                // Check Compound Key (AccountId::Magic) if needed? 
-                // Usually map has raw magics, deepScan has raw magics as keys? 
-                // It seems deepScan keys are raw magics mostly.
             });
         });
     }
@@ -989,9 +998,26 @@ export const calculatePortfolioRealMetrics = (portfolio) => {
         }).filter(t => t.exitTime && !isNaN(t.pnl)).sort((a, b) => a.exitTime - b.exitTime);
 
         console.log(`[UI] 🧮 Aggregated ${normalizedForEngine.length} trades for ${portfolio.name}`);
-        const result = calculateSQMetrics(normalizedForEngine);
+
+        // [NEW] Apply Date Filter if portfolio has dateConfig
+        let tradesToAnalyze = normalizedForEngine;
+        if (portfolio.dateConfig && (portfolio.dateConfig.start || portfolio.dateConfig.end)) {
+            const startDate = portfolio.dateConfig.start ? new Date(portfolio.dateConfig.start) : null;
+            const endDate = portfolio.dateConfig.end ? new Date(portfolio.dateConfig.end + 'T23:59:59') : null;
+            tradesToAnalyze = normalizedForEngine.filter(t => {
+                const d = t.exitTime;
+                if (startDate && d < startDate) return false;
+                if (endDate && d > endDate) return false;
+                return true;
+            });
+            console.log(`[UI] 📅 Date Filter applied to ${portfolio.name}: ${normalizedForEngine.length} → ${tradesToAnalyze.length} trades (${portfolio.dateConfig.start || '...'} to ${portfolio.dateConfig.end || '...'})`);
+        }
+
+        const result = calculateSQMetrics(tradesToAnalyze);
         // Attach the trades to the result for equity curve generation
-        result._aggregatedTrades = normalizedForEngine;
+        // Use filtered trades so equity curve matches the date range
+        result._aggregatedTrades = tradesToAnalyze;
+        result._allTrades = normalizedForEngine; // Keep full set for reference
         // CRITICAL: Attach the reconstructed index so Lupa can lookup individual strategies
         result._tradesById = { ...sourceData, ...reconstructedTradesById }; // Merge old and new
         // Cache it?
@@ -1242,20 +1268,46 @@ export const displaySavedPortfoliosList = () => {
                 container.dataset.portfolioIndex = originalIndex;
 
                 // Name Display/Edit
+                // Name Group containing the display and edit elements
                 const nameGroup = document.createElement('div');
                 nameGroup.className = 'flex items-center gap-2 group portfolio-name-container';
+
+                // Add an indicator if this portfolio is date-filtered
+                const dateFilterIndicator = p.dateConfig && (p.dateConfig.start || p.dateConfig.end)
+                    ? `<span class="bg-blue-600/50 border border-blue-500 text-white text-[9px] px-1.5 py-0.5 rounded ml-1" title="Filtrado: ${p.dateConfig.start || '...'} / ${p.dateConfig.end || '...'}">F</span>`
+                    : '';
+
                 nameGroup.innerHTML = `
                     <p class="font-semibold text-sky-300 flex items-center gap-2 portfolio-name-display cursor-pointer" title="Click to edit">
                         <span class="portfolio-name-text hover:text-sky-200 transition-colors">${p.name}</span>
+                        ${dateFilterIndicator}
                         <span class="text-gray-500 opacity-0 group-hover:opacity-100 hover:text-sky-400 transition-all duration-200 text-xs edit-portfolio-name-btn p-1 rounded hover:bg-gray-700">✏️</span>
                     </p>
                     <input type="text" class="hidden portfolio-name-input bg-gray-700 text-white border border-gray-600 rounded px-2 py-1 text-xs w-full max-w-[200px] focus:outline-none focus:border-sky-500 shadow-sm" value="${p.name}">
                 `;
 
-                // Edit Name Logic is handled globally in events.js via delegation
+                // [NEW] Date Filter Button logic for individual portfolios
+                const dateBtn = document.createElement('button');
+                dateBtn.className = 'text-gray-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all rounded hover:bg-gray-700/50 p-1 ml-1 text-xs';
+                dateBtn.title = 'Filtrar por Fecha';
+                dateBtn.innerHTML = '📅';
+                dateBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    if (window.openPortfolioDateConfig) window.openPortfolioDateConfig(p.id, p.name);
+                };
+                nameGroup.querySelector('.portfolio-name-display').appendChild(dateBtn);
                 // We just render the structure here.
 
                 container.appendChild(nameGroup);
+
+                // Creation Filter Chip (from Wizard date search)
+                if (p.creationFilter && p.creationFilter.start && p.creationFilter.end) {
+                    const chipEl = document.createElement('div');
+                    chipEl.className = 'inline-flex items-center gap-1 text-[10px] bg-amber-900/30 border border-amber-600/40 text-amber-400 rounded-full px-2 py-0.5 w-fit';
+                    chipEl.innerHTML = `📅 ${p.creationFilter.start} ➜ ${p.creationFilter.end}
+                        <button class="clear-creation-filter-btn ml-1 text-amber-300 hover:text-white font-bold text-xs leading-none" data-index="${originalIndex}" data-source="saved" title="Limpiar filtro de creación">✕</button>`;
+                    container.appendChild(chipEl);
+                }
 
                 // Linked Account Badge
                 if (p.linkedAccountId) {
@@ -1635,6 +1687,378 @@ export const displaySavedPortfoliosList = () => {
 // Make globally accessible for savedPortfoliosTable modal
 window.displaySavedPortfoliosList = displaySavedPortfoliosList;
 
+/**
+ * [NEW] Apply Date Filter to a Portfolio
+ */
+const applyDateFilterToPortfolio = (portfolioId, range) => {
+    const portfolio = state.savedPortfolios.find(p => p.id === portfolioId);
+    if (!portfolio) return;
+
+    portfolio.dateConfig = range || { start: '', end: '' };
+    // Invalidate cached real metrics
+    portfolio.calculatedRealMetrics = null;
+
+    console.log(`[DateFilter] 🧮 Portfolio filtering for ${portfolio.name}`, range);
+
+    // [NEW FIX] Recalculate Backtest Metrics dynamically
+    // 1. Backup original backend metrics if not already backed up
+    if (!portfolio.originalMetrics && portfolio.metrics) {
+        portfolio.originalMetrics = JSON.parse(JSON.stringify(portfolio.metrics));
+    }
+    if (!portfolio.originalSqMetrics && portfolio.sqMetrics) {
+        portfolio.originalSqMetrics = JSON.parse(JSON.stringify(portfolio.sqMetrics));
+    }
+    if (!portfolio.originalPnlSeries && portfolio.pnlSeries) {
+        portfolio.originalPnlSeries = portfolio.pnlSeries;
+    }
+
+    // 2. Clear filter: restore originals
+    if (!range || (!range.start && !range.end)) {
+        if (portfolio.originalMetrics) {
+            portfolio.metrics = JSON.parse(JSON.stringify(portfolio.originalMetrics));
+            portfolio.analysis = portfolio.metrics; // Keep analysis synced
+
+            // Restore sqMetrics if possible
+            if (portfolio.originalSqMetrics) {
+                portfolio.sqMetrics = JSON.parse(JSON.stringify(portfolio.originalSqMetrics));
+            }
+        }
+        if (portfolio.originalPnlSeries) {
+            portfolio.pnlSeries = portfolio.originalPnlSeries;
+        }
+        console.log(`[DateFilter] 🧹 Restored original backtest metrics for ${portfolio.name}`);
+
+        // Force refresh table
+        displaySavedPortfoliosList();
+
+        // Check if we need to force chart updates if this portfolio is selected
+        const pIndex = state.savedPortfolios.indexOf(portfolio);
+        if (selectedSavedPortfolios.has(pIndex)) {
+            const event = new CustomEvent('portfolioSelectionChanged');
+            document.dispatchEvent(event);
+        }
+    } else {
+        // 3. Apply Filter: Regenerate merged TradeSeries
+        const seriesList = [];
+        let missingData = false;
+
+        // Find indices of the component strategies
+        let indices = portfolio.indices || [];
+        if (indices.length === 0 && portfolio.strategyIds && portfolio.strategyIds.length > 0) {
+            portfolio.strategyIds.forEach(id => {
+                const idx = state.loadedStrategyFiles.findIndex(f => f.strategyId === id);
+                if (idx !== -1) indices.push(idx);
+            });
+        }
+
+        indices.forEach(idx => {
+            if (state.strategySeries && state.strategySeries[idx]) {
+                seriesList.push(state.strategySeries[idx]);
+            } else {
+                missingData = true;
+            }
+        });
+
+        if (seriesList.length > 0) {
+            // Merge all raw series into one portfolio series
+            const mergedSeries = TradeSeries.merge(seriesList);
+
+            // Apply the date filter
+            const filteredSeries = mergedSeries.filterByDateRange(range.start, range.end);
+
+            // Calculate new summary metrics
+            import('./modules/sqAnalysis_v2.js?v=11').then(({ calculateSQMetrics }) => {
+                const tradesForEngine = filteredSeries.trades;
+                if (tradesForEngine && tradesForEngine.length > 0) {
+                    const newStats = calculateSQMetrics(tradesForEngine);
+
+                    // Format correctly to override existing metrics keys
+                    const metricOverrides = {
+                        netProfit: filteredSeries.totalProfit,
+                        totalProfit: filteredSeries.totalProfit,
+                        maxDrawdownInDollars: filteredSeries.maxDrawdown,
+                        maxDD: filteredSeries.maxDrawdown,
+                        drawdown: filteredSeries.maxDrawdown,
+                        totalTrades: filteredSeries.totalTrades,
+                        winningPercentage: filteredSeries.winRate,
+                        winRate: filteredSeries.winRate,
+                        profitFactor: filteredSeries.profitFactor,
+                        returnDD: filteredSeries.returnDD,
+                        maxConsecutiveLosses: filteredSeries.maxConsecutiveLosses,
+                        maxStagnationDays: filteredSeries.maxStagnationDays,
+                        maxStagnationTrades: filteredSeries.maxStagnationTrades,
+                        upi: filteredSeries.upi,
+                        cagr: filteredSeries.cagr,
+                        sharpeRatio: filteredSeries.sharpeRatio,
+                        sharpeRatioTrade: filteredSeries.sharpeRatioTrade,
+                        sortinoRatio: filteredSeries.sortinoRatio,
+                        sqn: filteredSeries.sqn,
+                        gammaFlowScore: filteredSeries.gammaFlowScore,
+                        avgTrade: filteredSeries.avgTrade,
+                        isDateFiltered: true,
+                        // Chart Data overrides so Drawdown analysis etc work
+                        chartData: {
+                            equityCurve: newStats.timeData, // Approximation or leave chartData alone? 
+                            // The actual equity curve UI relies on _aggregatedTrades or pnlSeries
+                        }
+                    };
+
+                    // Only override existing metrics to preserve backend metadata
+                    if (!portfolio.metrics) portfolio.metrics = {};
+                    portfolio.metrics = { ...portfolio.metrics, ...metricOverrides, ...newStats };
+                    portfolio.analysis = portfolio.metrics; // Sync analysis
+
+                    // Update sqMetrics
+                    if (!portfolio.sqMetrics) portfolio.sqMetrics = {};
+                    portfolio.sqMetrics = { ...portfolio.sqMetrics, ...metricOverrides };
+
+                    // CRITICAL: Override pnlSeries so features like Drawdown Analysis use the filtered data
+                    portfolio.pnlSeries = filteredSeries;
+
+                    console.log(`[DateFilter] ✅ Dynamically recalculated backtest metrics for ${portfolio.name}. Trades: ${filteredSeries.totalTrades}`);
+
+                    // Force refresh AFTER async import finishes
+                    displaySavedPortfoliosList();
+                    const pIndex = state.savedPortfolios.indexOf(portfolio);
+                    if (selectedSavedPortfolios.has(pIndex)) document.dispatchEvent(new CustomEvent('portfolioSelectionChanged'));
+                }
+            });
+        } else {
+            console.warn(`[DateFilter] ⚠️ Cannot filter backtest metrics for ${portfolio.name} because underlying strategies are not loaded.`);
+        }
+    }
+
+    // Always trigger a table refresh so the 'F' badge toggles immediately (synchronous for clear, async for apply happens later)
+    displaySavedPortfoliosList();
+
+    // Check if we need to force chart updates if this portfolio is selected
+    const pIndex = state.savedPortfolios.indexOf(portfolio);
+    if (selectedSavedPortfolios.has(pIndex)) {
+        const event = new CustomEvent('portfolioSelectionChanged');
+        document.dispatchEvent(event);
+    }
+};
+
+/**
+ * [NEW] Open Portfolio Date Configuration Modal
+ */
+window.openPortfolioDateConfig = (portfolioId, portfolioName) => {
+    const portfolio = state.savedPortfolios.find(p => p.id === portfolioId);
+    if (!portfolio) return;
+
+    if (!portfolio.dateConfig) portfolio.dateConfig = { start: '', end: '' };
+    const currentRange = portfolio.dateConfig;
+
+    const modalId = 'port-date-modal';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-[70] animate-fade-in';
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-xl border border-gray-700 w-96 p-6 shadow-2xl transform scale-100 transition-transform">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <span>📅</span> Rango Histórico (Portafolio)
+            </h3>
+            <p class="text-xs text-gray-400 mb-4 truncate" title="${portfolioName}">${portfolioName}</p>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Inicio</label>
+                    <input type="date" id="pd-start" value="${currentRange.start || ''}" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fin</label>
+                    <input type="date" id="pd-end" value="${currentRange.end || ''}" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                </div>
+            </div>
+
+            <!-- Quick Chips -->
+            <div class="mt-4 flex flex-wrap gap-2">
+                <button class="pd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-days="30">Últimos 30 días</button>
+                <button class="pd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-days="90">Últimos 3 meses</button>
+                <button class="pd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-days="180">Últimos 6 meses</button>
+                <button class="pd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-days="365">Último año</button>
+                <button class="pd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-ytd="true">YTD</button>
+            </div>
+
+            <div class="flex gap-2 mt-6">
+                 <button id="pd-clear" class="px-3 py-2 text-xs font-bold text-red-400 hover:text-white border border-red-900/50 hover:bg-red-900/50 rounded transition-colors mr-auto">
+                    Limpiar Filtro
+                </button>
+                <button id="pd-cancel" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancelar</button>
+                <button id="pd-save" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-bold shadow-lg shadow-blue-900/30">
+                    Aplicar
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const fpConfig = {
+        locale: "es",
+        dateFormat: "Y-m-d",
+        theme: "dark",
+        allowInput: true
+    };
+    const fpStart = flatpickr("#pd-start", fpConfig);
+    const fpEnd = flatpickr("#pd-end", { ...fpConfig, defaultDate: currentRange.end || 'today' });
+
+    document.querySelectorAll('.pd-quick-chip').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const days = parseInt(e.target.dataset.days);
+            const isYtd = e.target.dataset.ytd === "true";
+            const today = new Date();
+            const endStr = today.toISOString().split('T')[0];
+            let startStr = "";
+
+            if (isYtd) {
+                startStr = today.getFullYear() + "-01-01";
+            } else if (days) {
+                const pastDate = new Date();
+                pastDate.setDate(today.getDate() - days);
+                startStr = pastDate.toISOString().split('T')[0];
+            }
+
+            fpStart.setDate(startStr);
+            fpEnd.setDate(endStr);
+        });
+    });
+
+    document.getElementById('pd-clear').onclick = () => {
+        applyDateFilterToPortfolio(portfolioId, null);
+        modal.remove();
+    };
+
+    const close = () => modal.remove();
+    document.getElementById('pd-cancel').onclick = close;
+
+    document.getElementById('pd-save').onclick = () => {
+        const start = fpStart.input.value;
+        const end = fpEnd.input.value;
+        applyDateFilterToPortfolio(portfolioId, { start, end });
+        modal.remove();
+    };
+};
+
+/**
+ * [NEW] Global button: Apply date filter to ALL portfolios at once
+ */
+const globalDateFilterBtn = document.getElementById('filter-date-all-portfolios-btn');
+if (globalDateFilterBtn) {
+    globalDateFilterBtn.addEventListener('click', () => {
+        // Open a modal that applies to ALL portfolios
+        const modalId = 'port-date-modal-global';
+        let modal = document.getElementById(modalId);
+        if (modal) modal.remove();
+
+        modal = document.createElement('div');
+        modal.id = modalId;
+        modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-[70] animate-fade-in';
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-xl border border-gray-700 w-96 p-6 shadow-2xl transform scale-100 transition-transform">
+                <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <span>📅</span> Filtrar Histórico Global
+                </h3>
+                <p class="text-xs text-gray-400 mb-4">Se aplicará a <strong class="text-white">${state.savedPortfolios.length}</strong> portafolios guardados</p>
+                
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Inicio</label>
+                        <input type="date" id="pgd-start" value="" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fin</label>
+                        <input type="date" id="pgd-end" value="" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <button class="pgd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-days="30">Últimos 30 días</button>
+                    <button class="pgd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-days="90">Últimos 3 meses</button>
+                    <button class="pgd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-days="180">Últimos 6 meses</button>
+                    <button class="pgd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-days="365">Último año</button>
+                    <button class="pgd-quick-chip px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-[10px] font-bold transition-colors" data-ytd="true">YTD</button>
+                </div>
+
+                <div class="flex gap-2 mt-6">
+                     <button id="pgd-clear" class="px-3 py-2 text-xs font-bold text-red-400 hover:text-white border border-red-900/50 hover:bg-red-900/50 rounded transition-colors mr-auto">
+                        Limpiar Todo
+                    </button>
+                    <button id="pgd-cancel" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancelar</button>
+                    <button id="pgd-save" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-bold shadow-lg shadow-blue-900/30">
+                        Aplicar a Todos
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const fpConfig = {
+            locale: "es",
+            dateFormat: "Y-m-d",
+            theme: "dark",
+            allowInput: true
+        };
+        const fpStart = flatpickr("#pgd-start", fpConfig);
+        const fpEnd = flatpickr("#pgd-end", { ...fpConfig, defaultDate: 'today' });
+
+        document.querySelectorAll('.pgd-quick-chip').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const days = parseInt(e.target.dataset.days);
+                const isYtd = e.target.dataset.ytd === "true";
+                const today = new Date();
+                const endStr = today.toISOString().split('T')[0];
+                let startStr = "";
+
+                if (isYtd) {
+                    startStr = today.getFullYear() + "-01-01";
+                } else if (days) {
+                    const pastDate = new Date();
+                    pastDate.setDate(today.getDate() - days);
+                    startStr = pastDate.toISOString().split('T')[0];
+                }
+
+                fpStart.setDate(startStr);
+                fpEnd.setDate(endStr);
+            });
+        });
+
+        document.getElementById('pgd-clear').onclick = () => {
+            state.savedPortfolios.forEach(p => {
+                applyDateFilterToPortfolio(p.id, null);
+            });
+            console.log(`[DateFilter] 🧹 Global date filter cleared for ${state.savedPortfolios.length} portfolios.`);
+            modal.remove();
+        };
+
+        const close = () => modal.remove();
+        document.getElementById('pgd-cancel').onclick = close;
+
+        document.getElementById('pgd-save').onclick = () => {
+            const start = fpStart.input.value;
+            const end = fpEnd.input.value;
+            const range = { start, end };
+            state.savedPortfolios.forEach(p => {
+                applyDateFilterToPortfolio(p.id, range);
+            });
+            console.log(`[DateFilter] 📅 Global date filter applied to ${state.savedPortfolios.length} portfolios: `, range);
+            modal.remove();
+        };
+    });
+}
+
+/**
+ * [NEW] Reset all portfolio date filters
+ */
+window.resetAllPortfolioDateFilters = () => {
+    state.savedPortfolios.forEach(p => {
+        applyDateFilterToPortfolio(p.id, null);
+    });
+    console.log(`[DateFilter] 🧹 All portfolio date filters cleared.`);
+};
+
 // Auto-fit column to content
 function autoFitSavedPortfoliosColumn(th, colId) {
     const tableBody = dom.savedPortfoliosBody;
@@ -1783,16 +2207,16 @@ const renderComparisonTable = (portfolioAnalysis) => {
         const color = getDiffColor(backtestVal, realVal, isInverse);
 
         return `
-            <tr class="border-b border-gray-700/50 hover:bg-gray-800/50 transition-colors">
+            < tr class="border-b border-gray-700/50 hover:bg-gray-800/50 transition-colors" >
                 <td class="py-2 px-4 text-gray-400 font-medium">${label}</td>
                 <td class="py-2 px-4 text-right font-mono text-gray-300">${bVal}</td>
                 <td class="py-2 px-4 text-right font-mono ${color} font-bold">${rVal}</td>
-            </tr>
-        `;
+            </tr >
+            `;
     };
 
     const html = `
-        <div class="flex flex-col h-full">
+            < div class="flex flex-col h-full" >
             <div class="flex items-center justify-between mb-2 px-2">
                 <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Reality Check: ${portfolioAnalysis.name}</h3>
                 <span class="text-[10px] text-gray-500">Live data from Myfxbook</span>
@@ -1815,8 +2239,8 @@ const renderComparisonTable = (portfolioAnalysis) => {
                     </tbody>
                 </table>
             </div>
-        </div>
-    `;
+        </div >
+            `;
 
     container.innerHTML = html;
 };
@@ -1931,9 +2355,9 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
     console.log('[DIAG-CHART] portfolioAnalyses.length:', portfolioAnalyses.length);
     console.log('[DIAG-CHART] state.activeViewMode:', state.activeViewMode);
     portfolioAnalyses.forEach((p, i) => {
-        console.log(`[DIAG-CHART] Item[${i}]: name="${p.name}", realMetrics=${!!p.realMetrics}, indices=${p.indices?.length || 0}`);
+        console.log(`[DIAG - CHART] Item[${i}]: name = "${p.name}", realMetrics = ${!!p.realMetrics}, indices = ${p.indices?.length || 0} `);
         if (p.realMetrics) {
-            console.log(`[DIAG-CHART]   -> realMetrics.totalRealTrades=${p.realMetrics.totalRealTrades}, _tradesById keys=${Object.keys(p.realMetrics._tradesById || {}).length}`);
+            console.log(`[DIAG - CHART] -> realMetrics.totalRealTrades=${p.realMetrics.totalRealTrades}, _tradesById keys = ${Object.keys(p.realMetrics._tradesById || {}).length} `);
         }
     });
     // ========== END DIAGNOSTIC LOGS ==========
@@ -2007,24 +2431,22 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         const chartData = analysis.chartData || {};
         const rawEquityCurve = chartData.equityCurve || [];
 
-        if ((!rawEquityCurve || !rawEquityCurve.length) && state.activeViewMode !== 'reality-check') {
-            console.warn(`[UI] ⚠️ Skipping chart for ${result.name}: No equity curve data found.`, result);
-            return [];
-        }
+        // --- CHART DATA RESOLUTION ---
+        // Priority: 1) pnlSeries (live TradeSeries), 2) chartData.equityCurve (backend), 3) skip
+        let finalData;
+        let isFinalDataNormalized = false;
 
-        console.log(`[UI] 📈 Preparing dataset for ${result.name}: ${rawEquityCurve.length} points.`);
-        console.log(`[UI] Debug Result Object Keys:`, Object.keys(result));
-        console.log(`[UI] Debug Risk Data:`, result.riskPerStrategy);
-
-        // --- RISK NORMALIZATION SCALING ---
-        let finalData = rawEquityCurve || [];
-
-        // [NEW OOP] Fallback to OOP TradeSeries if provided by caller (like Focus Mode)
-        if (result.pnlSeries) {
-            console.log(`[UI] 🚀 Using TradeSeries Object for Chart Data resolving: ${result.name}`);
+        if (result.pnlSeries && typeof result.pnlSeries.getEquityCurveFormat === 'function') {
+            // [OOP PATH] Live TradeSeries - always the best source
+            console.log(`[UI] 🚀 Using TradeSeries Object for Chart Data: ${result.name}`);
             finalData = result.pnlSeries.getEquityCurveFormat();
-        } else {
-            // [LEGACY] Apply Date Range Filter manually for old paths
+            isFinalDataNormalized = false;
+        } else if (rawEquityCurve && rawEquityCurve.length > 0) {
+            // [LEGACY PATH] Static chartData from backend analysis
+            finalData = rawEquityCurve;
+            isFinalDataNormalized = true;
+
+            // Apply Date Range Filter manually for legacy paths
             if (state.strategyDateRanges) {
                 const sId = result.id || result.name;
                 let filter = state.strategyDateRanges[sId] || state.strategyDateRanges[result.name] || (result.name ? state.strategyDateRanges[result.name.replace(/\.csv$/i, '')] : null);
@@ -2049,15 +2471,20 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     });
                 }
             }
+        } else if (state.activeViewMode !== 'reality-check') {
+            console.warn(`[UI] ⚠️ Skipping chart for ${result.name}: No equity curve data found.`, result);
+            return [];
+        } else {
+            finalData = [];
         }
 
-        console.group(`[DEBUG CHART] Portfolio: ${result.name} (Idx: ${result.savedIndex})`);
-        console.log(`- Raw Equity Points: ${finalData.length}`);
+        console.group(`[DEBUG CHART]Portfolio: ${result.name} (Idx: ${result.savedIndex})`);
+        console.log(`- Raw Equity Points: ${finalData.length} `);
         if (finalData.length > 0) {
-            console.log(`- First Point (Raw):`, finalData[0]);
-            console.log(`- Last Point (Raw):`, finalData[finalData.length - 1]);
+            console.log(`- First Point(Raw): `, finalData[0]);
+            console.log(`- Last Point(Raw): `, finalData[finalData.length - 1]);
         }
-        console.log(`- Risk Conf (riskPerStrategy):`, result.riskPerStrategy);
+        console.log(`- Risk Conf(riskPerStrategy): `, result.riskPerStrategy);
 
         // Check if this portfolio has a scaling factor applied (Risk Normalization)
         // We look for riskPerStrategy. For global normalization, all strategies have same risk.
@@ -2068,20 +2495,26 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         // using the initial_balance to show Real Dollars.
 
         const initialBalance = analysis.metrics?.initial_balance || 10000;
-        console.log(`[UI] 💵 Denormalizing Chart Data for ${result.name} (Balance: ${initialBalance})`);
+        
+        if (isFinalDataNormalized) {
+            console.log(`[UI] 💵 Denormalizing Chart Data for ${result.name}(Balance: ${initialBalance})`);
 
-        finalData = finalData.map(pt => {
-            let val = (typeof pt === 'object' && 'y' in pt) ? pt.y : pt;
+            finalData = finalData.map(pt => {
+                let val = (typeof pt === 'object' && 'y' in pt) ? pt.y : pt;
 
-            // Formula: (NormalizedValue / 100) * InitialBalance
-            // Example: 1141 / 100 * 10000 = 114,100
-            let realDollars = (val / 100.0) * initialBalance;
+                // Formula: (NormalizedValue / 100) * InitialBalance
+                // Example: 1141 / 100 * 10000 = 114,100
+                let realDollars = (val / 100.0) * initialBalance;
 
-            if (typeof pt === 'object' && pt !== null && 'y' in pt) {
-                return { ...pt, y: realDollars };
-            }
-            return realDollars;
-        });
+                if (typeof pt === 'object' && pt !== null && 'y' in pt) {
+                    return { ...pt, y: realDollars };
+                }
+                return realDollars;
+            });
+            console.log('[UI] 🛑 Risk Normalization Disabled by User Request (Showing Real Dollars via Denormalization)');
+        } else {
+            console.log(`[UI] 💵 Chart Data for ${result.name} is already in absolute dollars (Balance: ${initialBalance}). Skipping denormalization.`);
+        }
 
         /* 
         // OLD RISK SCALING - DISABLED
@@ -2089,7 +2522,6 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
              // ...
         }
         */
-        console.log('[UI] 🛑 Risk Normalization Disabled by User Request (Showing Real Dollars via Denormalization)');
 
         let color = result.color || (isFeatured ? '#fbbf24' : (result.isTemporaryOriginal ? '#9ca3af' : STRATEGY_COLORS[(4 + (result.savedIndex ?? index)) % STRATEGY_COLORS.length]));
 
@@ -2118,7 +2550,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 ? Object.keys(result.realMetrics._tradesById).length
                 : (hasAggregatedTrades ? result.realMetrics._aggregatedTrades.length : 0);
 
-            console.log(`[ANTIGRAVITY] 🔍 Reality Check Logic for ${result.name}:`, { showOverlay, hasRealData, hasDirectTrades, hasAggregatedTrades, trades: tradeCount });
+            console.log(`[ANTIGRAVITY] 🔍 Reality Check Logic for ${result.name}: `, { showOverlay, hasRealData, hasDirectTrades, hasAggregatedTrades, trades: tradeCount });
 
             if (showOverlay && hasRealData) {
                 let minRealDate = Infinity;
@@ -2159,10 +2591,10 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                             if (!t) return true; // Keep if no time found (safe fallback)
                             return t >= minRealDate;
                         });
-                        console.log(`[ANTIGRAVITY]    - Trimmed from ${originalLen} to ${finalData.length} points.`);
+                        console.log(`[ANTIGRAVITY] - Trimmed from ${originalLen} to ${finalData.length} points.`);
                     } else if (hasAggregatedTrades && result.realMetrics._aggregatedTrades.length > 0) {
                         // NO BACKTEST DATA: Generate equity curve from real trades
-                        console.log(`[ANTIGRAVITY] 📈 Generating equity curve from ${result.realMetrics._aggregatedTrades.length} real trades (no backtest available)`);
+                        console.log(`[ANTIGRAVITY] 📈 Generating equity curve from ${result.realMetrics._aggregatedTrades.length} real trades(no backtest available)`);
 
                         // Sort trades by exit time
                         const sortedTrades = [...result.realMetrics._aggregatedTrades].sort((a, b) => {
@@ -2181,7 +2613,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                             return { x: dateStr, y: runningBalance };
                         });
 
-                        console.log(`[ANTIGRAVITY]    - Generated ${finalData.length} points from real trades. Final Balance: ${runningBalance.toFixed(2)}`);
+                        console.log(`[ANTIGRAVITY] - Generated ${finalData.length} points from real trades.Final Balance: ${runningBalance.toFixed(2)} `);
                     }
                 } else {
                     console.warn('[ANTIGRAVITY] minRealDate is Infinity despite hasRealData=true. Inspect _tradesById structure.');
@@ -2193,7 +2625,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 // But if users toggles Overlay OFF, we clear it.
                 if (!showOverlay) {
                     finalData = [];
-                    console.log(`[ANTIGRAVITY] 🔍 Overlay explicitly OFF. Hiding backtest data.`);
+                    console.log(`[ANTIGRAVITY] 🔍 Overlay explicitly OFF.Hiding backtest data.`);
                 }
             } else {
                 // hasRealData is FALSE inside here?
@@ -2201,7 +2633,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 // If showOverlay is FALSE -> Clear.
                 if (!showOverlay) {
                     finalData = [];
-                    console.log(`[ANTIGRAVITY] 🔍 Overlay OFF. Hiding backtest.`);
+                    console.log(`[ANTIGRAVITY] 🔍 Overlay OFF.Hiding backtest.`);
                 }
                 // If showOverlay is TRUE but !hasRealData -> We likely show full backtest?
                 // OR we strictly hide backtest in Reality Check if it doesn't match Real?
@@ -2212,18 +2644,18 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
         }
 
         if (finalData !== rawEquityCurve) {
-            console.log(`- SCALED Data Points: ${finalData.length}`);
+            console.log(`- SCALED Data Points: ${finalData.length} `);
             if (finalData.length > 0) {
                 // Check if object or number
                 const first = finalData[0];
                 const last = finalData[finalData.length - 1];
                 const valF = (typeof first === 'object' && 'y' in first) ? first.y : first;
                 const valL = (typeof last === 'object' && 'y' in last) ? last.y : last;
-                console.log(`- First Point (Scaled): ${valF}`);
-                console.log(`- Last Point (Scaled): ${valL}`);
+                console.log(`- First Point(Scaled): ${valF} `);
+                console.log(`- Last Point(Scaled): ${valL} `);
 
                 const graphProfit = valL - valF;
-                console.log(`%c- GRAPH PROFIT (Scaled Last - First): ${graphProfit.toFixed(2)}`, 'color: #fbbf24; font-weight: bold;');
+                console.log(`% c - GRAPH PROFIT(Scaled Last - First): ${graphProfit.toFixed(2)} `, 'color: #fbbf24; font-weight: bold;');
 
                 // Try to find the Portfolio Metric Profit for comparison
                 const metrics = result.analysis?.metrics || result.metrics || {};
@@ -2240,18 +2672,18 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 const metricProfit = metrics.totalProfit !== undefined ? metrics.totalProfit : (metrics.totalNetProfit !== undefined ? metrics.totalNetProfit : metrics.netProfit);
 
                 if (metricProfit !== undefined) {
-                    console.log(`%c- METRIC PROFIT (Raw/Stored): ${metricProfit.toFixed(2)}`, 'color: #34d399; font-weight: bold;');
+                    console.log(`% c - METRIC PROFIT(Raw / Stored): ${metricProfit.toFixed(2)} `, 'color: #34d399; font-weight: bold;');
 
                     // Calculate difference
                     const diff = Math.abs(graphProfit - metricProfit);
                     if (diff < 1000) { // Tolerate some diff due to date alignment
-                        console.log(`%c✅ MATCH CONFIRMED (Diff: ${diff.toFixed(2)})`, 'color: #34d399; font-weight: bold;');
+                        console.log(`% c✅ MATCH CONFIRMED(Diff: ${diff.toFixed(2)})`, 'color: #34d399; font-weight: bold;');
                     } else {
-                        console.log(`%c⚠️ MISMATCH (Diff: ${diff.toFixed(2)}) - Check start/end dates or initial balance logic?`, 'color: #ef4444; font-weight: bold;');
+                        console.log(`% c⚠️ MISMATCH(Diff: ${diff.toFixed(2)}) - Check start / end dates or initial balance logic ? `, 'color: #ef4444; font-weight: bold;');
                         console.log(`(Graph: ${graphProfit.toFixed(2)} vs Metric: ${metricProfit.toFixed(2)})`);
                     }
                 } else {
-                    console.log(`- Metric Profit not found in analysis/metrics keys:`, Object.keys(metrics));
+                    console.log(`- Metric Profit not found in analysis / metrics keys: `, Object.keys(metrics));
                 }
             }
         }
@@ -2300,7 +2732,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             }
 
             console.log(`[UI]   Found ${strategyNames.length} strategies to check.`);
-            console.log(`[UI]   Strategy Names:`, strategyNames);
+            console.log(`[UI]   Strategy Names: `, strategyNames);
 
             if (strategyNames.length > 0) {
                 // Helper to normalize strings for comparison: trim, lowercase, collapse spaces, AND remove .csv extension
@@ -2316,7 +2748,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
 
                     if (file && file.strategyId) {
                         strategyId = file.strategyId;
-                        console.log(`[UI]   Resolved '${stratName}' to ID: ${strategyId}`);
+                        console.log(`[UI]   Resolved '${stratName}' to ID: ${strategyId} `);
                     } else if (!file) {
                         console.warn(`[UI]   ⚠️ Could not fuzzy match strategy file for: '${stratName}'`);
                     }
@@ -2342,7 +2774,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     }
 
                     if (magicRaw && (!Array.isArray(magicRaw) || magicRaw.length > 0)) {
-                        console.log(`[UI]   Strategy '${stratName}' mapped to ${JSON.stringify(magicRaw)}`);
+                        console.log(`[UI]   Strategy '${stratName}' mapped to ${JSON.stringify(magicRaw)} `);
                         let magics = [];
                         if (Array.isArray(magicRaw)) {
                             magics = magicRaw;
@@ -2378,7 +2810,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 });
             }
 
-            console.log(`[UI]   Total Real Trades Collected: ${allRealTrades.length}`);
+            console.log(`[UI]   Total Real Trades Collected: ${allRealTrades.length} `);
 
             if (allRealTrades.length > 0) {
                 // --- VERIFICATION / AUDIT LOGIC ---
@@ -2412,7 +2844,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     Count: symbolStats[sym].count,
                     NetProfit: parseFloat(symbolStats[sym].net.toFixed(2))
                 })));
-                console.log(`[UI] 💰 TOTAL Calculated Net Profit: ${totalAuditProfit.toFixed(2)}`);
+                console.log(`[UI] 💰 TOTAL Calculated Net Profit: ${totalAuditProfit.toFixed(2)} `);
                 console.groupEnd();
                 // ------------------------------------
 
@@ -2611,7 +3043,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 maxDD = Math.max(maxDD1, maxDD2);
 
                 if (state.activeViewMode === 'reality-check') {
-                    console.log(`[HardStopPlugin] 🔍 MaxDD lookup for ${datasetName}:`, {
+                    console.log(`[HardStopPlugin] 🔍 MaxDD lookup for ${datasetName}: `, {
                         fromDataset: maxDD1,
                         fromCache: maxDD2,
                         final: maxDD
@@ -2619,7 +3051,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 }
 
                 if (state.activeViewMode === 'reality-check') {
-                    console.log(`[HardStopPlugin] ✅ Final MaxDD used for ${datasetName}: ${maxDD}`);
+                    console.log(`[HardStopPlugin] ✅ Final MaxDD used for ${datasetName}: ${maxDD} `);
                 }
 
                 if (!maxDD || maxDD <= 0) return;
@@ -2726,7 +3158,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 const shortName = datasetName.length > 15 ? datasetName.substring(0, 12) + '...' : datasetName;
                 const statusIcon = percentToStop < 50 ? '🚨' : (percentToStop < 100 ? '⚠️' : '🛡️');
                 const relativeStop = finalStopLevel - firstY;
-                const label = `${statusIcon} ${shortName}: ${relativeStop >= 0 ? '+' : ''}$${relativeStop.toFixed(0)}`;
+                const label = `${statusIcon} ${shortName}: ${relativeStop >= 0 ? '+' : ''}$${relativeStop.toFixed(0)} `;
 
                 ctx.fillText(label, right - 5, textY - labelYOffset);
 
@@ -2831,8 +3263,8 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                 }
 
                 infoPanel.style.position = 'fixed';
-                infoPanel.style.left = `${finalX}px`;
-                infoPanel.style.top = `${tooltipY + 15}px`;
+                infoPanel.style.left = `${finalX} px`;
+                infoPanel.style.top = `${tooltipY + 15} px`;
                 infoPanel.classList.remove('hidden');
                 infoPanel.classList.remove('opacity-0');
 
@@ -2885,7 +3317,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                         // const profitUSD = equityUSD - initialBalance; // Approximate
 
                         html += `
-                            <div class="flex flex-col gap-1 mb-2 border-b border-gray-700/50 pb-2 last:border-0 last:mb-0 last:pb-0">
+        < div class="flex flex-col gap-1 mb-2 border-b border-gray-700/50 pb-2 last:border-0 last:mb-0 last:pb-0" >
                                 <div class="flex items-center gap-2">
                                     <div class="w-2 h-2 rounded-full" style="background-color: ${dataset.borderColor}"></div>
                                     <span class="text-gray-300 font-bold text-xs">${dataset.label}</span>
@@ -2894,8 +3326,8 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                                     <div class="text-gray-400">Equity:</div>
                                     <div class="text-white font-mono text-right">$${equityUSD.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                                 </div>
-                            </div>
-                        `;
+                            </div >
+        `;
                     });
                     infoBody.innerHTML = html;
                 }
@@ -3202,13 +3634,13 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
             onClick: (evt, elements, chart) => {
                 console.log('%c[CHART CLICK] 1. Evento onClick del gráfico disparado.', 'color: #f0abfc');
                 const points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
-                console.log(`%c[CHART CLICK]2. Puntos detectados bajo el cursor: ${points.length} `, 'color: #f0abfc');
+                console.log(`% c[CHART CLICK]2. Puntos detectados bajo el cursor: ${points.length} `, 'color: #f0abfc');
 
                 if (points.length) {
                     const firstPoint = points[0];
                     const dataset = chart.data.datasets[firstPoint.datasetIndex];
                     const clickedPortfolioIndex = dataset.savedIndex;
-                    console.log(`%c[CHART CLICK]3. Índice de portafolio detectado: ${clickedPortfolioIndex} `, 'color: #f0abfc');
+                    console.log(`% c[CHART CLICK]3. Índice de portafolio detectado: ${clickedPortfolioIndex} `, 'color: #f0abfc');
 
                     if (clickedPortfolioIndex === undefined) {
                         console.log('%c[CHART CLICK] 3.1. Clic en Benchmark. Abortando.', 'color: #f0abfc');
@@ -3216,7 +3648,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                     }
 
                     const activeAction = document.querySelector('#chart-actions-group .chart-action-item.active')?.dataset.action;
-                    console.log(`%c[CHART CLICK]4. Acción activa: '${activeAction}'`, 'color: #f0abfc');
+                    console.log(`% c[CHART CLICK]4. Acción activa: '${activeAction}'`, 'color: #f0abfc');
 
                     if (activeAction === 'destacar') {
                         console.log('%c[CHART CLICK] 5. Entrando en la lógica de "destacar".', 'color: #f0abfc; font-weight: bold;');
@@ -3232,10 +3664,10 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                         const confirmBtn = document.getElementById('chart-click-modal-confirm-btn');
 
                         modalTitle.textContent = 'Confirmar Destacado';
-                        modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado?`;
+                        modalBody.textContent = `¿Estás seguro de que quieres establecer "${portfolio.name}" como el portafolio destacado ? `;
 
                         confirmBtn.onclick = () => {
-                            console.log(`%c[CHART CLICK] 6. Confirmado. Estableciendo portafolio destacado a índice ${clickedPortfolioIndex}`, 'color: #f0abfc; font-weight: bold;');
+                            console.log(`% c[CHART CLICK]6. Confirmado.Estableciendo portafolio destacado a índice ${clickedPortfolioIndex} `, 'color: #f0abfc; font-weight: bold;');
                             state.featuredPortfolioIndex = clickedPortfolioIndex;
                             renderFeaturedPortfolio();
                             renderPortfolioComparisonCharts(portfolioAnalyses);
@@ -3257,7 +3689,7 @@ export const renderPortfolioComparisonCharts = (portfolioAnalyses) => {
                         console.log('%c[CHART CLICK] 5. Entrando en la lógica de "editar".', 'color: #f0abfc; font-weight: bold;');
                         openOptimizationModal(clickedPortfolioIndex);
                     } else {
-                        console.log(`%c[CHART CLICK] 5.1. La acción activa ('${activeAction}') no tiene una función de clic definida. No se hace nada.`, 'color: #f0abfc');
+                        console.log(`% c[CHART CLICK]5.1.La acción activa('${activeAction}') no tiene una función de clic definida.No se hace nada.`, 'color: #f0abfc');
                     }
                 }
             }
@@ -3332,7 +3764,7 @@ export const renderFeaturedPortfolio = () => {
     }).join('');
 
     const html = `
-    < div class="p-6" >
+        < div class="p-6" >
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-bold text-white">Portafolio Destacado</h2>
             </div>
@@ -3429,20 +3861,20 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
         console.log(`[Trade Lookup] 🔍 Searching Cache for '${rawName}'...`);
         const cachedStrat = window.analysisResults.find(s => {
             const match = normalize(s.name) === normalize(rawName);
-            // console.log(`   - comparing with '${s.name}' -> ${match}`); // Uncomment for extreme verbosity
+            // console.log(`   - comparing with '${s.name}' -> ${ match } `); // Uncomment for extreme verbosity
             return match;
         });
 
         if (cachedStrat) {
-            console.log(`[Trade Lookup] ✅ Found Cached Strategy: '${cachedStrat.name}'. Has realMetrics?`, !!cachedStrat.realMetrics, 'Trades?', cachedStrat.realMetrics?.trades?.length);
+            console.log(`[Trade Lookup] ✅ Found Cached Strategy: '${cachedStrat.name}'.Has realMetrics ? `, !!cachedStrat.realMetrics, 'Trades?', cachedStrat.realMetrics?.trades?.length);
             if (cachedStrat.realMetrics && cachedStrat.realMetrics.trades && cachedStrat.realMetrics.trades.length > 0) {
-                console.log(`[Trade Lookup] ⚡ FAST PATH: Found ${cachedStrat.realMetrics.trades.length} cached trades for '${rawName}' (Matched: '${cachedStrat.name}')`);
+                console.log(`[Trade Lookup] ⚡ FAST PATH: Found ${cachedStrat.realMetrics.trades.length} cached trades for '${rawName}'(Matched: '${cachedStrat.name}')`);
                 return cachedStrat.realMetrics.trades;
             } else {
-                console.warn(`[Trade Lookup] ⚠️ Cached Strategy '${cachedStrat.name}' found but HAS NO TRADES. keys:`, Object.keys(cachedStrat.realMetrics || {}));
+                console.warn(`[Trade Lookup] ⚠️ Cached Strategy '${cachedStrat.name}' found but HAS NO TRADES.keys: `, Object.keys(cachedStrat.realMetrics || {}));
             }
         } else {
-            console.warn(`[Trade Lookup] ❌ Strategy '${rawName}' NOT FOUND in window.analysisResults (Size: ${window.analysisResults.length})`);
+            console.warn(`[Trade Lookup] ❌ Strategy '${rawName}' NOT FOUND in window.analysisResults(Size: ${window.analysisResults.length})`);
         }
     }
 
@@ -3462,20 +3894,20 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
 
     // --- DEBUGGING MATCH FAILURES ---
     if (!mapById && !mapByName && !mapByNormName && !mapByCleanName) {
-        console.warn(`[Mapping Fail] Could not find mapping for:`);
-        console.warn(`  - ID: ${sId}`);
-        console.warn(`  - Name: ${rawName}`);
-        console.warn(`  - Clean: ${cleanName}`);
-        console.warn(`  - Norm: ${normalizedName}`);
-        console.warn(`  - Available Keys (Sample):`, Object.keys(state.magicNumberMap).slice(0, 10));
+        console.warn(`[Mapping Fail] Could not find mapping for: `);
+        console.warn(`  - ID: ${sId} `);
+        console.warn(`  - Name: ${rawName} `);
+        console.warn(`  - Clean: ${cleanName} `);
+        console.warn(`  - Norm: ${normalizedName} `);
+        console.warn(`  - Available Keys(Sample): `, Object.keys(state.magicNumberMap).slice(0, 10));
         if (window.analysisResults[index]) {
-            console.warn(`  - AnalysisResult Item:`, window.analysisResults[index]);
+            console.warn(`  - AnalysisResult Item: `, window.analysisResults[index]);
         }
     }
     // --------------------------------
 
-    console.log(`[Mapping Debug] Strategy: "${rawName}" (Clean: "${cleanName}") -> IDs: ${sId}`);
-    console.log(`[Mapping Debug] Lookups -> ByID: ${mapById}, ByName: ${mapByName}, ByClean: ${mapByCleanName}, ByNorm: ${mapByNormName}`);
+    console.log(`[Mapping Debug]Strategy: "${rawName}"(Clean: "${cleanName}") -> IDs: ${sId} `);
+    console.log(`[Mapping Debug]Lookups -> ByID: ${mapById}, ByName: ${mapByName}, ByClean: ${mapByCleanName}, ByNorm: ${mapByNormName} `);
 
     // 3. Priority (Strict Short-Circuit)
     // PRIORITY ORDER: Name > Clean Name > ID
@@ -3484,15 +3916,15 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
 
     if (Array.isArray(mapByName) && mapByName.length > 0) {
         magicRaw = mapByName;
-        console.log(`[Mapping Debug] 🎯 Strict Match used: Name (${rawName})`);
+        console.log(`[Mapping Debug] 🎯 Strict Match used: Name(${rawName})`);
     } else if (Array.isArray(mapByCleanName) && mapByCleanName.length > 0) {
         magicRaw = mapByCleanName;
-        console.log(`[Mapping Debug] 🎯 Strict Match used: CleanName (${cleanName})`);
+        console.log(`[Mapping Debug] 🎯 Strict Match used: CleanName(${cleanName})`);
     } else if (Array.isArray(mapById) && mapById.length > 0) {
         magicRaw = mapById;
-        console.log(`[Mapping Debug] 🎯 Strict Match used: ID (${sId})`);
+        console.log(`[Mapping Debug] 🎯 Strict Match used: ID(${sId})`);
     } else {
-        console.log(`[Mapping Debug] ❌ No Strict Mapping found for '${rawName}'. Returning no data.`);
+        console.log(`[Mapping Debug] ❌ No Strict Mapping found for '${rawName}'.Returning no data.`);
         magicRaw = null;
     }
 
@@ -3567,7 +3999,7 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
             });
         }
 
-        console.log(`[Trade Lookup] No explicit map. Trying Implicit Match. Targets: ${targets.length}`);
+        console.log(`[Trade Lookup] No explicit map.Trying Implicit Match.Targets: ${targets.length} `);
         // console.log('   Keys:', uniqueKeys);
 
         targets.forEach(p => {
@@ -3614,7 +4046,7 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
                     const accountData = state.deepScanData[targetAccountId];
                     if (accountData && accountData.tradesById && accountData.tradesById[magicNumber]) {
                         const found = accountData.tradesById[magicNumber];
-                        console.log(`[Trade Lookup] Found ${found.length} trades for magic '${magicNumber}' in account ${targetAccountId}`);
+                        console.log(`[Trade Lookup] Found ${found.length} trades for magic '${magicNumber}' in account ${targetAccountId} `);
                         allRealTrades = allRealTrades.concat(found);
                     }
                 } else {
@@ -3654,7 +4086,7 @@ const getRealTradesForStrategy = (index, portfolio = null) => {
  */
 const auditPortfolio = (portfolioIndex) => {
     const portfolio = state.savedPortfolios[portfolioIndex];
-    console.log(`[AUDIT] Starting audit for index: ${portfolioIndex}`, portfolio);
+    console.log(`[AUDIT] Starting audit for index: ${portfolioIndex} `, portfolio);
 
     const auditContainer = document.getElementById('audit-report-container');
 
@@ -3669,7 +4101,7 @@ const auditPortfolio = (portfolioIndex) => {
         // Proceeding anyway to see if calculated is also 0
     }
 
-    console.group(`[AUDIT] Portfolio Consistency Check: ${portfolio.name}`);
+    console.group(`[AUDIT] Portfolio Consistency Check: ${portfolio.name} `);
 
     let calculatedTotalTrades = 0;
     let calculatedTotalProfit = 0;
@@ -3683,9 +4115,9 @@ const auditPortfolio = (portfolioIndex) => {
     const reportedTotalTrades = portfolio.realMetrics.totalRealTrades || portfolio.realMetrics.tradesCount || 0;
     const reportedTotalProfit = portfolio.realMetrics.totalRealProfit || portfolio.realMetrics.totalProfit || 0;
 
-    console.log(`Trades: Calculated ${calculatedTotalTrades} vs Reported ${reportedTotalTrades}`);
+    console.log(`Trades: Calculated ${calculatedTotalTrades} vs Reported ${reportedTotalTrades} `);
     // Final Log
-    console.log(`Profit: Calculated ${calculatedTotalProfit.toFixed(2)} vs Reported ${reportedTotalProfit.toFixed(2)}`);
+    console.log(`Profit: Calculated ${calculatedTotalProfit.toFixed(2)} vs Reported ${reportedTotalProfit.toFixed(2)} `);
 
     const isMatch = calculatedTotalTrades === reportedTotalTrades;
     const diff = reportedTotalTrades - calculatedTotalTrades;
@@ -3695,7 +4127,7 @@ const auditPortfolio = (portfolioIndex) => {
     if (auditContainer) {
         if (isMatch) {
             auditContainer.innerHTML = `
-                <div class="flex items-center gap-3 bg-green-900/30 border border-green-700/50 rounded-lg p-3">
+    < div class="flex items-center gap-3 bg-green-900/30 border border-green-700/50 rounded-lg p-3" >
                     <span class="text-2xl">✅</span>
                     <div class="flex-1">
                         <h4 class="text-sm font-bold text-green-400">Consistencia Verificada</h4>
@@ -3713,12 +4145,12 @@ const auditPortfolio = (portfolioIndex) => {
                         <div class="text-xs text-gray-400">Ganancia Calc.</div>
                         <div class="text-sm font-bold text-green-300">$${calculatedTotalProfit.toFixed(2)}</div>
                     </div>
-                </div>
-            `;
-            console.log(`%c✅ TRADE COUNT MATCH`, 'color: green; font-weight: bold;');
+                </div >
+    `;
+            console.log(`% c✅ TRADE COUNT MATCH`, 'color: green; font-weight: bold;');
         } else {
             auditContainer.innerHTML = `
-                <div class="flex items-center gap-3 bg-red-900/30 border border-red-700/50 rounded-lg p-3">
+    < div class="flex items-center gap-3 bg-red-900/30 border border-red-700/50 rounded-lg p-3" >
                     <span class="text-2xl">⚠️</span>
                     <div class="flex-1">
                         <h4 class="text-sm font-bold text-red-400">Discrepancia Detectada</h4>
@@ -3736,9 +4168,9 @@ const auditPortfolio = (portfolioIndex) => {
                         <div class="text-xs text-gray-400">Ganancia Calc.</div>
                         <div class="text-sm font-bold text-red-300">$${calculatedTotalProfit.toFixed(2)}</div>
                     </div>
-                </div>
-            `;
-            console.error(`❌ TRADE COUNT MISMATCH (Diff: ${diff})`);
+                </div >
+    `;
+            console.error(`❌ TRADE COUNT MISMATCH(Diff: ${diff})`);
         }
     }
 
@@ -3751,7 +4183,7 @@ window.toggleBreakdownTrades = (id) => {
 };
 
 export const openRealTradesModal = async (index, type = 'strategy', parentPortfolioIndex = null) => {
-    console.log(`[UI] Opening Real Trades Modal for index: ${index}, type: ${type}`);
+    console.log(`[UI] Opening Real Trades Modal for index: ${index}, type: ${type} `);
 
     let strategyOrPortfolio;
     let allRealTrades = [];
@@ -3821,7 +4253,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
                     }
                 });
             }
-            console.log(`[UI] Debug Real Trades Modal (Portfolio): Found ${allRealTrades.length} trades via Robust Lookup.`);
+            console.log(`[UI] Debug Real Trades Modal(Portfolio): Found ${allRealTrades.length} trades via Robust Lookup.`);
 
             // --- TRIGGER AUDIT ---
             setTimeout(() => auditPortfolio(index), 100);
@@ -3861,7 +4293,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
     } else if (type === 'saved-backtest') {
         strategyOrPortfolio = state.savedPortfolios[index];
         if (strategyOrPortfolio) {
-            console.log(`[UI] Aggregating Backtest Trades for Portfolio: ${strategyOrPortfolio.name}`);
+            console.log(`[UI] Aggregating Backtest Trades for Portfolio: ${strategyOrPortfolio.name} `);
 
             if (strategyOrPortfolio.indices && strategyOrPortfolio.indices.length > 0) {
                 // Iterate strategies and aggregate trades
@@ -3921,13 +4353,13 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
                 if (!parsedData) {
                     // 2. Fallback: Parse File if it is a valid Blob/File
                     if (file instanceof File || file instanceof Blob) {
-                        console.log(`[UI] Parsing backtest file: ${file.name}`);
+                        console.log(`[UI] Parsing backtest file: ${file.name} `);
                         parsedData = await parseCsv(file);
                     } else {
                         throw new Error("File content not available. Please re-upload this strategy file or import the analysis JSON again.");
                     }
                 } else {
-                    console.log(`[UI] Using cached backtest data for: ${file.name}`);
+                    console.log(`[UI] Using cached backtest data for: ${file.name} `);
                 }
 
                 // Map CSV fields to Real Trades Modal format
@@ -3958,7 +4390,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
 
             } catch (err) {
                 console.error('[UI] Error parsing backtest trades:', err);
-                alert(`Error reading backtest file: ${err.message}`);
+                alert(`Error reading backtest file: ${err.message} `);
             }
         } else {
             console.error('[UI] Backtest File not found for index:', index);
@@ -4028,7 +4460,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
     }
 
     if (allRealTrades.length === 0) {
-        console.warn(`[UI] No real trades found for: ${strategyOrPortfolio.name}`);
+        console.warn(`[UI] No real trades found for: ${strategyOrPortfolio.name} `);
     }
 
     // --- WARNING INJECTION FOR NORMALIZATION ---
@@ -4049,18 +4481,18 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
     // strategyOrPortfolio is already defined above
     const isPortfolioNormalized = strategyOrPortfolio.riskConfig && strategyOrPortfolio.riskConfig.isScaled;
 
-    console.log(`[UI] RealTrades Warning Check: Global=${isGlobalNormalized}, Portfolio=${isPortfolioNormalized}`);
+    console.log(`[UI] RealTrades Warning Check: Global = ${isGlobalNormalized}, Portfolio = ${isPortfolioNormalized} `);
 
     if (isGlobalNormalized || isPortfolioNormalized) {
         const warningHTML = `
-            <div id="${warningId}" class="mx-6 mt-4 p-3 bg-yellow-900/40 border border-yellow-600/50 rounded-lg flex items-start gap-3">
+    < div id = "${warningId}" class="mx-6 mt-4 p-3 bg-yellow-900/40 border border-yellow-600/50 rounded-lg flex items-start gap-3" >
                 <span class="text-xl">⚠️</span>
                 <div class="text-sm text-yellow-200">
                     <p class="font-bold">Aviso: Datos Normalizados</p>
                     <p class="opacity-90">Estás visualizando datos con normalización de riesgo aplicada. Para ver los datos históricos originales (Backtest/Live directo), desactiva la configuración de riesgo en el panel de búsqueda o en el portafolio.</p>
                 </div>
-            </div>
-        `;
+            </div >
+    `;
         // Inject after header (which is the first child of modal content)
         const modalContent = document.getElementById('real-trades-modal-content');
         if (modalContent) {
@@ -4118,7 +4550,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
             // In Drawdown
             dd = runningBalance - maxRunningBalance; // negative value
             if (dd < -2000) {
-                console.log(`[UI Table] Deep Drawdown: ${dd.toFixed(2)} at ${closeDate.toISOString()} | Balance: ${runningBalance.toFixed(2)} | Peak: ${maxRunningBalance.toFixed(2)}`);
+                console.log(`[UI Table] Deep Drawdown: ${dd.toFixed(2)} at ${closeDate.toISOString()} | Balance: ${runningBalance.toFixed(2)} | Peak: ${maxRunningBalance.toFixed(2)} `);
             }
 
             // Stagnation Days
@@ -4159,10 +4591,10 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
 
     if (modalTitle) {
         const typeLabel = strategyOrPortfolio.backtest ? 'Backtest Trades' : 'Real Trades';
-        modalTitle.textContent = `${strategyOrPortfolio.name} - ${typeLabel}`;
+        modalTitle.textContent = `${strategyOrPortfolio.name} - ${typeLabel} `;
     }
     if (modalSubtitle) {
-        let subText = `Total Trades: ${trades.length} | Net Profit: $${runningBalance.toFixed(2)}`;
+        let subText = `Total Trades: ${trades.length} | Net Profit: $${runningBalance.toFixed(2)} `;
 
         // Enhance with Real Stats if available (calculated above for Portfolios or attached to strategies)
         const stats = strategyOrPortfolio.tempRealStats || strategyOrPortfolio.realMetrics;
@@ -4220,9 +4652,9 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
             btNum = parseFloat(btVal);
             if (!isNaN(btNum) && btNum !== 0) {
                 if (isPercent) {
-                    label = `${btNum.toFixed(2)}%`;
+                    label = `${btNum.toFixed(2)}% `;
                 } else {
-                    label = isMoney ? `$${btNum.toFixed(2)}` : btNum.toFixed(0);
+                    label = isMoney ? `$${btNum.toFixed(2)} ` : btNum.toFixed(0);
                     usedPercent = (currentPeak / btNum) * 100;
                 }
             }
@@ -4230,7 +4662,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
 
         // DEBUG: Trace Entry
         if (headerId.includes('dd') && isMoney) {
-            console.log(`[RiskHeader ERROR-TRACE] Header: ${headerId}, btNum: ${btNum}, type: ${type}, index: ${index}`);
+            console.log(`[RiskHeader ERROR - TRACE]Header: ${headerId}, btNum: ${btNum}, type: ${type}, index: ${index} `);
         }
 
         // --- Calculate Stats (Mean/Freq) ---
@@ -4261,7 +4693,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
 
                     if (idx !== -1) {
                         stratIndex = idx;
-                        console.log(`[RiskHeader] Resolved name '${index}' to index ${idx}`);
+                        console.log(`[RiskHeader] Resolved name '${index}' to index ${idx} `);
                     } else {
                         console.warn(`[RiskHeader] Could not resolve name '${index}' to an index in loadedStrategyFiles.`);
                     }
@@ -4273,14 +4705,14 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
                 rawTrades = state.rawStrategiesData[stratIndex];
                 console.log(`[RiskHeader] Found Raw Trades for Strategy Index ${stratIndex}: ${rawTrades.length} rows.`);
             } else if (type === 'saved') {
-                console.log(`[RiskHeader] Portfolio mode. No single raw file expected. Using Fallback.`);
+                console.log(`[RiskHeader] Portfolio mode.No single raw file expected.Using Fallback.`);
             }
 
             if (rawTrades) {
                 // DEBUG: Inspect Data Quality
                 if (rawTrades.length > 0) {
-                    // console.log(`[RiskHeader Debug] Header: ${headerId}, Keys:`, Object.keys(rawTrades[0]));
-                    // console.log(`[RiskHeader Debug] Sample PnL:`, rawTrades.slice(0, 5).map(t => t.pnl || t.profit));
+                    // console.log(`[RiskHeader Debug]Header: ${ headerId }, Keys: `, Object.keys(rawTrades[0]));
+                    // console.log(`[RiskHeader Debug] Sample PnL: `, rawTrades.slice(0, 5).map(t => t.pnl || t.profit));
                     if (rawTrades[0].hasOwnProperty('drawdown') || rawTrades[0].hasOwnProperty('Drawdown')) {
                         console.log(`[RiskHeader Debug] Explicit Drawdown Col Found.`);
                     } else {
@@ -4362,7 +4794,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
                 }
 
                 if (equityCurve && equityCurve.length > 0) {
-                    console.log(`[RiskHeader] Using Equity Curve Fallback. Points: ${equityCurve.length}`);
+                    console.log(`[RiskHeader] Using Equity Curve Fallback.Points: ${equityCurve.length} `);
                     let maxBal = -Infinity;
                     let maxBalIdx = -1;
                     let maxBalTime = 0;
@@ -4413,7 +4845,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
                 const freq = (incidents / metricCurve.length) * 100;
 
                 const meanDisp = isMoney ? `$${mean.toFixed(0)}` : mean.toFixed(1);
-                statsHtml = `<span class="text-gray-500 ml-1" title="Max BT Stats:\n[Avg: ${meanDisp}]: Media de los Picos de Evento\n[Freq: ${freq.toFixed(1)}%]: % Tiempo en este nivel">[Avg: ${meanDisp}] (Freq: ${freq.toFixed(1)}%)</span>`;
+                statsHtml = `< span class="text-gray-500 ml-1" title = "Max BT Stats:\n[Avg: ${meanDisp}]: Media de los Picos de Evento\n[Freq: ${freq.toFixed(1)}%]: % Tiempo en este nivel" > [Avg: ${meanDisp}](Freq: ${freq.toFixed(1)} %)</span > `;
             }
         }
 
@@ -4424,7 +4856,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
         if (usedPercent > 80) usedColor = 'text-red-500 font-bold';
         else if (usedPercent > 50) usedColor = 'text-orange-400';
 
-        header.innerHTML = `${title}<div class="text-[10px] text-gray-400 font-normal mt-0.5 leading-tight">Max BT: ${label}${statsHtml}<br><span class="${usedColor} text-[10px]">(${usedPercent.toFixed(1)}% Used)</span></div>`;
+        header.innerHTML = `${title} <div class="text-[10px] text-gray-400 font-normal mt-0.5 leading-tight">Max BT: ${label}${statsHtml}<br><span class="${usedColor} text-[10px]">(${usedPercent.toFixed(1)}% Used)</span></div>`;
     };
 
     updateRiskHeader('real-trades-dd-header', peakRealDDMoney, ['maxDrawdownInDollars', 'drawdown_money', 'maxDD'], ['maxDrawdown', 'maxDDPct'], true);
@@ -4442,7 +4874,7 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
         }
 
         if (trades.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="14" class="p-4 text-center text-gray-500">No real trades found.</td></tr>`;
+            tableBody.innerHTML = `< tr > <td colspan="14" class="p-4 text-center text-gray-500">No real trades found.</td></tr > `;
         } else {
             tableBody.innerHTML = trades.map(t => {
                 const bal = t._balance;
@@ -4458,11 +4890,11 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
                     if (isNaN(d.getTime())) return dateStr;
 
                     const pad = (n) => n.toString().padStart(2, '0');
-                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                    return `${d.getFullYear()} -${pad(d.getMonth() + 1)} -${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} `;
                 };
 
                 return `
-                        <tr class="hover:bg-gray-800/50 transition-colors border-b border-gray-700/50 last:border-0">
+    < tr class="hover:bg-gray-800/50 transition-colors border-b border-gray-700/50 last:border-0" >
                             <td>${t.ticket || t.id || '-'}</td>
                             <td class="text-xs text-gray-500 font-mono" title="${t.magic || t.magicNumber || t.comment || '-'}">
                                 ${(() => {
@@ -4485,8 +4917,8 @@ export const openRealTradesModal = async (index, type = 'strategy', parentPortfo
                             <td class="text-orange-300 text-right">${t._stagDays === 0 ? '-' : t._stagDays}</td>
                             <td class="text-orange-300 text-right">${t._stagTrades === 0 ? '-' : t._stagTrades}</td>
                             <td class="${isPositiveBal ? 'text-green-400' : 'text-red-400'} font-bold">${bal.toFixed(2)}</td>
-                        </tr>
-                    `;
+                        </tr >
+    `;
             }).join('');
         }
     }
@@ -4632,11 +5064,11 @@ export const copyRealTradesToClipboard = async () => {
         if (btn) {
             const originalContent = btn.innerHTML;
             btn.innerHTML = `
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                </svg>
-                <span>Copied!</span>
-            `;
+    < svg class="w-4 h-4" fill = "none" stroke = "currentColor" viewBox = "0 0 24 24" >
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg >
+    <span>Copied!</span>
+`;
             btn.classList.remove('bg-blue-600', 'hover:bg-blue-500', 'border-blue-500');
             btn.classList.add('bg-green-600', 'hover:bg-green-500', 'border-green-500');
 
@@ -4744,7 +5176,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
         });
     }
 
-    document.getElementById('strategy-breakdown-title').textContent = `Risk Breakdown: ${p.name}`;
+    document.getElementById('strategy-breakdown-title').textContent = `Risk Breakdown: ${p.name} `;
     const tbody = document.getElementById('strategy-breakdown-table-body');
     const modal = document.getElementById('strategy-breakdown-modal');
     const modalContent = document.getElementById('strategy-breakdown-modal-content');
@@ -4792,14 +5224,14 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
 
     if (isGlobalNormalized || isPortfolioNormalized) {
         const warningHTML = `
-            <div id="${warningId}" class="mx-6 mt-4 p-3 bg-yellow-900/40 border border-yellow-600/50 rounded-lg flex items-start gap-3">
+    < div id = "${warningId}" class="mx-6 mt-4 p-3 bg-yellow-900/40 border border-yellow-600/50 rounded-lg flex items-start gap-3" >
                 <span class="text-xl">⚠️</span>
                 <div class="text-sm text-yellow-200">
                     <p class="font-bold">Aviso: Datos Normalizados</p>
                     <p class="opacity-90">Estás visualizando el desglose de riesgo sobre datos normalizados. Los valores mostrados pueden diferir de los históricos reales.</p>
                 </div>
-            </div>
-        `;
+            </div >
+    `;
         // Inject after header
         const header = modalContent.querySelector('.border-b.border-gray-700');
         if (header) header.insertAdjacentHTML('afterend', warningHTML);
@@ -4822,14 +5254,14 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
             if (p.strategyNames && p.strategyNames.length > 0) {
                 // Create dummy indices if we only have names (Saved Portfolio case)
                 loopSource = p.strategyNames.map((_, i) => i);
-                console.log(`[RiskModal] Using strategyNames as loop source. Length: ${loopSource.length}`);
+                console.log(`[RiskModal] Using strategyNames as loop source.Length: ${loopSource.length} `);
             } else {
                 console.warn('[RiskModal] No indices or strategyNames found.');
                 tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No strategies found in this portfolio.</td></tr>';
                 return;
             }
         } else {
-            console.log(`[RiskModal] Using p.indices. Length: ${loopSource.length}`);
+            console.log(`[RiskModal] Using p.indices.Length: ${loopSource.length} `);
         }
 
         // Formatting helper: 2,000 -> 2 000
@@ -4850,7 +5282,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                 stratRef = window.analysisResults[p.indices[localIdx]];
             }
 
-            let stratName = stratRef ? stratRef.name : `Strategy ${localIdx + 1}`;
+            let stratName = stratRef ? stratRef.name : `Strategy ${localIdx + 1} `;
             if (p.strategyNames && p.strategyNames[localIdx]) stratName = p.strategyNames[localIdx];
 
             // Normalize Name for display
@@ -4860,7 +5292,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
 
             // 2. Get Real Trades
             const realTrades = getRealTradesForStrategy(stratIdx, p);
-            console.log(`[RiskModal]   Real Trades: ${realTrades.length}`);
+            console.log(`[RiskModal]   Real Trades: ${realTrades.length} `);
 
             // Accumulate for Portfolio Stats
             allPortfolioRealTrades = allPortfolioRealTrades.concat(realTrades);
@@ -5076,7 +5508,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                     else if (!isMoney) btVal = findVal(btKeysGen);
                 }
 
-                const realDisp = hasReal ? (isMoney ? `$${fmt(realVal, 2)}` : fmt(realVal, 0)) : '-';
+                const realDisp = hasReal ? (isMoney ? `$${fmt(realVal, 2)} ` : fmt(realVal, 0)) : '-';
 
                 let btDisp = '-';
                 let yieldDisp = '-';
@@ -5085,7 +5517,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                 if (btVal !== null) {
                     const num = parseFloat(btVal);
                     if (!isNaN(num) && num !== 0) {
-                        btDisp = isMoney ? `$${fmt(num, 0)}` : fmt(num, 0); // No decimals for BT usually
+                        btDisp = isMoney ? `$${fmt(num, 0)} ` : fmt(num, 0); // No decimals for BT usually
 
                         if (hasReal) {
                             const yieldVal = (realVal / num) * 100;
@@ -5094,7 +5526,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                             if (yieldVal > 100) yieldColor = 'text-red-500 font-bold';
                             else if (yieldVal > 80) yieldColor = 'text-yellow-400';
 
-                            yieldDisp = `<span class="${yieldColor}" title="Yield: Magnitud del Real vs Maximo Historico">${yieldVal.toFixed(1)}%</span>`;
+                            yieldDisp = `< span class="${yieldColor}" title = "Yield: Magnitud del Real vs Maximo Historico" > ${yieldVal.toFixed(1)}%</span > `;
 
                             // Calculate Max BT Frequency & Mean
                             let btFreqVal = 0;
@@ -5126,8 +5558,8 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                             }
 
                             if (showBtStats) {
-                                const mDisp = metricType === 'drawdown' ? `$${btMeanVal.toFixed(0)}` : btMeanVal.toFixed(1);
-                                const extraInfo = `<span class="text-gray-600 ml-1" title="Max BT Stats:\n[Avg: ${mDisp}]: Media Histórica\n[Freq: ${btFreqVal.toFixed(1)}%]: % de veces que se alcanzó este Máximo">[Avg: ${mDisp}] (Freq: ${btFreqVal.toFixed(1)}%)</span>`;
+                                const mDisp = metricType === 'drawdown' ? `$${btMeanVal.toFixed(0)} ` : btMeanVal.toFixed(1);
+                                const extraInfo = `< span class="text-gray-600 ml-1" title = "Max BT Stats:\n[Avg: ${mDisp}]: Media Histórica\n[Freq: ${btFreqVal.toFixed(1)}%]: % de veces que se alcanzó este Máximo" > [Avg: ${mDisp}](Freq: ${btFreqVal.toFixed(1)} %)</span > `;
                                 btDisp += extraInfo;
                             }
 
@@ -5157,16 +5589,16 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                                 if (freqVal < 5) freqColor = 'text-red-500 font-bold';
                                 else if (freqVal < 20) freqColor = 'text-yellow-400';
 
-                                const meanDisp = metricType === 'drawdown' ? `$${meanVal.toFixed(0)}` : meanVal.toFixed(1);
+                                const meanDisp = metricType === 'drawdown' ? `$${meanVal.toFixed(0)} ` : meanVal.toFixed(1);
 
-                                freqDisp = `<div class="text-[10px] ${freqColor} mt-0.5 cursor-help" title="Frecuencia: % de la historia en que el valor fue >= al actual.\n[Avg: ${meanDisp}]: Es la Media (promedio de todos los valores históricos > 0).\n\nCuanto más ALTO el %: Más normal es la situación.\nCuanto más BAJO el %: Más extraordinaria.">Freq: ${freqVal.toFixed(1)}% [Avg: ${meanDisp}]</div>`;
+                                freqDisp = `< div class="text-[10px] ${freqColor} mt-0.5 cursor-help" title = "Frecuencia: % de la historia en que el valor fue >= al actual.\n[Avg: ${meanDisp}]: Es la Media (promedio de todos los valores históricos > 0).\n\nCuanto más ALTO el %: Más normal es la situación.\nCuanto más BAJO el %: Más extraordinaria." > Freq: ${freqVal.toFixed(1)}% [Avg: ${meanDisp}]</div > `;
                             }
                         }
                     }
                 }
 
                 return `
-                    <div class="leading-tight">
+    < div class="leading-tight" >
                         <div class="font-bold text-gray-200">${realDisp}</div>
                         <div class="text-[10px] text-gray-500 mt-0.5">
                             Max BT: <span class="text-gray-400">${btDisp}</span>
@@ -5175,8 +5607,8 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                              ${yieldDisp}
                         </div>
                         ${freqDisp}
-                    </div>
-                `;
+                    </div >
+    `;
             };
 
             // Styling Yield
@@ -5184,7 +5616,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
             let status = 'Active';
 
             return `
-            <tr class="hover:bg-gray-800/50 transition-colors border-b border-gray-800 last:border-0">
+    < tr class="hover:bg-gray-800/50 transition-colors border-b border-gray-800 last:border-0" >
                 <td class="p-4 font-medium text-sky-300">
                     <div class="flex items-center">
                         <div class="truncate w-48" title="${stratName}">${stratName}</div>
@@ -5207,17 +5639,17 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                     $${fmt(runBal, 2)}
                 </td>
                 <td class="p-4 text-right"><span class="text-green-400 text-xs">${status}</span></td>
-            </tr>`;
+            </tr > `;
         }).join('');
 
         tbody.innerHTML = rows + `
-        <tr class="bg-gray-800 border-t-2 border-gray-700 font-bold">
+    < tr class="bg-gray-800 border-t-2 border-gray-700 font-bold" >
             <td class="p-4 text-white text-right font-medium text-sky-300" colspan="4">TOTAL BALANCE</td>
             <td class="p-4 text-right ${totalPortfolioBalance >= 0 ? 'text-green-300' : 'text-red-400'} text-lg">
                 $${fmt(totalPortfolioBalance, 2)}
             </td>
             <td></td>
-        </tr>`;
+        </tr > `;
 
         // --- PORTFOLIO AGGREGATE STATS CALCULATION ---
 
@@ -5373,7 +5805,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
             let freqDisp = '';
 
             if (btVal !== undefined && btVal !== null) {
-                btDisp = type === 'money' ? `$${fmt(btVal, 0)}` : fmt(btVal, 0);
+                btDisp = type === 'money' ? `$${fmt(btVal, 0)} ` : fmt(btVal, 0);
 
                 const ratio = realVal / Math.abs(btVal);
                 const yieldVal = ratio * 100;
@@ -5382,7 +5814,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                 if (yieldVal > 100) yieldColor = 'text-red-500 font-bold';
                 else if (yieldVal > 80) yieldColor = 'text-yellow-400';
 
-                yieldDisp = `<span class="${yieldColor}" title="Yield: Magnitud del Real vs Maximo Historico">${yieldVal.toFixed(1)}%</span>`;
+                yieldDisp = `< span class="${yieldColor}" title = "Yield: Magnitud del Real vs Maximo Historico" > ${yieldVal.toFixed(1)}%</span > `;
             }
 
             if (hasRealPort && allPortfolioBacktestTrades.length > 0) {
@@ -5390,14 +5822,14 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                 if (freqVal < 5) freqColor = 'text-red-500 font-bold';
                 else if (freqVal < 20) freqColor = 'text-yellow-400';
 
-                const meanDisp = type === 'money' ? `$${meanVal.toFixed(0)}` : meanVal.toFixed(1);
-                freqDisp = `<div class="text-[10px] ${freqColor} mt-0.5 cursor-help" title="Frecuencia Portfolio: % de la historia en que el valor fue >= al actual.">Freq: ${freqVal.toFixed(1)}% [Avg: ${meanDisp}]</div>`;
+                const meanDisp = type === 'money' ? `$${meanVal.toFixed(0)} ` : meanVal.toFixed(1);
+                freqDisp = `< div class="text-[10px] ${freqColor} mt-0.5 cursor-help" title = "Frecuencia Portfolio: % de la historia en que el valor fue >= al actual." > Freq: ${freqVal.toFixed(1)}% [Avg: ${meanDisp}]</div > `;
             }
 
-            const realDisp = type === 'money' ? `$${fmt(realVal, 0)}` : fmt(realVal, 0);
+            const realDisp = type === 'money' ? `$${fmt(realVal, 0)} ` : fmt(realVal, 0);
 
             return `
-                    <div class="leading-tight">
+    < div class="leading-tight" >
                         <div class="font-bold text-gray-200">${realDisp}</div>
                         <div class="text-[10px] text-gray-500 mt-0.5">
                             Max BT: <span class="text-gray-400">${btDisp}</span>
@@ -5406,12 +5838,12 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                              ${yieldDisp}
                         </div>
                          ${freqDisp}
-                    </div>
-                `;
+                    </div >
+    `;
         };
 
         const portRow = `
-            <tr class="bg-gray-800/80 border-t border-gray-700 hover:bg-gray-700/50 transition-colors">
+    < tr class="bg-gray-800/80 border-t border-gray-700 hover:bg-gray-700/50 transition-colors" >
                 <td class="p-4 font-bold text-purple-300 flex flex-col">
                     <span>⚡ PORTFOLIO STATS</span>
                     <span class="text-[10px] text-gray-500 font-normal">Aggregated Real Performance</span>
@@ -5429,7 +5861,7 @@ window.openStrategyBreakdownModal = (portfolioIndex) => {
                    <!-- Placeholder or duplicate balance -->
                 </td>
                  <td class="p-4 text-right"></td>
-            </tr>`;
+            </tr > `;
 
         // Append to tbody (only if we have something to show, either real or backtest)
         if (hasRealPort || allPortfolioBacktestTrades.length > 0) {
@@ -5494,7 +5926,7 @@ window.toggleStrategyOverlay = (strategyName, buttonElement) => {
     const needsHydration = !strategy || !strategy.realMetrics || !strategy.realMetrics._tradesById;
 
     if (needsHydration) {
-        console.log(`[UI] Strategy '${strategyName}' needs hydration/selection. Delegating to FocusMode.`);
+        console.log(`[UI] Strategy '${strategyName}' needs hydration / selection.Delegating to FocusMode.`);
 
         // Dynamic import to avoid circular dependency issues if any
         import('./modules/focusMode.js').then(module => {
@@ -5540,7 +5972,7 @@ window.toggleStrategyOverlay = (strategyName, buttonElement) => {
     strategy.showBacktestOverlay = (strategy.showBacktestOverlay === false) ? true : false;
     const isVisible = strategy.showBacktestOverlay;
 
-    console.log(`[UI] Toggled Overlay for '${strategyName}' to ${isVisible}`);
+    console.log(`[UI] Toggled Overlay for '${strategyName}' to ${isVisible} `);
 
     // Immediate UI Feedback
     if (buttonElement) {

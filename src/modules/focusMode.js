@@ -608,7 +608,7 @@ export const focusMode = {
                             // [FIX] Self-Healing: If still no trades, try parsing raw CSV data directly
                             if (stratTrades.length === 0 && strat.originalIndex !== undefined && state.rawStrategiesData && state.rawStrategiesData[strat.originalIndex]) {
                                 const rawData = state.rawStrategiesData[strat.originalIndex];
-                                if (typeof rawData === 'string' && rawData.length > 100) {
+                                if (Array.isArray(rawData)) {
                                     try {
                                         const parsed = parseTradesFromData(rawData);
                                         if (parsed && parsed.length > 0) {
@@ -617,6 +617,26 @@ export const focusMode = {
                                         }
                                     } catch (e) {
                                         console.error(`[FocusMode] ❌ Self-Healing failed for ${strat.name}:`, e);
+                                    }
+                                }
+                            }
+
+                            // [FIX] Ultimate Self-Healing: if we still don't have trades, it might be due to window.analysisResults indices drift.
+                            // Let's try to match by name on the loaded files.
+                            if (stratTrades.length === 0 && state.loadedStrategyFiles) {
+                                const fallBackIndex = state.loadedStrategyFiles.findIndex(f => f.name === strat.name);
+                                if (fallBackIndex !== -1 && state.rawStrategiesData && state.rawStrategiesData[fallBackIndex]) {
+                                    const rawData = state.rawStrategiesData[fallBackIndex];
+                                    if (Array.isArray(rawData)) {
+                                        try {
+                                            const parsed = parseTradesFromData(rawData);
+                                            if (parsed && parsed.length > 0) {
+                                                stratTrades = parsed;
+                                                console.log(`[FocusMode] 🚑 Ultimate Self-Healing (Index Drift): Parsed ${stratTrades.length} trades for ${strat.name}`);
+                                            }
+                                        } catch (e) {
+                                            console.error(`[FocusMode] ❌ Ultimate Self-Healing failed for ${strat.name}:`, e);
+                                        }
                                     }
                                 }
                             }
@@ -806,14 +826,12 @@ export const focusMode = {
                 // 2. TOGGLE VIEW LOGIC: Apply Date Filter to Analysis if needed
                 // This now acts on the "analysis" object which (thanks to step 1) should contain the Full History.
                 let activeFilterForTable = null;
-                if (item.viewMode === 'optimized') {
-                    if (item.creationFilter) {
-                        activeFilterForTable = item.creationFilter;
-                    } else if (state.strategyDateRanges) {
-                        // Resolve from Global State
-                        const sId = item.id || item.name;
-                        activeFilterForTable = state.strategyDateRanges[sId] || state.strategyDateRanges[item.name];
-                    }
+                if (item.creationFilter) {
+                    activeFilterForTable = item.creationFilter;
+                } else if (item.viewMode === 'optimized' && state.strategyDateRanges) {
+                    // Resolve from Global State
+                    const sId = item.id || item.name;
+                    activeFilterForTable = state.strategyDateRanges[sId] || state.strategyDateRanges[item.name];
                 }
 
                 if (activeFilterForTable) {
@@ -867,27 +885,34 @@ export const focusMode = {
                     }
                 }
 
-                // [FIX] Propagate Metrics to Item for Table Display
-                // SKIP if we're in optimized view mode (metrics will be recalculated later)
-                if ((item.type === 'databank' || item.type === 'saved') && analysis && analysis.metrics && item.viewMode !== 'optimized') {
-                    // Update the item metrics so the table sees the change (Optimized or Full)
+                // [FIX-v2] For Databank items, the analysis.metrics contains NORMALIZED values
+                // (e.g., Profit=5.37 instead of $35,837) computed from raw CSV PnL.
+                // We must NOT overwrite the backend's correct dollar-denominated p.metrics.
+                // Only store the analysis for CHART rendering purposes.
+                if (item.type === 'databank') {
+                    // Store the analysis on the item for chart use, but DON'T touch metrics
+                    if (analysis) {
+                        item.analysis = analysis;
+                        // Also store on the global state item for chart access
+                        const globalItem = state.databankPortfolios?.find(p => p.name === item.name);
+                        if (globalItem) {
+                            globalItem.analysis = analysis;
+                        }
+                    }
+                    console.log(`[FocusMode] 📊 DataBank: Stored analysis for charts only. NOT overwriting table metrics.`);
+                } else if (item.type === 'saved' && analysis && analysis.metrics && item.viewMode !== 'optimized') {
+                    // For saved portfolios, propagation is safe (metrics come from full backend analysis)
                     item.metrics = { ...item.metrics, ...analysis.metrics };
 
-                    // Explicit top-level aliases for the Table Engine (which often reads direct props)
                     if (analysis.metrics.totalProfit !== undefined) item.totalProfit = analysis.metrics.totalProfit;
                     if (analysis.metrics.maxDrawdownInDollars !== undefined) item.maxDrawdownInDollars = analysis.metrics.maxDrawdownInDollars;
                     if (analysis.metrics.totalTrades !== undefined) item.totalTrades = analysis.metrics.totalTrades;
-
-                    // [FIX] Propagate ALL other metrics for Databank
                     if (analysis.metrics.sharpeRatio !== undefined) item.sharpeRatio = analysis.metrics.sharpeRatio;
                     if (analysis.metrics.profitFactor !== undefined) item.profitFactor = analysis.metrics.profitFactor;
                     if (analysis.metrics.cagr !== undefined) item.cagr = analysis.metrics.cagr;
                     if (analysis.metrics.sqn !== undefined) item.sqn = analysis.metrics.sqn;
                     if (analysis.metrics.returnDD !== undefined) item.returnDD = analysis.metrics.returnDD;
                     if (analysis.metrics.winningPercentage !== undefined) item.winningPercentage = analysis.metrics.winningPercentage;
-                    if (analysis.metrics.metricValue !== undefined) item.metricValue = analysis.metrics.metricValue;
-
-                    // [FIX] Add Advanced Metrics Propagations
                     if (analysis.metrics.gammaFlowScore !== undefined) item.gammaFlowScore = analysis.metrics.gammaFlowScore;
                     if (analysis.metrics.maxStagnationTrades !== undefined) item.maxStagnationTrades = analysis.metrics.maxStagnationTrades;
                     if (analysis.metrics.maxStagnationDays !== undefined) item.maxStagnationDays = analysis.metrics.maxStagnationDays;
@@ -896,52 +921,7 @@ export const focusMode = {
                     if (analysis.metrics.sortinoRatio !== undefined) item.sortinoRatio = analysis.metrics.sortinoRatio;
                     if (analysis.metrics.sharpeRatioTrade !== undefined) item.sharpeRatioTrade = analysis.metrics.sharpeRatioTrade;
 
-
-                    console.log(`[FocusMode] 🔄 Propagated metrics to item ${item.name}: Profit=${item.totalProfit}, Trades=${item.totalTrades}`);
-
-                    // [FIX] Explicit Global State Sync for Databank Items
-                    // This ensures that if we are working with a copy or if the state reference is tricky,
-                    // we explicitly find the authoritative                // [FIX] Explicit Global State Sync for Databank Items
-                    if (item.type === 'databank' && state.databankPortfolios && item.viewMode !== 'optimized') {
-                        const globalItem = state.databankPortfolios.find(p => p.name === item.name);
-                        if (globalItem) {
-                            // Check if values are actually different before syncing to logs
-                            const oldProfit = globalItem.totalProfit;
-
-                            globalItem.metrics = { ...globalItem.metrics, ...item.metrics };
-
-                            globalItem.totalProfit = item.totalProfit;
-                            globalItem.totalTrades = item.totalTrades;
-                            globalItem.maxDrawdownInDollars = item.maxDrawdownInDollars;
-                            globalItem.sharpeRatio = item.sharpeRatio;
-                            globalItem.profitFactor = item.profitFactor;
-                            globalItem.cagr = item.cagr;
-                            globalItem.sqn = item.sqn;
-                            globalItem.returnDD = item.returnDD;
-                            globalItem.winningPercentage = item.winningPercentage;
-
-                            // [FIX] Sync Advanced Metrics to Global State
-                            globalItem.gammaFlowScore = item.gammaFlowScore;
-                            globalItem.maxStagnationTrades = item.maxStagnationTrades;
-                            globalItem.maxStagnationDays = item.maxStagnationDays;
-                            globalItem.maxConsecutiveLosses = item.maxConsecutiveLosses;
-                            globalItem.upi = item.upi;
-                            globalItem.sortinoRatio = item.sortinoRatio;
-                            globalItem.sharpeRatioTrade = item.sharpeRatioTrade;
-
-                            globalItem.viewMode = item.viewMode;
-                            if (item.analysis) globalItem.analysis = item.analysis;
-
-                            console.log(`[FocusMode] 🌍 Global Sync for ${item.name}: OldProfit=${oldProfit} -> NewProfit=${globalItem.totalProfit}. ViewMode=${globalItem.viewMode}`);
-
-                            // FORCE TABLE RENDER
-                            if (window.updateDatabankDisplay) {
-                                window.updateDatabankDisplay();
-                            }
-                        } else {
-                            console.error(`[FocusMode] ❌ Could not find global item for ${item.name} in state.databankPortfolios!`);
-                        }
-                    }
+                    console.log(`[FocusMode] 🔄 Propagated metrics to saved item ${item.name}: Profit=${item.totalProfit}, Trades=${item.totalTrades}`);
                 }
 
                 // Determine savedIndex for correct color assignment in UI
@@ -1301,9 +1281,35 @@ export const focusMode = {
 
                     // Build or use TradeSeries base
                     let baseSeries = item.pnlSeries;
-                    if (!baseSeries && item.type === 'strategy' && analysisObj.analysis.trades) {
-                        baseSeries = new TradeSeries(analysisObj.analysis.trades, state.tradePnlOverrides || {});
-                        item.pnlSeries = baseSeries; // Cache it
+
+                    // Fallback to building the series dynamically if it's missing
+                    if (!baseSeries) {
+                        if (item.type === 'strategy' && analysisObj.analysis.trades) {
+                            baseSeries = new TradeSeries(analysisObj.analysis.trades, state.tradePnlOverrides || {});
+                            item.pnlSeries = baseSeries; // Cache it
+                        } else if (item.type === 'saved' || item.type === 'portfolio') {
+                            // Rehydrate portfolio tradeseries by merging component strategies
+                            const seriesList = [];
+                            const indices = item.indices || [];
+
+                            if (indices.length === 0 && item.strategyIds) {
+                                item.strategyIds.forEach(id => {
+                                    const idx = state.loadedStrategyFiles.findIndex(f => f.strategyId === id);
+                                    if (idx !== -1) indices.push(idx);
+                                });
+                            }
+
+                            indices.forEach(idx => {
+                                if (state.strategySeries && state.strategySeries[idx]) {
+                                    seriesList.push(state.strategySeries[idx]);
+                                }
+                            });
+
+                            if (seriesList.length > 0) {
+                                baseSeries = TradeSeries.merge(seriesList);
+                                item.pnlSeries = baseSeries;
+                            }
+                        }
                     }
 
                     if (baseSeries) {
@@ -1316,13 +1322,16 @@ export const focusMode = {
                         analysisObj.pnlSeries = displaySeries;
 
                         // Sync metrics locally for the item
-                        // Sync metrics locally for the item
-                        if (activeFilter) {
+                        // [FIX-v2] SKIP for databank items — displaySeries has normalized (%)
+                        // values, not dollars. Syncing would corrupt the backend's correct metrics.
+                        if (activeFilter && item.type !== 'databank') {
                             item.totalProfit = displaySeries.totalProfit;
                             item.maxDrawdownInDollars = displaySeries.maxDrawdown;
                             if (!item.metrics) item.metrics = {};
-                            item.metrics.netProfit = displaySeries.totalProfit;
-                            item.metrics.drawdown = displaySeries.maxDrawdown;
+                            // [FIX] Use correct metric keys matching backend/config.js
+                            item.metrics.totalProfit = displaySeries.totalProfit;
+                            item.metrics.totalTrades = displaySeries.totalTrades;
+                            item.metrics.maxDrawdownInDollars = displaySeries.maxDrawdown;
 
                             // Re-sync to global state
                             this.syncItemToGlobalState(item);
@@ -1582,21 +1591,39 @@ export const focusMode = {
     syncItemToGlobalState(item) {
         if (!item) return;
 
+        // [FIX] Only sync specific safe properties instead of blindly spreading.
+        // Spreading the entire item was corrupting the original backend metrics object
+        // and injecting pnlSeries that could produce wrong values after date filtering.
+        const safeKeys = ['pnlSeries', 'totalProfit', 'maxDrawdownInDollars', 'creationFilter'];
+
+        const applySafeSync = (target) => {
+            safeKeys.forEach(key => {
+                if (item[key] !== undefined) {
+                    target[key] = item[key];
+                }
+            });
+            // Sync specific metric keys without replacing the entire metrics object
+            if (item.metrics && target.metrics) {
+                if (item.metrics.totalProfit !== undefined) target.metrics.totalProfit = item.metrics.totalProfit;
+                if (item.metrics.totalTrades !== undefined) target.metrics.totalTrades = item.metrics.totalTrades;
+                if (item.metrics.maxDrawdownInDollars !== undefined) target.metrics.maxDrawdownInDollars = item.metrics.maxDrawdownInDollars;
+            }
+        };
+
         // 1. Sync to Databank Portfolios
         if (state.databankPortfolios) {
-            // Try to find by ID (if strategies have ID) or fallback to Name
             let found = false;
             if (item.id) {
                 const idx = state.databankPortfolios.findIndex(p => p.id === item.id);
                 if (idx !== -1) {
-                    state.databankPortfolios[idx] = { ...state.databankPortfolios[idx], ...item };
+                    applySafeSync(state.databankPortfolios[idx]);
                     found = true;
                 }
             }
             if (!found && item.name) {
                 const idx = state.databankPortfolios.findIndex(p => p.name === item.name);
                 if (idx !== -1) {
-                    state.databankPortfolios[idx] = { ...state.databankPortfolios[idx], ...item };
+                    applySafeSync(state.databankPortfolios[idx]);
                     found = true;
                 }
             }
@@ -1607,12 +1634,12 @@ export const focusMode = {
             if (item.id) {
                 const idx = state.savedPortfolios.findIndex(p => p.id === item.id);
                 if (idx !== -1) {
-                    state.savedPortfolios[idx] = { ...state.savedPortfolios[idx], ...item };
+                    applySafeSync(state.savedPortfolios[idx]);
                 }
             } else if (item.name) {
                 const idx = state.savedPortfolios.findIndex(p => p.name === item.name);
                 if (idx !== -1) {
-                    state.savedPortfolios[idx] = { ...state.savedPortfolios[idx], ...item };
+                    applySafeSync(state.savedPortfolios[idx]);
                 }
             }
         }

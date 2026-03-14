@@ -195,8 +195,12 @@ async def read_index():
     # Asegurarse de que el archivo index.html exista en la raíz del proyecto.
     return FileResponse('index.html')
 
+@app.get("/favicon.svg", include_in_schema=False)
+async def favicon():
+    return FileResponse('favicon.svg')
+
 # --- Endpoints de la API ---
-@app.get("/")
+@app.get("/api/status")
 def read_root():
     return {"message": "¡Hola! El backend de Python está funcionando."}
 

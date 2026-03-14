@@ -959,12 +959,19 @@ export function recalculateStrategyBreakdown(portfolio) {
             let maxBalance = 0;
             let maxDD = 0;
             let totalProfit = 0;
+            let mt5ConnectionDate = null;
 
             // Sort by time
             trades.sort((a, b) => new Date(a.closeTime || a.closeDate) - new Date(b.closeTime || b.closeDate));
 
-            trades.forEach(t => {
+            trades.forEach((t, idx) => {
                 if (t.action === 'Deposit' || t.action === 'Withdrawal') return;
+
+                // Track the very first valid trade date as the MT5 connection date
+                if (!mt5ConnectionDate) {
+                    mt5ConnectionDate = t.openTime || t.openDate || t.closeTime || t.closeDate;
+                }
+
                 const profit = (parseFloat(t.profit) || 0) + (parseFloat(t.commission) || 0) + (parseFloat(t.swap) || 0);
                 totalProfit += profit;
 
@@ -992,7 +999,8 @@ export function recalculateStrategyBreakdown(portfolio) {
                 totalProfit: totalProfit,
                 maxConsecutiveLosses: maxLosses,
                 currentConsecutiveLosses: currentLosses,
-                maxDrawdown: maxDD
+                maxDrawdown: maxDD,
+                mt5ConnectionDate: mt5ConnectionDate
             };
         }
     });

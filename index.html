@@ -14,8 +14,16 @@
     <script
         src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+    <!-- Annotation Plugin -->
     <script
         src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+
+    <!-- Flatpickr (Custom Date Picker) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+
     <style>
         /* Custom font and scrollbar */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -157,6 +165,66 @@
         #panel-resizer.resizing {
             background-color: #0ea5e9;
             /* sky-500 */
+        }
+
+        /* Custom Flatpickr Overrides to match App Design */
+        .flatpickr-calendar.dark {
+            background: #1f2937;
+            /* gray-800 */
+            border: 1px solid #374151;
+            /* gray-700 */
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .flatpickr-months .flatpickr-month {
+            background: transparent;
+            color: #f3f4f6;
+            /* gray-100 */
+        }
+
+        .flatpickr-current-month .flatpickr-monthDropdown-months {
+            background: #1f2937;
+        }
+
+        .flatpickr-weekdays {
+            background: transparent;
+        }
+
+        span.flatpickr-weekday {
+            color: #9ca3af;
+            /* gray-400 */
+            font-weight: 600;
+        }
+
+        .flatpickr-day {
+            color: #d1d5db;
+            /* gray-300 */
+        }
+
+        .flatpickr-day.selected {
+            background: #2563eb !important;
+            /* blue-600 */
+            border-color: #2563eb !important;
+            color: white;
+            font-weight: bold;
+        }
+
+        .flatpickr-day.today {
+            border-color: #4b5563;
+            /* gray-600 */
+        }
+
+        .flatpickr-day:hover {
+            background: #374151;
+            /* gray-700 */
+            border-color: #374151;
+        }
+
+        .flatpickr-day.flatpickr-disabled,
+        .flatpickr-day.flatpickr-disabled:hover {
+            color: #4b5563;
+            /* gray-600 */
         }
     </style>
 </head>
@@ -557,6 +625,11 @@
                             <button id="search-selected-portfolios-btn"
                                 class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-1 px-2 rounded flex items-center gap-1 transition-colors">
                                 🔍 Buscar / Minar
+                            </button>
+                            <button id="filter-date-all-portfolios-btn"
+                                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border bg-gray-700 border-gray-600 text-gray-400 hover:text-blue-300 hover:border-blue-500 transition-all"
+                                title="Aplicar filtro de fecha a TODOS los portafolios">
+                                <span class="text-sm">📅</span><span class="text-xs font-bold">Filtrar Histórico</span>
                             </button>
                         </div>
 
@@ -1196,7 +1269,7 @@
         <div id="global-floating-content" class="h-1 w-[1px]"></div>
     </div>
 
-    <script type="module" src="src/main.js?v=4.04"></script>
+    <script type="module" src="src/main.js?v=4.05"></script>
 
     <!-- Strategy Breakdown Modal (Portfolio Risk) -->
     <div id="strategy-breakdown-modal"

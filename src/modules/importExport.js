@@ -1,7 +1,7 @@
 import { dom } from '../dom.js';
 import { state } from '../state.js';
 import { displayError, generateStrategyId } from '../utils.js';
-import { reAnalyzeAllData } from '../analysis.js';
+import { reAnalyzeAllData, rehydratePortfolioPnlSeries } from '../analysis.js';
 import { updateTradesFilesList, resetUI } from '../ui.js';
 import { populateViewSelector } from '../modules/viewManager.js';
 import { updateDatabankDisplay } from '../modules/databank.js';
@@ -14,7 +14,7 @@ import { parseTradesFromData } from '../modules/sqAnalysis_v2.js';
 /**
  * Exporta el estado actual de la aplicación a un archivo JSON.
  */
-export const exportAnalysis = () => {
+export const exportAnalysis = async () => {
     // Allow export if we have strategies data OR deep scan data
     const hasStrategies = state.rawStrategiesData.length > 0;
     const hasDeepScanData = state.deepScanData && Object.keys(state.deepScanData).length > 0;
@@ -48,10 +48,34 @@ export const exportAnalysis = () => {
 
     const stateString = JSON.stringify(appState);
     const blob = new Blob([stateString], { type: 'application/json' });
+    const defaultName = `analisis_estrategias_${new Date().toISOString().slice(0, 10)}.json`;
+
+    // Use native "Save As" dialog if available (Edge/Chrome)
+    if (window.showSaveFilePicker) {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: defaultName,
+                types: [{
+                    description: 'JSON Files',
+                    accept: { 'application/json': ['.json'] }
+                }]
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            showToast('Estado exportado correctamente ✅', 'success');
+            return;
+        } catch (err) {
+            if (err.name === 'AbortError') return; // User cancelled
+            console.warn('[Export] showSaveFilePicker failed, falling back:', err);
+        }
+    }
+
+    // Fallback: auto-download
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `analisis_estrategias_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = defaultName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -215,6 +239,9 @@ const restoreState = async (importedState) => {
     state.deepScanData = importedState.deepScanData || {}; // Restore Deep Scan Data (Multi-Account)
     state.linkedAccounts = importedState.linkedAccounts || []; // Restore Linked Accounts
     state.tradePnlOverrides = importedState.tradePnlOverrides || {}; // Restore Trade PnL Overrides
+
+    // [EAGER REHYDRATION] Rebuild all portfolio pnlSeries from freshly-built strategySeries
+    rehydratePortfolioPnlSeries();
 
     console.log('[ImportExport] Restored deepScanData with', Object.keys(state.deepScanData).length, 'accounts');
     console.log('[ImportExport] Restored Trade PnL Overrides:', Object.keys(state.tradePnlOverrides).length);

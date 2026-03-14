@@ -2211,7 +2211,7 @@ export const parseTradesFromData = (data) => {
         if (!hasSwap) missingCols.push('Swap');
         if (!hasComm) missingCols.push('Commission');
 
-        console.log('[SQ Analysis] Debug: Schema of first row:', Object.keys(data[0]));
+        // console.log('[SQ Analysis] Debug: Schema of first row:', Object.keys(data[0]));
     }
     trades.missingCols = missingCols;
 
@@ -2261,7 +2261,13 @@ export const parseTradesFromData = (data) => {
         return null;
     };
 
-    data.forEach((row, index) => {
+    data.forEach((originalRow, index) => {
+        // Create a lowercase version of the row object to prevent case-sensitivity issues
+        const row = {};
+        for (const key in originalRow) {
+            row[key.toLowerCase()] = originalRow[key];
+        }
+
         // Use robust parser
         let pnl = parseFlexibleFloat(row.pnl !== undefined ? row.pnl : row.profit);
 
@@ -2300,17 +2306,17 @@ export const parseTradesFromData = (data) => {
             if (commentKey) comment = row[commentKey];
         }
 
-        let exitReason = row['close type'] || row.closeType || row.close_type || '';
+        let exitReason = row['close type'] || row.closetype || row.close_type || '';
         if (!exitReason) {
             const exitKey = Object.keys(row).find(k => (k.includes('close') || k.includes('exit')) && (k.includes('type') || k.includes('reason')));
             if (exitKey) exitReason = row[exitKey];
         }
 
-        const symbol = row.symbol || row.Symbol || row.instrument || '';
-        const type = row.type || row.Type || row.direction || row.action || '';
+        const symbol = row.symbol || row.instrument || '';
+        const type = row.type || row.direction || row.action || '';
         const size = parseFlexibleFloat(row.size || row.lots || row.amount || 0);
-        const openPrice = parseFlexibleFloat(row.open_price || row.openPrice || row['open price'] || 0);
-        const closePrice = parseFlexibleFloat(row.close_price || row.closePrice || row.exit_price || row['close price'] || 0);
+        const openPrice = parseFlexibleFloat(row.open_price || row.openprice || row['open price'] || 0);
+        const closePrice = parseFlexibleFloat(row.close_price || row.closeprice || row.exit_price || row['close price'] || 0);
 
         trades.push({
             pnl: parseFloat(pnl),
