@@ -8,46 +8,10 @@ import { focusMode } from './focusMode.js';
 import { generatePortfolioId } from '../utils.js'; // Import ID generator
 
 import { calculateSQMetrics, parseTradesFromData } from './sqAnalysis_v2.js?v=11';
-import { getFullAnalysisFromBackend } from '../analysis.js';
+import { getFullAnalysisFromBackend, recalculatePortfolioMetricsFromBackend } from '../analysis.js';
 import { TradeSeries } from '../models/TradeSeries.js';
 
-export const recalculateDatabankPortfolioMetrics = (portfolio) => {
-    if (!portfolio || !portfolio.indices || !state.rawStrategiesData) return;
-
-    let allTrades = [];
-    portfolio.indices.forEach(idx => {
-        const raw = state.rawStrategiesData[idx];
-        if (raw) {
-            const trades = parseTradesFromData(raw);
-            allTrades = allTrades.concat(trades);
-        }
-    });
-
-    if (allTrades.length > 0) {
-        allTrades.sort((a, b) => new Date(a.exitTime) - new Date(b.exitTime));
-        const metrics = calculateSQMetrics(allTrades);
-
-        portfolio.netProfit = metrics.totalProfit;
-        portfolio.maxDrawdown = metrics.maxDD;
-        portfolio.maxDrawdownInDollars = metrics.maxDD;
-        portfolio.totalTrades = metrics.totalTrades;
-        portfolio.profitFactor = metrics.profitFactor;
-        portfolio.winningPercentage = metrics.winRate;
-        portfolio.cagr = metrics.cagr || 0;
-        portfolio.returnDD = metrics.returnDD || (metrics.maxDD ? metrics.totalProfit / metrics.maxDD : 0);
-        portfolio.sqn = metrics.sqn || 0;
-        portfolio.sharpeRatio = metrics.sharpeRatio || 0;
-        portfolio.sortinoRatio = metrics.sortinoRatio || 0;
-        portfolio.upi = metrics.upi || 0;
-
-        if (portfolio.analysis) {
-            portfolio.analysis.trades = allTrades;
-            portfolio.analysis.metrics = metrics;
-            portfolio.analysis.isFullReconstructed = true;
-        }
-    }
-};
-
+// [REMOVED] recalculateDatabankPortfolioMetrics was removed in favor of backend calculation.
 /**
  * Actualiza el indicador visual de estado del DataBank.
  * @param {string} status - 'connecting' | 'searching' | 'paused' | 'stopped' | 'completed' | 'error' | 'hidden'
@@ -1296,7 +1260,7 @@ function autoFitDatabankColumn(th, colId) {
 export const initDatabankFocus = () => {
     if (!dom.databankTableBody) return;
 
-    dom.databankTableBody.addEventListener('click', (e) => {
+    dom.databankTableBody.addEventListener('click', async (e) => {
         // --- Clear Creation Filter Button ---
         const clearFilterBtn = e.target.closest('.clear-creation-filter-btn');
         if (clearFilterBtn) {
@@ -1312,24 +1276,14 @@ export const initDatabankFocus = () => {
                 delete portfolio.analysis;
 
                 // Recalculate metrics on the full unfiltered trades
+                // [BACKEND RECALCULATION] Recalculate metrics on the full unfiltered trades using backend
                 try {
-                    recalculateDatabankPortfolioMetrics(portfolio);
-                    // [FIX] Also sync recalculated values into portfolio.metrics
-                    // (the table renderer reads from p.metrics, not top-level properties)
-                    if (portfolio.metrics) {
-                        if (portfolio.totalTrades !== undefined) portfolio.metrics.totalTrades = portfolio.totalTrades;
-                        if (portfolio.netProfit !== undefined) portfolio.metrics.totalProfit = portfolio.netProfit;
-                        if (portfolio.maxDrawdownInDollars !== undefined) portfolio.metrics.maxDrawdownInDollars = portfolio.maxDrawdownInDollars;
-                        if (portfolio.profitFactor !== undefined) portfolio.metrics.profitFactor = portfolio.profitFactor;
-                        if (portfolio.winningPercentage !== undefined) portfolio.metrics.winningPercentage = portfolio.winningPercentage;
-                        if (portfolio.sharpeRatio !== undefined) portfolio.metrics.sharpeRatio = portfolio.sharpeRatio;
-                        if (portfolio.sortinoRatio !== undefined) portfolio.metrics.sortinoRatio = portfolio.sortinoRatio;
-                        if (portfolio.sqn !== undefined) portfolio.metrics.sqn = portfolio.sqn;
-                        if (portfolio.cagr !== undefined) portfolio.metrics.cagr = portfolio.cagr;
-                        if (portfolio.upi !== undefined) portfolio.metrics.upi = portfolio.upi;
-                    }
+                    toggleLoading(true, 'Recalculando', 'Obteniendo métricas del backend...');
+                    await recalculatePortfolioMetricsFromBackend(portfolio);
                 } catch (e) {
                     console.error("[DataBank] Error recalculating metrics after filter removal:", e);
+                } finally {
+                    toggleLoading(false);
                 }
 
                 updateDatabankDisplay();

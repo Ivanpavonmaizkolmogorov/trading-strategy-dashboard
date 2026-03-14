@@ -1,6 +1,6 @@
 import { dom } from './dom.js';
 import { state, saveSavedPortfolios } from './state.js';
-import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable } from './analysis.js';
+import { runAnalysis, reAnalyzeAllData, sortSummaryTable, sortSavedPortfoliosTable, recalculatePortfolioMetricsFromBackend } from './analysis.js';
 import { updateTradesFilesList, resetUI, renderAllCharts, closeChartClickModal, switchViewMode, renderStrategiesTable } from './ui.js?v=4';
 import { findDatabankPortfolios, stopDatabankSearch, clearDatabank, savePortfolioFromDatabank, sortDatabank, updateDatabankDisplay, openPurgeModal } from './modules/databank.js';
 import { openOptimizationModal, closeOptimizationModal, startOptimizationSearch, reevaluateOptimizationResults } from './modules/optimization.js';
@@ -9,7 +9,7 @@ import { exportAnalysis, importAnalysis } from './modules/importExport.js';
 import { showToast } from './modules/notifications.js';
 import { initializeLayout } from './modules/layout.js'; // <-- NUEVO
 import { initMyfxbookUI, openMyfxbookModal, refreshAllAccounts } from './modules/myfxbookUI.js'; // <-- MYFXBOOK
-import { generateStrategyId, generatePortfolioId } from './utils.js'; // <-- ID GENERATOR
+import { generateStrategyId, generatePortfolioId, toggleLoading } from './utils.js'; // <-- ID GENERATOR
 import { initLiveMonitor, renderLiveMonitor } from './modules/liveMonitor.js'; // <-- LIVE MONITOR
 import { openSlaveAccountsModal } from './modules/slaveAccounts.js'; // <-- SLAVE ACCOUNTS
 import { openStrategyRiskModal } from './modules/strategyRiskViewer.js'; // <-- STRATEGY RISK VIEWER
@@ -382,8 +382,18 @@ export function initializeEventListeners() {
                 if (portfolio) {
                     console.log(`[Events] Clearing creationFilter for saved portfolio: ${portfolio.name}`);
                     delete portfolio.creationFilter;
-                    displaySavedPortfoliosList();
-                    showToast(`Filtro de fecha limpiado para ${portfolio.name}`, 'info');
+                    delete portfolio.analysis; // Force clean state
+                    
+                    try {
+                        toggleLoading(true, 'Recalculando', 'Obteniendo métricas del backend...');
+                        await recalculatePortfolioMetricsFromBackend(portfolio);
+                    } catch (e) {
+                         console.error("[Events] Error recalculating metrics after filter removal:", e);
+                    } finally {
+                        toggleLoading(false);
+                        displaySavedPortfoliosList();
+                        showToast(`Filtro de fecha limpiado para ${portfolio.name}`, 'info');
+                    }
                 }
                 return;
             }

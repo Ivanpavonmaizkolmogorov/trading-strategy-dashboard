@@ -151,6 +151,74 @@ export const getFullAnalysisFromBackend = async (strategies, portfolios, isRiskN
         return [];
     }
 };
+
+/**
+ * Pide al backend recalcular un único portafolio (típicamente al quitar su filtro de fechas).
+ * Actualiza el objeto portfolio inplace con las nuevas métricas.
+ * @param {Object} portfolio - Referencia al portafolio (Databank o Guardado)
+ * @returns {Promise<boolean>} - true si tuvo éxito
+ */
+export const recalculatePortfolioMetricsFromBackend = async (portfolio) => {
+    if (!portfolio || !portfolio.indices || !state.rawStrategiesData) return false;
+
+    // Is it normalized? Check local config
+    const riskConfig = portfolio.riskConfig || { isScaled: false };
+    const isNormalized = riskConfig.isScaled;
+    const normalizationMetric = riskConfig.normalizationMetric || 'max_dd';
+    const targetValue = riskConfig.targetValue || 0;
+
+    const portfolioPayload = {
+        indices: portfolio.indices,
+        weights: portfolio.weights || null,
+        portfolio_id: portfolio.id || Date.now(),
+        // Actuamos como si fuera "guardado" para forzar cálculo de todos los detalles técnicos (charts) si se necesita
+        is_saved_portfolio: true, 
+        is_risk_normalized: isNormalized,
+        normalization_metric: normalizationMetric,
+        normalization_target_value: targetValue,
+        risk_per_strategy: portfolio.riskPerStrategy || null
+    };
+
+    try {
+        const results = await getFullAnalysisFromBackend(state.rawStrategiesData, [portfolioPayload], isNormalized, targetValue);
+        
+        // El backend devuelve estrategias primero, iteramos para encontrar nuestro portafolio
+        const result = results.find(r => r.portfolio_id === portfolioPayload.portfolio_id);
+
+        if (result && result.metrics) {
+            console.log(`[Analysis] Recalculated metrics for ${portfolio.name} via backend`);
+            portfolio.metrics = result.metrics;
+            // Guardamos el objeto entero como analysis para mantener histórico y gráficos full
+            portfolio.analysis = result.metrics; 
+
+            // Sync shortcut properties commonly used by UI tables
+            if (result.metrics.totalTrades !== undefined) portfolio.totalTrades = result.metrics.totalTrades;
+            if (result.metrics.totalProfit !== undefined) portfolio.netProfit = result.metrics.totalProfit;
+            if (result.metrics.maxDrawdownInDollars !== undefined) portfolio.maxDrawdownInDollars = result.metrics.maxDrawdownInDollars;
+            if (result.metrics.profitFactor !== undefined) portfolio.profitFactor = result.metrics.profitFactor;
+            if (result.metrics.winningPercentage !== undefined) portfolio.winningPercentage = result.metrics.winningPercentage;
+            if (result.metrics.sharpeRatio !== undefined) portfolio.sharpeRatio = result.metrics.sharpeRatio;
+            if (result.metrics.sortinoRatio !== undefined) portfolio.sortinoRatio = result.metrics.sortinoRatio;
+            if (result.metrics.sqn !== undefined) portfolio.sqn = result.metrics.sqn;
+            if (result.metrics.cagr !== undefined) portfolio.cagr = result.metrics.cagr;
+            if (result.metrics.upi !== undefined) portfolio.upi = result.metrics.upi;
+            
+            // Sync risk per strategy if the backend updated it
+            if (result.riskPerStrategy) {
+                portfolio.riskPerStrategy = result.riskPerStrategy;
+            }
+            
+            return true;
+        } else {
+            console.warn(`[Analysis] Backend did not return metrics for ${portfolio.name}`);
+            return false;
+        }
+
+    } catch (e) {
+        console.error(`[Analysis] Error recalculating metrics from backend for ${portfolio.name}:`, e);
+        return false;
+    }
+};
 /**
  * Vuelve a calcular y mostrar todos los resultados basándose en el estado actual (filtros, selecciones, etc.).
  */
