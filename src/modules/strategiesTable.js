@@ -1072,10 +1072,8 @@ export const renderStrategiesTable = () => {
         }
 
         // FILTER: Linked Strategies (3-state)
-        console.log(`[StrategiesTable] 🛡️ Applying Filter: ${state.linkedStrategiesFilter.toUpperCase()}`);
-        console.log(`[StrategiesTable]    - Total Before: ${strategies.length}`);
-        console.log(`[StrategiesTable]    - Linked Map Size: ${linkedStrategiesMap.size}`);
-        console.log(`[StrategiesTable]    - Linked Names Size: ${linkedStrategyNamesMap.size}`);
+        // [PERF] Reduced logging — was 4 calls per render
+        // console.log(`[StrategiesTable] 🛡️ Applying Filter: ${state.linkedStrategiesFilter.toUpperCase()} | Total: ${strategies.length} | Maps: ${linkedStrategiesMap.size}/${linkedStrategyNamesMap.size}`);
 
         // UNIFIED FILTERING PIPELINE
         // Applies filters in sequence: Quarantine -> Search -> MT5 -> Portfolio -> Linked Status
@@ -1123,10 +1121,7 @@ export const renderStrategiesTable = () => {
                     state.magicNumberMap[s.id]
                 );
 
-                // Debug Log for first few items
-                if (strategies.indexOf(s) < 5) {
-                    console.log(`[FilterDebug] Strat: ${s.name} | HasMagic: ${!!hasMagic} | IsLinkedIdx: ${linkedStrategiesMap.has(s.originalIndex)} | IsLinkedName: ${linkedStrategyNamesMap.has(s.name)}`);
-                }
+                // [PERF] Filter debug log silenced
 
                 // Must NOT have magic
                 if (hasMagic) return false;
@@ -1272,92 +1267,26 @@ export const renderStrategiesTable = () => {
         // NEW LOGIC: Do NOT require strategies to be in a portfolio. 
         // Only filter by whether they have real trades (done in Zero Trades filter below).
         if (state.activeViewMode === 'reality-check' && !sourcedFromPortfolios) {
-            console.log(`[StrategiesTable] 🔍 REALITY CHECK FILTER DEBUG ===============`);
-            console.log(`[StrategiesTable]    - Strategies BEFORE any filter: ${strategies.length}`);
-            console.log(`[StrategiesTable]    - sourcedFromPortfolios: ${sourcedFromPortfolios}`);
-            console.log(`[StrategiesTable]    - magicNumberMap keys: ${state.magicNumberMap ? Object.keys(state.magicNumberMap).length : 0}`);
-            console.log(`[StrategiesTable]    - deepScanData accounts: ${state.deepScanData ? Object.keys(state.deepScanData).length : 0}`);
-
-            // DEBUG: Log first 5 strategies to see their state
-            strategies.slice(0, 5).forEach((s, i) => {
-                console.log(`[StrategiesTable] 📋 Strategy[${i}]: ${s.name}`);
-                console.log(`[StrategiesTable]    _hasMap: ${s._hasMap}`);
-                console.log(`[StrategiesTable]    realMetrics?: ${!!s.realMetrics}`);
-                if (s.realMetrics) {
-                    console.log(`[StrategiesTable]    realMetrics.trades: ${s.realMetrics.trades || s.realMetrics.totalTrades}`);
-                }
-            });
-
-            // OLD LOGIC REMOVED: We no longer require strategies to be in a linked portfolio.
-            // The ONLY filter should be: does this strategy have real trades?
-            // That filter is applied below in "Zero Trades Cleanup".
-
-            console.log(`[StrategiesTable] ✅ Portfolio-association filter DISABLED. Strategies passed through: ${strategies.length}`);
-            console.log(`[StrategiesTable] 🔍 END REALITY CHECK FILTER DEBUG ===============`);
+            // [PERF] Reality check filter debug block silenced (was 10+ log calls)
+            // Only filter applied is Zero Trades Cleanup below.
 
 
             // FILTER: Reality Check Mode - Zero Trades Cleanup
             // User Request: "habria k filtrar akellas k trades sea 0 (en este modo)"
             if (state.activeViewMode === 'reality-check') {
-                console.log(`[StrategiesTable] 🧹 ZERO TRADES FILTER DEBUG ===============`);
-                console.log(`[StrategiesTable]    - Strategies BEFORE Zero Trade filter: ${strategies.length}`);
-
+                // [PERF] Zero trades filter — logging silenced
                 const hasMappings = state.magicNumberMap && Object.keys(state.magicNumberMap).length > 0;
                 const hasLinkedPortfolios = state.savedPortfolios && state.savedPortfolios.some(p => p.linkedAccountId);
                 const isSystemConfigured = hasMappings || hasLinkedPortfolios;
-                console.log(`[StrategiesTable]    - hasMappings: ${hasMappings}`);
-                console.log(`[StrategiesTable]    - hasLinkedPortfolios: ${hasLinkedPortfolios}`);
-                console.log(`[StrategiesTable]    - isSystemConfigured: ${isSystemConfigured}`);
 
                 const preFilterCount = strategies.length;
-                const droppedStrategies = [];
-                const passedStrategies = [];
-
                 strategies = strategies.filter(s => {
                     let trades = getMetricValue(s, 'totalTrades');
-                    let tradesSource = 'getMetricValue';
-
-                    // STRICT MODE: If system is configured (not clean slate), force check on Real Metrics only.
-                    // Do not fall back to Backtest trades if Real Trades are missing/zero.
                     if (isSystemConfigured) {
                         trades = s.realMetrics ? (s.realMetrics.totalTrades || s.realMetrics.trades) : 0;
-                        tradesSource = 'realMetrics';
                     }
-
-                    const passed = trades && trades > 0;
-
-                    if (!passed) {
-                        droppedStrategies.push({
-                            name: s.name,
-                            trades: trades,
-                            tradesSource: tradesSource,
-                            hasRealMetrics: !!s.realMetrics,
-                            _hasMap: s._hasMap
-                        });
-                    } else {
-                        passedStrategies.push({
-                            name: s.name,
-                            trades: trades
-                        });
-                    }
-
-                    return passed;
+                    return trades && trades > 0;
                 });
-
-                console.log(`[StrategiesTable] ✅ PASSED (${passedStrategies.length}):`);
-                passedStrategies.slice(0, 10).forEach(s => {
-                    console.log(`[StrategiesTable]    ✅ ${s.name} (${s.trades} trades)`);
-                });
-                if (passedStrategies.length > 10) {
-                    console.log(`[StrategiesTable]    ... and ${passedStrategies.length - 10} more`);
-                }
-
-                console.log(`[StrategiesTable] ❌ DROPPED (${droppedStrategies.length}):`);
-                droppedStrategies.forEach(s => {
-                    console.log(`[StrategiesTable]    ❌ ${s.name} | trades=${s.trades} | src=${s.tradesSource} | hasRealMetrics=${s.hasRealMetrics} | _hasMap=${s._hasMap}`);
-                });
-
-                console.log(`[StrategiesTable] 🧹 END ZERO TRADES FILTER DEBUG ===============`);
             }
         } // END: Reality Check Mode block
 
@@ -1458,7 +1387,7 @@ export const renderStrategiesTable = () => {
                 originalIndex = strategy.originalIndex ?? -1;
             }
 
-            console.log(`[StrategiesTable DEBUG] Row ${index}: strategy.name='${strategy.name}', originalIndex=${originalIndex}`);
+            // [PERF] Per-row log silenced (was 87 calls per render)
 
 
 
@@ -1557,26 +1486,14 @@ export const renderStrategiesTable = () => {
                     }
 
                     // DEBUG BADGE:
-                    if (index < 5) {
-                        console.log(`[StrategiesTable] Badge Check for '${strategy.name}': Found? ${!!linkedPortfolios} (via Index ${originalIndex}? ${linkedStrategiesMap.has(originalIndex)}, via Name? ${linkedStrategyNamesMap.has(strategy.name)})`);
-                        if (!linkedPortfolios) {
-                            console.log('   -> Name Map Keys Sample:', Array.from(linkedStrategyNamesMap.keys()).slice(0, 5));
-                        }
-                    }
+                    // [PERF] Badge check diagnostics silenced (was per-row for first 5)
 
                     // Feature: MT5 Indicator (Magic Number Map)
                     // Check if strategy has a mapping in state.magicNumberMap
                     let hasMagicNumber = false;
 
                     // DIAGNOSTIC LOG (Run ONCE)
-                    if (index === 0) {
-                        console.log('[StrategiesTable DIAG] Checking Magic Number Map:', state.magicNumberMap);
-                        if (state.magicNumberMap) {
-                            console.log('[StrategiesTable DIAG] Map Keys Sample:', Object.keys(state.magicNumberMap).slice(0, 10));
-                        } else {
-                            console.warn('[StrategiesTable DIAG] state.magicNumberMap is UNDEFINED or NULL');
-                        }
-                    }
+                    // [PERF] Magic number map diagnostic silenced (was logged on first row)
 
                     if (state.magicNumberMap) {
                         // Try all robust keys
@@ -1590,13 +1507,7 @@ export const renderStrategiesTable = () => {
                         hasMagicNumber = keysToCheck.some(k => k && state.magicNumberMap[k]);
 
                         // DIAGNOSTIC LOG for specific strategy (or first few)
-                        if (index < 3) {
-                            console.log(`[StrategiesTable DIAG] Strat check '${strategy.name}':`, {
-                                keys: keysToCheck,
-                                found: hasMagicNumber,
-                                mapData: keysToCheck.map(k => state.magicNumberMap[k])
-                            });
-                        }
+                        // [PERF] Per-strategy magic check diagnostic silenced
                     }
 
                     // [NEW] Get plug-in date from deepScanData (first trade date for this strategy's magic numbers)

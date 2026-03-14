@@ -6,6 +6,9 @@ import { renderSQAnalysis, calculateSQMetrics, filterTradesByDate, parseTradesFr
 import { formatMetricForDisplay, toggleLoading } from '../utils.js';
 import { getFullAnalysisFromBackend } from '../analysis.js';
 
+// [PERF] Cache for parsed trades - avoids re-parsing CSVs on every click
+const _parsedTradesCache = new Map();
+
 /**
  * Helper: Search for trades in state.deepScanData by magic number(s)
  * Supports both legacy format (just magicNumber) and new format (accountId::magicNumber)
@@ -564,13 +567,13 @@ export const focusMode = {
                 // CRITICAL: This must happen first so we have a base "Full History" analysis to potentially filter later.
                 // We force this if we haven't confirmed it's a full reconstruction yet (flag isFullReconstructed).
                 if (item.type === 'databank' && item.indices && (!analysis || !analysis.isFullReconstructed)) {
-                    console.log('[FocusMode] DataBank item detected, computing portfolio from indices:', item.indices);
+                    // [PERF] Summary log instead of per-strategy
 
                     // Get individual strategies
                     const strategies = item.indices.map(idx => window.analysisResults[idx]).filter(Boolean);
 
                     if (strategies.length > 0) {
-                        console.log(`[FocusMode] Found ${strategies.length} strategies to combine`);
+                        // [PERF] Per-strategy logs removed
 
                         // Combine equity curves - ROBUST METHOD: Sum of Cumulative PnL (Date-Aligned)
                         // Averaging balances works poorly if strategies start at different times (causes drops/sinkholes).
@@ -610,10 +613,16 @@ export const focusMode = {
                                 const rawData = state.rawStrategiesData[strat.originalIndex];
                                 if (Array.isArray(rawData)) {
                                     try {
-                                        const parsed = parseTradesFromData(rawData);
-                                        if (parsed && parsed.length > 0) {
-                                            stratTrades = parsed;
-                                            console.log(`[FocusMode] 🩹 Self-Healing: Parsed ${stratTrades.length} trades from raw CSV for ${strat.name}`);
+                                        // [PERF] Check cache first
+                                        const cacheKey = strat.originalIndex;
+                                        if (_parsedTradesCache.has(cacheKey)) {
+                                            stratTrades = _parsedTradesCache.get(cacheKey);
+                                        } else {
+                                            const parsed = parseTradesFromData(rawData);
+                                            if (parsed && parsed.length > 0) {
+                                                stratTrades = parsed;
+                                                _parsedTradesCache.set(cacheKey, parsed);
+                                            }
                                         }
                                     } catch (e) {
                                         console.error(`[FocusMode] ❌ Self-Healing failed for ${strat.name}:`, e);
@@ -629,10 +638,16 @@ export const focusMode = {
                                     const rawData = state.rawStrategiesData[fallBackIndex];
                                     if (Array.isArray(rawData)) {
                                         try {
-                                            const parsed = parseTradesFromData(rawData);
-                                            if (parsed && parsed.length > 0) {
-                                                stratTrades = parsed;
-                                                console.log(`[FocusMode] 🚑 Ultimate Self-Healing (Index Drift): Parsed ${stratTrades.length} trades for ${strat.name}`);
+                                            // [PERF] Check cache first
+                                            const cacheKey = `fb_${fallBackIndex}`;
+                                            if (_parsedTradesCache.has(cacheKey)) {
+                                                stratTrades = _parsedTradesCache.get(cacheKey);
+                                            } else {
+                                                const parsed = parseTradesFromData(rawData);
+                                                if (parsed && parsed.length > 0) {
+                                                    stratTrades = parsed;
+                                                    _parsedTradesCache.set(cacheKey, parsed);
+                                                }
                                             }
                                         } catch (e) {
                                             console.error(`[FocusMode] ❌ Ultimate Self-Healing failed for ${strat.name}:`, e);
@@ -642,10 +657,7 @@ export const focusMode = {
                             }
 
                             if (stratTrades.length > 0) {
-                                console.log(`[FocusMode] ✅ Got ${stratTrades.length} trades for ${strat.name}`);
                                 allTrades = allTrades.concat(stratTrades);
-                            } else {
-                                console.warn(`[FocusMode] ❌ Could not find trades for strategy: ${strat.name}. OrigIdx: ${strat.originalIndex}`);
                             }
 
                             if (strat.analysis?.chartData?.equityCurve && strat.analysis.chartData.equityCurve.length > 0) {
