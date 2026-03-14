@@ -18,8 +18,8 @@ export const state = {
     nextPortfolioId: 0,
     selectedRows: { databank: [], saved: [] },
     isSearchPaused: false,
-    isSearchPaused: false,
     isSearchStopped: false,
+    isSearching: false, // Prevents redundant table re-renders during search
     searchBasePortfolioIndex: null, // Index of the Saved Portfolio used as base
     searchBaseStrategyIndices: new Set(), // Indices of strategies from the base portfolio to lock
 

@@ -3,6 +3,7 @@ import { findDatabankPortfolios } from './databank.js';
 import { dom } from '../dom.js';
 import { showToast } from './notifications.js';
 import { parseTradesFromData, filterTradesByDate } from './sqAnalysis_v2.js?v=11';
+import { toggleLoading } from '../utils.js';
 
 // Metric configuration
 const METRIC_CONFIG = {
@@ -1326,6 +1327,10 @@ const executeSearch = () => {
         // Shadow Data Generation (Async safe here)
         if (creationFilter) {
             try {
+                // [FIX] Show loading immediately and yield to let browser paint
+                toggleLoading(true, 'Filtrando Datos', 'Preparando estrategias por fecha (puede tardar unos segundos)...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+
                 // Bump version to force reload of patched file
                 const { filterTradesByDate, parseTradesFromData, tradesToCSV } = await import('./sqAnalysis_v2.js?v=13');
                 console.log('[ExecuteSearch] ⏳ Generating Shadow Data (CSV) for filtered period...');
@@ -1455,6 +1460,8 @@ const executeSearch = () => {
             console.log(`[ExecuteSearch-PAYLOAD-DEBUG] strategiesDataOverride IS NULL/UNDEFINED`);
         }
 
+        // Clear the preprocessing loading overlay before handing off to search
+        toggleLoading(false);
         findDatabankPortfolios(config);
 
         // Close wizard
@@ -1462,6 +1469,7 @@ const executeSearch = () => {
         if (wizardState.modalElement) wizardState.modalElement.remove();
         wizardState.modalElement = null;
     }).catch(err => {
+        toggleLoading(false);
         _executeSearchRunning = false;
         console.error('[ExecuteSearch] ❌ CRITICAL: Import/execution chain failed:', err);
         showToast('Error crítico al ejecutar búsqueda: ' + err.message, 'error');

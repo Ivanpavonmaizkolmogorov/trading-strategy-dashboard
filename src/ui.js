@@ -1031,6 +1031,9 @@ export const calculatePortfolioRealMetrics = (portfolio) => {
 
 
 export const displaySavedPortfoliosList = () => {
+    // [PERF] Skip rendering if search is active (avoids heavy DOM thrashing)
+    if (state.isSearching) return;
+
     // Initialize table if needed
     initSavedPortfoliosTable();
 

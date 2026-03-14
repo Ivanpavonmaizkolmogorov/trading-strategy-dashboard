@@ -168,7 +168,12 @@ const evolutionManager = {
             state.searchTimerInterval = null;
         }
         state.searchStartTime = null; // Reset start time on explicit stop
-        this.phase = 'idle';
+        
+        // [PERF] Release the UI lock and trigger one final render
+        state.isSearching = false;
+        import('../ui.js').then(mod => mod.displaySavedPortfoliosList());
+        
+        if (window.evolutionTableTimer) clearInterval(window.evolutionTableTimer);
         setDatabankStatus('stopped', 'Evolución detenida.');
 
         // Reset UI buttons
@@ -848,6 +853,9 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
     }
     hideError();
 
+    // [PERF] Block redundant UI renders while searching
+    state.isSearching = true;
+
     // Reset UI State
     if (dom.pauseSearchBtn) dom.pauseSearchBtn.disabled = false;
     if (dom.stopSearchBtn) dom.stopSearchBtn.disabled = false;
@@ -876,6 +884,11 @@ export const findDatabankPortfolios = async (customConfig = {}) => {
     await executeBackendSearch(customConfig, evolutionManager.abortController.signal, (type) => {
         if (type === 'done' || type === 'error') {
             setDatabankStatus('completed', 'Búsqueda finalizada');
+            
+            // [PERF] Re-enable rendering and force one final render
+            state.isSearching = false;
+            import('../ui.js').then(mod => mod.displaySavedPortfoliosList());
+
             // Restore UI
             if (dom.findDatabankPortfoliosBtn) dom.findDatabankPortfoliosBtn.disabled = false;
             if (dom.clearDatabankBtn) dom.clearDatabankBtn.disabled = false;
@@ -1407,8 +1420,6 @@ export function renderBaseStrategiesConfig() {
     if (!searchBtn) return;
 
     const parentContainer = searchBtn.closest('.flex.flex-wrap') || searchBtn.parentElement;
-    let configContainer = document.getElementById('base-strategies-config-container');
-
     if (state.searchBasePortfolioIndex === null) {
         if (configContainer) configContainer.classList.add('hidden');
         return;
