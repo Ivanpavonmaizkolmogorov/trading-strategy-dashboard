@@ -1,4 +1,4 @@
-import { state, config as wizardState } from '../state.js';
+import { state } from '../state.js';
 import { findDatabankPortfolios } from './databank.js';
 import { dom } from '../dom.js';
 import { showToast } from './notifications.js';
