@@ -4,7 +4,6 @@ import { dom } from '../dom.js';
 import { showToast } from './notifications.js';
 import { parseTradesFromData, filterTradesByDate } from './sqAnalysis_v2.js?v=11';
 import { toggleLoading } from '../utils.js';
-import { runPythonScript } from './pythonRunner.js';
 import { getStrategyMT5ConnectionTimestamp } from './mt5Utils.js';
 
 // Metric configuration
