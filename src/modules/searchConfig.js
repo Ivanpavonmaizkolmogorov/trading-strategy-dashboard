@@ -1330,102 +1330,74 @@ const executeSearch = () => {
         const initialLen = allowedIndicesToSend.length;
 
         // Helper: compute MT5 connection date for a strategy by its index
+        // Uses the exact logic from strategiesTable.js to ensure 100% parity with UI badge
         const getMT5ConnectionDate = (idx) => {
             const file = strategies[idx];
             if (!file) return null;
             
-            const name = file.name || '';
-            const normalize = s => (s || '').replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
-            const cleanName = name.replace(/\.csv$/i, '').trim();
-            const normName = normalize(name);
-            const strategyId = file.strategyId || name;
+            const strategyName = file.name || '';
+            const strategyId = file.strategyId || strategyName;
+            const normalizeName = s => (s || '').replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-            // Gather all possible keys for the magicNumberMap
-            const keysToCheck = [
-                state.magicNumberMap?.[strategyId],
-                state.magicNumberMap?.[name],
-                state.magicNumberMap?.[cleanName],
-                state.magicNumberMap?.[normName],
-                name,
-                cleanName,
-                name + '.csv',
-                cleanName + '.csv'
-            ].flat().filter(Boolean); // Flatten arrays and filter out null/undefined
+            const keysForMagic = [
+                strategyId,
+                strategyName,
+                normalizeName(strategyName),
+                String(strategyName).replace(/\.csv$/i, '').trim()
+            ];
 
-            let earliestDate = null;
-            const seenKeys = new Set();
-            let foundTradesCount = 0;
-
-            // Search across all deepScan accounts
-            Object.entries(state.deepScanData || {}).forEach(([accountId, accountData]) => {
-                const tradesMap = accountData?.tradesById || accountData?._tradesById;
-                if (!tradesMap) return;
-
-                const allTradesMapKeys = Object.keys(tradesMap);
-
-                keysToCheck.forEach(rawMagic => {
-                    const keyStr = String(rawMagic).trim();
-                    if (seenKeys.has(keyStr)) return;
-                    seenKeys.add(keyStr);
-
-                    // 1. Determine lookup keys (account::magic vs raw magic)
-                    let lookup = keyStr;
-                    if (keyStr.includes('::')) lookup = keyStr.split('::')[1];
-
-                    // Find all matching keys in tradesMap (case insensitive and loose substring)
-                    const lookupLower = lookup.toLowerCase();
-                    const keyStrLower = keyStr.toLowerCase();
-                    
-                    const matchingMapKeys = allTradesMapKeys.filter(tk => {
-                        const tkLower = tk.toLowerCase();
-                        // 1. Exact match
-                        if (tkLower === lookupLower || tkLower === keyStrLower) return true;
-                        
-                        // 2. Contains match (either lookup contains tk, or tk contains lookup)
-                        // Useful when Myfxbook map has '97UsdjpyBuyStPlV5_H1_1_5_23_97...' but trade is just '97UsdjpyBuyStPlV5'
-                        // We enforce a minimum length of 5 to avoid matching everything to '1'
-                        if (lookupLower.length > 5 && (tkLower.includes(lookupLower) || lookupLower.includes(tkLower))) return true;
-                        if (keyStrLower.length > 5 && (tkLower.includes(keyStrLower) || keyStrLower.includes(tkLower))) return true;
-                        
-                        return false;
-                    });
-
-                    matchingMapKeys.forEach(k => {
-                        const trades = tradesMap[k];
-                        if (!trades || !Array.isArray(trades)) return;
-
-                        foundTradesCount += trades.length;
-
-                        trades.forEach(t => {
-                            // Extract date logic safely
-                            const tDate = new Date(t.openTime || t.openDate || t.closeTime || t.closeDate);
-                            if (!isNaN(tDate.getTime())) {
-                                const iso = tDate.toISOString();
-                                if (!earliestDate || iso < earliestDate) {
-                                    earliestDate = iso;
-                                }
-                            }
-                        });
-                    });
-                });
+            let magics = [];
+            keysForMagic.forEach(k => {
+                if (k && state.magicNumberMap?.[k]) {
+                    const val = state.magicNumberMap[k];
+                    magics = magics.concat(Array.isArray(val) ? val : [val]);
+                }
             });
 
-            if (foundTradesCount > 0) {
-                console.log(`[MT5-DEBUG] Strat: ${name} | Keys Checked: ${keysToCheck.join(',')} | Trades Found: ${foundTradesCount} | Earliest Date: ${earliestDate}`);
-            }
+            if (magics.length === 0) return null;
 
-            // TARGETED DEBUG FOR THE MISSING 5 STRATEGIES
-            if (name.includes('14_Xausdjpy') || name.includes('18_usdjpy') || name.includes('19_Xausdjpy') || name.includes('21_gbpjpy') || name.includes('58_usdjpy')) {
-                console.log(`[MT5-MISSING-STRAT-CHECK] Strat: ${name}
-  -> Normalized: ${normName}
-  -> Clean: ${cleanName}
-  -> ID: ${strategyId}
-  -> MagicMap Entry keysToCheck: ${keysToCheck.length > 0 ? keysToCheck.join(', ') : 'NONE FOUND IN MAP!'}
-  -> Found Trades: ${foundTradesCount}
-  -> Earliest Date: ${earliestDate}`);
-            }
+            let earliestDate = Infinity;
 
-            return earliestDate;
+            magics.forEach(magic => {
+                const key = String(magic).trim();
+                if (key.includes('::')) {
+                    // Composite format: accountId::magicNumber
+                    const [targetAccountId, magicNumber] = key.split('::');
+                    const accountData = state.deepScanData?.[targetAccountId];
+                    if (accountData) {
+                        const tMap = accountData.tradesById || accountData._tradesById;
+                        const trades = tMap ? tMap[magicNumber] : null;
+                        if (trades && Array.isArray(trades)) {
+                            trades.forEach(t => {
+                                const dateVal = t.openTime || t.entry_date || t.date;
+                                if (dateVal) {
+                                    const ts = new Date(dateVal).getTime();
+                                    if (!isNaN(ts) && ts < earliestDate) earliestDate = ts;
+                                }
+                            });
+                        }
+                    }
+                } else {
+                    // Legacy format: search all accounts
+                    Object.values(state.deepScanData || {}).forEach(accountData => {
+                        const tMap = accountData.tradesById || accountData._tradesById;
+                        if (!tMap) return;
+                        const trades = tMap[key];
+                        if (trades && Array.isArray(trades)) {
+                            trades.forEach(t => {
+                                const dateVal = t.openTime || t.entry_date || t.date;
+                                if (dateVal) {
+                                    const ts = new Date(dateVal).getTime();
+                                    if (!isNaN(ts) && ts < earliestDate) earliestDate = ts;
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+
+            if (earliestDate === Infinity) return null;
+            return new Date(earliestDate).toISOString();
         };
 
         allowedIndicesToSend = allowedIndicesToSend.filter(idx => {
