@@ -1408,12 +1408,18 @@ const executeSearch = () => {
 
     // --- VALIDATION: Prevent search if pool is empty ---
     if (allowedIndicesToSend.length === 0) {
-        showToast(`⚠️ Todo el pool ha sido filtrado (Cuarentena / Incubación). No hay estrategias para buscar.`, 'error', 8000);
+        const msg = `⚠️ Todo el pool ha sido filtrado (Cuarentena / Incubación). No hay estrategias para buscar.`;
+        console.error(`[SearchConfig] Validation Failed: ${msg}`);
+        showToast(msg, 'error', 8000);
+        executeSearch.isExecuting = false; // RELEASE THE LOCK
         return;
     }
 
     if (allowedIndicesToSend.length < wizardState.config.minSize) {
-        showToast(`⚠️ El pool (${allowedIndicesToSend.length}) es menor que el tamaño mínimo solicitado (${wizardState.config.minSize}). Baja el mínimo o relaja los filtros.`, 'error', 8000);
+        const msg = `⚠️ El pool (${allowedIndicesToSend.length}) es menor que el tamaño mínimo solicitado (${wizardState.config.minSize}). Baja el mínimo o relaja los filtros.`;
+        console.error(`[SearchConfig] Validation Failed: ${msg}`);
+        showToast(msg, 'error', 8000);
+        executeSearch.isExecuting = false; // RELEASE THE LOCK
         return;
     }
 
