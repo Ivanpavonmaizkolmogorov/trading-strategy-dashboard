@@ -1406,6 +1406,17 @@ const executeSearch = () => {
         return;
     }
 
+    // --- VALIDATION: Prevent search if pool is empty ---
+    if (allowedIndicesToSend.length === 0) {
+        showToast(`⚠️ Todo el pool ha sido filtrado (Cuarentena / Incubación). No hay estrategias para buscar.`, 'error', 8000);
+        return;
+    }
+
+    if (allowedIndicesToSend.length < wizardState.config.minSize) {
+        showToast(`⚠️ El pool (${allowedIndicesToSend.length}) es menor que el tamaño mínimo solicitado (${wizardState.config.minSize}). Baja el mínimo o relaja los filtros.`, 'error', 8000);
+        return;
+    }
+
     // 4. PRE-PROCESSING: Shadow Data for Date Filtering
     let shadowStrategiesData = null;
     let creationFilter = null;

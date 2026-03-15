@@ -432,8 +432,10 @@ const executeBackendSearch = async (config, signal, onCallback) => {
 
 
     // Calculate Detailed Counts for Display
-    let totalStratCount = requestBody.params.allowed_indices ? requestBody.params.allowed_indices.length : state.loadedStrategyFiles.length;
-    if (totalStratCount === 0 && state.loadedStrategyFiles.length > 0) totalStratCount = state.loadedStrategyFiles.length;
+    let totalStratCount = state.loadedStrategyFiles.length;
+    if (requestBody.params.allowed_indices) {
+        totalStratCount = requestBody.params.allowed_indices.length;
+    }
 
     let newCount = 0;
     let usedCount = 0;
@@ -446,7 +448,7 @@ const executeBackendSearch = async (config, signal, onCallback) => {
         });
     }
 
-    if (requestBody.params.allowed_indices && requestBody.params.allowed_indices.length > 0) {
+    if (requestBody.params.allowed_indices) {
         requestBody.params.allowed_indices.forEach(idx => {
             if (tempLinkedIndices.has(idx)) usedCount++;
             else newCount++;
