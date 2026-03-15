@@ -1354,6 +1354,7 @@ const executeSearch = () => {
 
             let earliestDate = null;
             const seenKeys = new Set();
+            let foundTradesCount = 0;
 
             // Search across all deepScan accounts
             Object.entries(state.deepScanData || {}).forEach(([accountId, accountData]) => {
@@ -1380,6 +1381,8 @@ const executeSearch = () => {
                         const trades = tradesMap[k];
                         if (!trades || !Array.isArray(trades)) return;
 
+                        foundTradesCount += trades.length;
+
                         trades.forEach(t => {
                             // Extract date logic safely
                             const tDate = new Date(t.openTime || t.openDate || t.closeTime || t.closeDate);
@@ -1393,6 +1396,10 @@ const executeSearch = () => {
                     });
                 });
             });
+
+            if (foundTradesCount > 0) {
+                console.log(`[MT5-DEBUG] Strat: ${name} | Keys Checked: ${keysToCheck.join(',')} | Trades Found: ${foundTradesCount} | Earliest Date: ${earliestDate}`);
+            }
 
             return earliestDate;
         };
