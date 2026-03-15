@@ -1401,6 +1401,17 @@ const executeSearch = () => {
                 console.log(`[MT5-DEBUG] Strat: ${name} | Keys Checked: ${keysToCheck.join(',')} | Trades Found: ${foundTradesCount} | Earliest Date: ${earliestDate}`);
             }
 
+            // TARGETED DEBUG FOR THE MISSING 5 STRATEGIES
+            if (name.includes('14_Xausdjpy') || name.includes('18_usdjpy') || name.includes('19_Xausdjpy') || name.includes('21_gbpjpy') || name.includes('58_usdjpy')) {
+                console.log(`[MT5-MISSING-STRAT-CHECK] Strat: ${name}
+  -> Normalized: ${normName}
+  -> Clean: ${cleanName}
+  -> ID: ${strategyId}
+  -> MagicMap Entry keysToCheck: ${keysToCheck.length > 0 ? keysToCheck.join(', ') : 'NONE FOUND IN MAP!'}
+  -> Found Trades: ${foundTradesCount}
+  -> Earliest Date: ${earliestDate}`);
+            }
+
             return earliestDate;
         };
 
