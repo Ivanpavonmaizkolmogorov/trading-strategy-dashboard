@@ -5,6 +5,7 @@ import { CustomizableTable } from './tableEngine.js';
 import { openSearchConfigModal } from './searchConfig.js';
 import { analyzeCustomPortfolio } from './portfolioBuilder.js?v=2';
 import { showToast } from './notifications.js';
+import { getQuarantineReason, getReasonBadge } from './quarantine.js';
 import { calculateSQMetrics, filterTradesByDate } from './sqAnalysis_v2.js?v=11'; // [MOD] Added filterTradesByDate import
 import { TradeSeries } from '../models/TradeSeries.js';
 
@@ -1437,8 +1438,12 @@ export const renderStrategiesTable = () => {
 
                 if (colId === 'name') {
                     const isQuarantined = state.quarantinedStrategyNames.has(strategy.name);
+                    const quarantineReason = getQuarantineReason(strategy.name);
                     if (isQuarantined) {
-                        row.classList.add('bg-red-900/20'); // Subtle red tint for row
+                        const tintClass = quarantineReason === 'both' ? 'bg-purple-900/20' :
+                                         quarantineReason === 'auto' ? 'bg-red-900/20' :
+                                         'bg-amber-900/20';
+                        row.classList.add(tintClass);
                     }
 
                     td.className += ' font-medium text-white';
@@ -1461,9 +1466,21 @@ export const renderStrategiesTable = () => {
                     };
 
                     // Render Name with Potential Link Tag AND Copy Button
+                    // Incubation badge check
+                    let incubationBadge = '';
+                    if (state.mt5IncubationMinDays > 0 && !isQuarantined) {
+                        const connDate = strategy.realMetrics?.mt5ConnectionDate;
+                        if (connDate) {
+                            const daysConnected = Math.floor((new Date() - new Date(connDate)) / (1000 * 60 * 60 * 24));
+                            if (daysConnected < state.mt5IncubationMinDays) {
+                                incubationBadge = `<span class="inline-block text-[10px] px-1 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-700/40 font-bold ml-1" title="Incubando: ${daysConnected}d / ${state.mt5IncubationMinDays}d mín.">🔵 ${daysConnected}d</span>`;
+                            }
+                        }
+                    }
+
                     let html = `
                     <div class="flex items-center gap-2 group">
-                        <span>${isQuarantined ? '☣️ ' : ''}${value}</span>
+                        <span>${isQuarantined ? (quarantineReason === 'both' ? '🟣 ' : quarantineReason === 'auto' ? '🔴 ' : '🟠 ') : ''}${value}</span>${incubationBadge}
                         
                         <!-- COPY BUTTON (Visible on Hover of row/name) -->
                         <button onclick="event.stopPropagation(); window.copyStrategyName('${value}')" 

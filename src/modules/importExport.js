@@ -36,7 +36,9 @@ export const exportAnalysis = async () => {
         activeViews: state.activeViews,
         databankPortfolios: state.databankPortfolios,
         magicNumberMap: state.magicNumberMap, // <-- Persist Magic Mappings
-        quarantinedStrategyNames: Array.from(state.quarantinedStrategyNames), // <-- Persist Quarantine List
+        quarantineData: Object.fromEntries(state.quarantineData), // Map -> Object for JSON
+        liveFolderPath: state.liveFolderPath,
+        mt5IncubationMinDays: state.mt5IncubationMinDays,
         deepScanData: state.deepScanData || {}, // <-- Persist Deep Scan Data (Multi-Account)
         linkedAccounts: state.linkedAccounts || [], // <-- Persist Linked Accounts
         // Persistence for exterminated localStorage items:
@@ -127,10 +129,30 @@ const mergeState = async (importedState) => {
         console.log('[ImportExport] Merged Magic Mappings.');
     }
 
-    // 5. Merge Quarantine List
-    if (importedState.quarantinedStrategyNames && Array.isArray(importedState.quarantinedStrategyNames)) {
-        importedState.quarantinedStrategyNames.forEach(name => state.quarantinedStrategyNames.add(name));
-        console.log('[ImportExport] Merged Quarantine List.');
+    // 5. Merge Quarantine List (supports new Map format + old array format)
+    if (importedState.quarantineData && typeof importedState.quarantineData === 'object') {
+        // New format: {name: {manual, auto}}
+        Object.entries(importedState.quarantineData).forEach(([name, q]) => {
+            const existing = state.quarantineData.get(name) || { manual: false, auto: false };
+            state.quarantineData.set(name, {
+                manual: existing.manual || q.manual,
+                auto: existing.auto || q.auto
+            });
+        });
+        console.log('[ImportExport] Merged Quarantine Data (new format).');
+    } else if (importedState.quarantinedStrategyNames && Array.isArray(importedState.quarantinedStrategyNames)) {
+        // Legacy format: ["name1", "name2"] -> treat as manual
+        importedState.quarantinedStrategyNames.forEach(name => {
+            const existing = state.quarantineData.get(name) || { manual: false, auto: false };
+            state.quarantineData.set(name, { ...existing, manual: true });
+        });
+        console.log('[ImportExport] Merged Quarantine List (legacy array format).');
+    }
+    if (importedState.liveFolderPath !== undefined) {
+        state.liveFolderPath = importedState.liveFolderPath;
+    }
+    if (importedState.mt5IncubationMinDays !== undefined) {
+        state.mt5IncubationMinDays = importedState.mt5IncubationMinDays;
     }
 
     // 6. Merge Deep Scan Data (by accountId - same account overwrites, different account coexists)
@@ -235,7 +257,20 @@ const restoreState = async (importedState) => {
     state.activeViews = importedState.activeViews || state.activeViews;
     state.databankPortfolios = importedState.databankPortfolios || [];
     state.magicNumberMap = importedState.magicNumberMap || {}; // Restore Magic Mappings
-    state.quarantinedStrategyNames = new Set(importedState.quarantinedStrategyNames || []); // Restore Quarantine List
+    // Restore Quarantine (new Map format + backward compat with old array)
+    state.quarantineData = new Map();
+    if (importedState.quarantineData && typeof importedState.quarantineData === 'object' && !Array.isArray(importedState.quarantineData)) {
+        Object.entries(importedState.quarantineData).forEach(([name, q]) => {
+            state.quarantineData.set(name, { manual: !!q.manual, auto: !!q.auto });
+        });
+    } else if (importedState.quarantinedStrategyNames && Array.isArray(importedState.quarantinedStrategyNames)) {
+        // Legacy: treat all as manual
+        importedState.quarantinedStrategyNames.forEach(name => {
+            state.quarantineData.set(name, { manual: true, auto: false });
+        });
+    }
+    state.liveFolderPath = importedState.liveFolderPath || null;
+    state.mt5IncubationMinDays = importedState.mt5IncubationMinDays || 0;
     state.deepScanData = importedState.deepScanData || {}; // Restore Deep Scan Data (Multi-Account)
     state.linkedAccounts = importedState.linkedAccounts || []; // Restore Linked Accounts
     state.tradePnlOverrides = importedState.tradePnlOverrides || {}; // Restore Trade PnL Overrides

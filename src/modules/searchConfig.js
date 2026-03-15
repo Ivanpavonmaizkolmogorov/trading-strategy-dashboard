@@ -624,6 +624,18 @@ const renderParametersForm = () => {
                  </div>
             </div>
 
+            <!-- MT5 Incubation -->
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Días Mínimos en MT5 (Incubación)</label>
+                <div class="flex gap-2">
+                    <input type="number" id="wiz-mt5-min-days" min="0" max="3650" value="${state.mt5IncubationMinDays || 0}" 
+                        class="w-full bg-gray-800 border border-gray-600 text-white text-sm rounded-lg p-2 text-center focus:border-blue-500 focus:ring-1 focus:ring-blue-500" title="Excluir estrategias con menos días enchufadas. 0 = sin filtro.">
+                </div>
+                <p class="text-[10px] text-gray-500 mt-1 italic">
+                    * Las estrategias con menos días serán excluidas de la búsqueda.
+                </p>
+            </div>
+
             <!-- Correlation & Dates -->
             <div class="grid grid-cols-2 gap-4">
                 <div>
@@ -1133,6 +1145,12 @@ const attachWizardEvents = () => {
                     wizardState.config.endDate = eDate;
                 }
 
+                // Incubation Filter
+                const mt5MinDaysInput = document.getElementById('wiz-mt5-min-days');
+                if (mt5MinDaysInput) {
+                    state.mt5IncubationMinDays = parseInt(mt5MinDaysInput.value) || 0;
+                }
+
                 executeSearch();
             };
         }
@@ -1299,6 +1317,41 @@ const executeSearch = () => {
         state.bannedStrategiesCount = wizardBannedCount + quarantinedRemoved;
     } else {
         state.bannedStrategiesCount = wizardBannedCount;
+    }
+
+    // --- MT5 INCUBATION FILTER ---
+    // Exclude strategies that haven't been connected to MT5 long enough
+    if (state.mt5IncubationMinDays > 0) {
+        const strategies = state.loadedStrategyFiles;
+        const today = new Date();
+        const minDays = state.mt5IncubationMinDays;
+        const initialLen = allowedIndicesToSend.length;
+
+        allowedIndicesToSend = allowedIndicesToSend.filter(idx => {
+            const strategy = strategies[idx];
+            if (!strategy) return true; // Safety: keep if no data
+            const connectionDate = strategy.realMetrics?.mt5ConnectionDate;
+            if (!connectionDate) return true; // No MT5 data = not affected by this filter
+            const connDate = new Date(connectionDate);
+            const daysConnected = Math.floor((today - connDate) / (1000 * 60 * 60 * 24));
+            return daysConnected >= minDays;
+        });
+
+        // Also filter fixed indices
+        fixedIndicesToSend = fixedIndicesToSend.filter(idx => {
+            const strategy = strategies[idx];
+            if (!strategy) return true;
+            const connectionDate = strategy.realMetrics?.mt5ConnectionDate;
+            if (!connectionDate) return true;
+            const connDate = new Date(connectionDate);
+            const daysConnected = Math.floor((today - connDate) / (1000 * 60 * 60 * 24));
+            return daysConnected >= minDays;
+        });
+
+        const incubationRemoved = initialLen - allowedIndicesToSend.length;
+        if (incubationRemoved > 0) {
+            showToast(`🔵 Incubación: ${incubationRemoved} estrategias excluidas (< ${minDays} días en MT5).`, 'info');
+        }
     }
 
     // --- VALIDATION: Prevent "Locked" Search in Boost/Hybrid Mode ---

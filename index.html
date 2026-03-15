@@ -725,11 +725,19 @@
                                     class="bg-red-900 text-red-200 text-xs px-2 py-0.5 rounded-full">0</span>
                             </h2>
                             <div class="flex items-center gap-2">
-                                <span class="text-xs text-gray-500 mr-2">Las estrategias aquí son IGNORADAS por todo el
-                                    sistema.</span>
+                                <span id="quarantine-folder-label" class="hidden text-[10px] text-gray-500 font-mono truncate max-w-[200px]"></span>
+                                <button id="resync-quarantine-btn"
+                                    class="hidden bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-bold py-1.5 px-2 rounded flex items-center gap-1 border border-gray-600 transition-colors"
+                                    title="Re-sincronizar con carpeta viva">
+                                    🔄
+                                </button>
+                                <button id="sync-quarantine-folder-btn"
+                                    class="bg-blue-900/50 hover:bg-blue-800 text-blue-200 text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1 border border-blue-700/50 transition-colors">
+                                    <span>📂</span> Sincronizar
+                                </button>
                                 <button id="add-to-quarantine-btn"
                                     class="bg-red-900/50 hover:bg-red-800 text-red-200 text-xs font-bold py-1.5 px-3 rounded flex items-center gap-1 border border-red-700/50 transition-colors">
-                                    <span>➕</span> Añadir / Gestionar
+                                    <span>➕</span> Manual
                                 </button>
                             </div>
                         </div>

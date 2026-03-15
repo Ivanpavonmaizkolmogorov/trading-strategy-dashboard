@@ -23,9 +23,11 @@ export const state = {
     searchBasePortfolioIndex: null, // Index of the Saved Portfolio used as base
     searchBaseStrategyIndices: new Set(), // Indices of strategies from the base portfolio to lock
 
-    // --- NUEVO: Global Ban Tracking ---
+    // --- Quarantine System (Manual + Auto) ---
     bannedStrategiesCount: 0,
-    quarantinedStrategyNames: new Set(), // Set of strategy names permanently excluded
+    quarantineData: new Map(), // Map<strategyName, {manual: bool, auto: bool}>
+    liveFolderPath: null,      // Ruta de la carpeta "viva" (persistida en JSON)
+    mt5IncubationMinDays: 0,   // Filtro temporal: mínimo días enchufada en MT5 (0 = off)
     linkedStrategiesFilter: 'all', // 'all', 'hide', 'only'
 
     // Advanced Filters (Persistence)
@@ -106,6 +108,32 @@ export const state = {
     tradePnlOverrides: {},
 };
 
+// --- Backward-compatible getter for quarantinedStrategyNames ---
+// All existing code (databank.js, strategiesTable.js, sqAnalysis_v2.js) calls
+// state.quarantinedStrategyNames.has(name). This getter builds a Set on-the-fly
+// from quarantineData so those call sites don't need any changes.
+Object.defineProperty(state, 'quarantinedStrategyNames', {
+    get() {
+        const names = new Set();
+        for (const [name, q] of state.quarantineData) {
+            if (q.manual || q.auto) names.add(name);
+        }
+        return names;
+    },
+    set(val) {
+        // Support legacy assignment: state.quarantinedStrategyNames = new Set([...])
+        // Convert each name to {manual: true, auto: false}
+        state.quarantineData.clear();
+        if (val instanceof Set) {
+            for (const name of val) {
+                state.quarantineData.set(name, { manual: true, auto: false });
+            }
+        }
+    },
+    enumerable: false,
+    configurable: true
+});
+
 // Funciones de persistencia para Magic Numbers
 export const loadMagicNumbers = () => {
     // DISABLED: Auto-loading from localStorage is disabled per user request ("NO CACHE").
@@ -132,7 +160,7 @@ export const loadQuarantineList = () => {
 export const saveQuarantineList = () => {
     // No-op: Se guarda vía exportState()
     // Solo logueamos para confirmar cambios en memoria
-    console.log(`[State] Quarantine List updated (Memory): ${state.quarantinedStrategyNames.size} strategies.`);
+    console.log(`[State] Quarantine List updated (Memory): ${state.quarantineData.size} strategies.`);
 };
 
 export const loadSavedPortfolios = () => {
