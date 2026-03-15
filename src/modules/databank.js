@@ -538,6 +538,7 @@ const executeBackendSearch = async (config, signal, onCallback) => {
                     <div class="text-right">
                         <span class="text-emerald-400 font-bold">${poolSummary}</span>
                         ${state.quarantinedStrategyNames.size > 0 ? `<div class="text-red-400 text-[9px] leading-tight">⛔ ${state.quarantinedStrategyNames.size} en Cuarentena</div>` : ''}
+                        ${state._incubationFilterResult && state._incubationFilterResult.removed > 0 ? `<div class="text-blue-400 text-[9px] leading-tight">🔵 ${state._incubationFilterResult.removed} en Incubación (< ${state._incubationFilterResult.minDays}d)</div>` : ''}
                     </div>
                 </div>
                 <div class="flex justify-between"><span>⛓️ Const:</span> <span class="text-gray-300">${constraints}</span></div>

@@ -1376,7 +1376,7 @@ const executeSearch = () => {
 
         allowedIndicesToSend = allowedIndicesToSend.filter(idx => {
             const connectionDate = getMT5ConnectionDate(idx);
-            if (!connectionDate) return true; // No MT5 data = not excluded
+            if (!connectionDate) return false; // No MT5 data = excluded when minDays > 0
             const daysConnected = Math.floor((today - new Date(connectionDate)) / (1000 * 60 * 60 * 24));
             return daysConnected >= minDays;
         });
@@ -1384,16 +1384,20 @@ const executeSearch = () => {
         // Also filter fixed indices
         fixedIndicesToSend = fixedIndicesToSend.filter(idx => {
             const connectionDate = getMT5ConnectionDate(idx);
-            if (!connectionDate) return true;
+            if (!connectionDate) return false; // No MT5 data = excluded when minDays > 0
             const daysConnected = Math.floor((today - new Date(connectionDate)) / (1000 * 60 * 60 * 24));
             return daysConnected >= minDays;
         });
 
         const incubationRemoved = initialLen - allowedIndicesToSend.length;
+        // Store for banner display
+        state._incubationFilterResult = { removed: incubationRemoved, minDays };
         if (incubationRemoved > 0) {
             showToast(`🔵 Incubación: ${incubationRemoved} estrategias excluidas (< ${minDays} días en MT5).`, 'info');
         }
         console.log(`[SearchConfig] Incubation filter: min=${minDays}d, removed=${incubationRemoved}, remaining=${allowedIndicesToSend.length}`);
+    } else {
+        state._incubationFilterResult = null;
     }
 
     // --- VALIDATION: Prevent "Locked" Search in Boost/Hybrid Mode ---
