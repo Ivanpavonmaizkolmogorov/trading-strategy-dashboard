@@ -1321,30 +1321,71 @@ const executeSearch = () => {
 
     // --- MT5 INCUBATION FILTER ---
     // Exclude strategies that haven't been connected to MT5 long enough
+    // NOTE: We compute the connection date directly from deepScanData + magicNumberMap
+    // because loadedStrategyFiles does NOT have realMetrics at search time.
     if (state.mt5IncubationMinDays > 0) {
         const strategies = state.loadedStrategyFiles;
         const today = new Date();
         const minDays = state.mt5IncubationMinDays;
         const initialLen = allowedIndicesToSend.length;
 
+        // Helper: compute MT5 connection date for a strategy by its index
+        const getMT5ConnectionDate = (idx) => {
+            const file = strategies[idx];
+            if (!file) return null;
+            const name = file.name;
+            const strategyId = file.strategyId || name;
+            const cleanName = name.replace(/\.csv$/i, '');
+
+            // Look up magic number(s) from the map
+            const mapEntry = state.magicNumberMap?.[strategyId] ||
+                             state.magicNumberMap?.[name] ||
+                             state.magicNumberMap?.[cleanName];
+            if (!mapEntry) return null;
+
+            const magicKeys = Array.isArray(mapEntry) ? mapEntry : [mapEntry];
+            let earliestDate = null;
+
+            // Search across all deepScan accounts
+            Object.entries(state.deepScanData || {}).forEach(([accountId, accountData]) => {
+                const tradesMap = accountData?.tradesById || accountData?._tradesById;
+                if (!tradesMap) return;
+
+                magicKeys.forEach(magic => {
+                    const keyStr = String(magic).trim();
+                    // Try compound key (accountId::magic) and raw key
+                    const keysToTry = [`${accountId}::${keyStr}`, keyStr];
+                    keysToTry.forEach(k => {
+                        const trades = tradesMap[k];
+                        if (!trades || !Array.isArray(trades)) return;
+                        trades.forEach(t => {
+                            const tDate = new Date(t.openTime || t.openDate || t.closeTime || t.closeDate);
+                            if (!isNaN(tDate.getTime())) {
+                                const iso = tDate.toISOString();
+                                if (!earliestDate || iso < earliestDate) {
+                                    earliestDate = iso;
+                                }
+                            }
+                        });
+                    });
+                });
+            });
+
+            return earliestDate;
+        };
+
         allowedIndicesToSend = allowedIndicesToSend.filter(idx => {
-            const strategy = strategies[idx];
-            if (!strategy) return true; // Safety: keep if no data
-            const connectionDate = strategy.realMetrics?.mt5ConnectionDate;
-            if (!connectionDate) return true; // No MT5 data = not affected by this filter
-            const connDate = new Date(connectionDate);
-            const daysConnected = Math.floor((today - connDate) / (1000 * 60 * 60 * 24));
+            const connectionDate = getMT5ConnectionDate(idx);
+            if (!connectionDate) return true; // No MT5 data = not excluded
+            const daysConnected = Math.floor((today - new Date(connectionDate)) / (1000 * 60 * 60 * 24));
             return daysConnected >= minDays;
         });
 
         // Also filter fixed indices
         fixedIndicesToSend = fixedIndicesToSend.filter(idx => {
-            const strategy = strategies[idx];
-            if (!strategy) return true;
-            const connectionDate = strategy.realMetrics?.mt5ConnectionDate;
+            const connectionDate = getMT5ConnectionDate(idx);
             if (!connectionDate) return true;
-            const connDate = new Date(connectionDate);
-            const daysConnected = Math.floor((today - connDate) / (1000 * 60 * 60 * 24));
+            const daysConnected = Math.floor((today - new Date(connectionDate)) / (1000 * 60 * 60 * 24));
             return daysConnected >= minDays;
         });
 
@@ -1352,6 +1393,7 @@ const executeSearch = () => {
         if (incubationRemoved > 0) {
             showToast(`🔵 Incubación: ${incubationRemoved} estrategias excluidas (< ${minDays} días en MT5).`, 'info');
         }
+        console.log(`[SearchConfig] Incubation filter: min=${minDays}d, removed=${incubationRemoved}, remaining=${allowedIndicesToSend.length}`);
     }
 
     // --- VALIDATION: Prevent "Locked" Search in Boost/Hybrid Mode ---
