@@ -8,6 +8,7 @@ import { showToast } from './notifications.js';
 import { getQuarantineReason, getReasonBadge } from './quarantine.js';
 import { calculateSQMetrics, filterTradesByDate } from './sqAnalysis_v2.js?v=11'; // [MOD] Added filterTradesByDate import
 import { TradeSeries } from '../models/TradeSeries.js';
+import { getStrategyMT5ConnectionTimestamp } from './mt5Utils.js';
 
 // Column definitions
 const AVAILABLE_COLUMNS = [
@@ -1530,59 +1531,12 @@ export const renderStrategiesTable = () => {
                     // [NEW] Get plug-in date from deepScanData (first trade date for this strategy's magic numbers)
                     let plugInDateStr = null;
                     if (hasMagicNumber && state.magicNumberMap && state.deepScanData) {
-                        const keysForMagic = [
-                            strategy.id,
-                            strategy.name,
-                            normalizeName(strategy.name),
-                            String(strategy.name).replace(/\.csv$/i, '').trim()
-                        ];
-                        let magics = [];
-                        keysForMagic.forEach(k => {
-                            if (k && state.magicNumberMap[k]) {
-                                const val = state.magicNumberMap[k];
-                                magics = magics.concat(Array.isArray(val) ? val : [val]);
-                            }
-                        });
-
-                        let earliestDate = Infinity;
-                        // Search deepScanData using same logic as focusMode's findTradesInDeepScanData
-                        magics.forEach(magic => {
-                            const key = String(magic).trim();
-                            if (key.includes('::')) {
-                                // Composite format: accountId::magicNumber
-                                const [targetAccountId, magicNumber] = key.split('::');
-                                const accountData = state.deepScanData[targetAccountId];
-                                if (accountData) {
-                                    const tMap = accountData.tradesById || accountData._tradesById;
-                                    const trades = tMap ? tMap[magicNumber] : null;
-                                    if (trades && Array.isArray(trades)) {
-                                        trades.forEach(t => {
-                                            const dateVal = t.openTime || t.entry_date || t.date;
-                                            if (dateVal) {
-                                                const ts = new Date(dateVal).getTime();
-                                                if (!isNaN(ts) && ts < earliestDate) earliestDate = ts;
-                                            }
-                                        });
-                                    }
-                                }
-                            } else {
-                                // Legacy format: search all accounts
-                                Object.values(state.deepScanData).forEach(accountData => {
-                                    const tMap = accountData.tradesById || accountData._tradesById;
-                                    if (!tMap) return;
-                                    const trades = tMap[key];
-                                    if (trades && Array.isArray(trades)) {
-                                        trades.forEach(t => {
-                                            const dateVal = t.openTime || t.entry_date || t.date;
-                                            if (dateVal) {
-                                                const ts = new Date(dateVal).getTime();
-                                                if (!isNaN(ts) && ts < earliestDate) earliestDate = ts;
-                                            }
-                                        });
-                                    }
-                                });
-                            }
-                        });
+                        const earliestDate = getStrategyMT5ConnectionTimestamp(
+                            strategy.name, 
+                            strategy.id, 
+                            state.magicNumberMap, 
+                            state.deepScanData
+                        );
 
                         if (earliestDate !== Infinity) {
                             const d = new Date(earliestDate);

@@ -1,9 +1,11 @@
-import { state } from '../state.js';
+import { state, config as wizardState } from '../state.js';
 import { findDatabankPortfolios } from './databank.js';
 import { dom } from '../dom.js';
 import { showToast } from './notifications.js';
 import { parseTradesFromData, filterTradesByDate } from './sqAnalysis_v2.js?v=11';
 import { toggleLoading } from '../utils.js';
+import { runPythonScript } from './pythonRunner.js';
+import { getStrategyMT5ConnectionTimestamp } from './mt5Utils.js';
 
 // Metric configuration
 const METRIC_CONFIG = {
@@ -1330,73 +1332,22 @@ const executeSearch = () => {
         const initialLen = allowedIndicesToSend.length;
 
         // Helper: compute MT5 connection date for a strategy by its index
-        // Uses the exact logic from strategiesTable.js to ensure 100% parity with UI badge
+        // Uses the exact logic from mt5Utils.js to ensure 100% parity with UI badge
         const getMT5ConnectionDate = (idx) => {
             const file = strategies[idx];
             if (!file) return null;
             
             const strategyName = file.name || '';
             const strategyId = file.strategyId || strategyName;
-            const normalizeName = s => (s || '').replace(/\.csv$/i, '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-            const keysForMagic = [
-                strategyId,
+            const earliestDate = getStrategyMT5ConnectionTimestamp(
                 strategyName,
-                normalizeName(strategyName),
-                String(strategyName).replace(/\.csv$/i, '').trim()
-            ];
+                strategyId,
+                state.magicNumberMap,
+                state.deepScanData
+            );
 
-            let magics = [];
-            keysForMagic.forEach(k => {
-                if (k && state.magicNumberMap?.[k]) {
-                    const val = state.magicNumberMap[k];
-                    magics = magics.concat(Array.isArray(val) ? val : [val]);
-                }
-            });
-
-            if (magics.length === 0) return null;
-
-            let earliestDate = Infinity;
-
-            magics.forEach(magic => {
-                const key = String(magic).trim();
-                if (key.includes('::')) {
-                    // Composite format: accountId::magicNumber
-                    const [targetAccountId, magicNumber] = key.split('::');
-                    const accountData = state.deepScanData?.[targetAccountId];
-                    if (accountData) {
-                        const tMap = accountData.tradesById || accountData._tradesById;
-                        const trades = tMap ? tMap[magicNumber] : null;
-                        if (trades && Array.isArray(trades)) {
-                            trades.forEach(t => {
-                                const dateVal = t.openTime || t.entry_date || t.date;
-                                if (dateVal) {
-                                    const ts = new Date(dateVal).getTime();
-                                    if (!isNaN(ts) && ts < earliestDate) earliestDate = ts;
-                                }
-                            });
-                        }
-                    }
-                } else {
-                    // Legacy format: search all accounts
-                    Object.values(state.deepScanData || {}).forEach(accountData => {
-                        const tMap = accountData.tradesById || accountData._tradesById;
-                        if (!tMap) return;
-                        const trades = tMap[key];
-                        if (trades && Array.isArray(trades)) {
-                            trades.forEach(t => {
-                                const dateVal = t.openTime || t.entry_date || t.date;
-                                if (dateVal) {
-                                    const ts = new Date(dateVal).getTime();
-                                    if (!isNaN(ts) && ts < earliestDate) earliestDate = ts;
-                                }
-                            });
-                        }
-                    });
-                }
-            });
-
-            if (earliestDate === Infinity) return null;
+            if (earliestDate === null) return null;
             return new Date(earliestDate).toISOString();
         };
 
