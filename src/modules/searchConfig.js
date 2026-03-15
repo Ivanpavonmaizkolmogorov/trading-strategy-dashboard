@@ -1372,10 +1372,23 @@ const executeSearch = () => {
                     let lookup = keyStr;
                     if (keyStr.includes('::')) lookup = keyStr.split('::')[1];
 
-                    // Find all matching keys in tradesMap (case insensitive)
-                    const matchingMapKeys = allTradesMapKeys.filter(tk => 
-                        tk === lookup || tk === keyStr || tk.toLowerCase() === keyStr.toLowerCase() || tk.toLowerCase() === lookup.toLowerCase()
-                    );
+                    // Find all matching keys in tradesMap (case insensitive and loose substring)
+                    const lookupLower = lookup.toLowerCase();
+                    const keyStrLower = keyStr.toLowerCase();
+                    
+                    const matchingMapKeys = allTradesMapKeys.filter(tk => {
+                        const tkLower = tk.toLowerCase();
+                        // 1. Exact match
+                        if (tkLower === lookupLower || tkLower === keyStrLower) return true;
+                        
+                        // 2. Contains match (either lookup contains tk, or tk contains lookup)
+                        // Useful when Myfxbook map has '97UsdjpyBuyStPlV5_H1_1_5_23_97...' but trade is just '97UsdjpyBuyStPlV5'
+                        // We enforce a minimum length of 5 to avoid matching everything to '1'
+                        if (lookupLower.length > 5 && (tkLower.includes(lookupLower) || lookupLower.includes(tkLower))) return true;
+                        if (keyStrLower.length > 5 && (tkLower.includes(keyStrLower) || keyStrLower.includes(tkLower))) return true;
+                        
+                        return false;
+                    });
 
                     matchingMapKeys.forEach(k => {
                         const trades = tradesMap[k];
